@@ -2,9 +2,6 @@ import subprocess
 
 ENGINE_PATH = "stockfish"
 
-# -----------------------------
-# Engine startup
-# -----------------------------
 engine = subprocess.Popen(
     ENGINE_PATH,
     stdin=subprocess.PIPE,
@@ -26,6 +23,10 @@ def read_until(prefix):
         if line.startswith(prefix):
             return line
 
+def sync_engine():
+    send("isready")
+    read_until("readyok")
+
 # -----------------------------
 # Game state
 # -----------------------------
@@ -33,31 +34,16 @@ move_list = []
 last_move = None
 skill_level = 5
 move_time = 200  # ms
-legal_moves_cache = set()  # Cache for fast illegal-move checking
 
 # -----------------------------
-# Engine helpers
+# Move helpers
 # -----------------------------
-def sync_engine():
-    send("isready")
-    read_until("readyok")
-
-def new_game():
-    global move_list, last_move
-    move_list = []
-    last_move = None
-    send("ucinewgame")
-    sync_engine()
-    update_legal_moves()
-    print("\n=== NEW GAME ===")
-    show_board()
-
-def set_skill(level):
-    global skill_level
-    skill_level = max(0, min(20, level))
-    send(f"setoption name Skill Level value {skill_level}")
-    sync_engine()
-    print(f"Skill level set to {skill_level}")
+def normalize_move(move):
+    if len(move) == 4:
+        to_rank = int(move[3])
+        if move[0] == 'p' and (to_rank == 8 or to_rank == 1):
+            return move + "q"
+    return move
 
 def position_cmd(extra=None):
     moves = move_list[:]
@@ -67,53 +53,19 @@ def position_cmd(extra=None):
         return "position startpos moves " + " ".join(moves)
     return "position startpos"
 
-# -----------------------------
-# Move handling
-# -----------------------------
-def normalize_move(move):
-    """Add promotion to queen if pawn reaches last rank"""
-    if len(move) == 4:
-        from_rank = int(move[1])
-        to_rank = int(move[3])
-        piece_file = move[0].lower()
-        if piece_file == 'p' and (to_rank == 8 or to_rank == 1):
-            return move + "q"
-        else:
-            return move
-    return move
-
-def update_legal_moves():
-    """Update the legal moves cache from Stockfish"""
-    global legal_moves_cache
-    sync_engine()  # Make sure Stockfish is ready
-    send(position_cmd())
-    send("d")
-    while True:
-        line = read_line()
-        if line == "":  # safeguard in case nothing is returned
-            continue
-        if line.startswith("Legal moves:"):
-            legal_moves_cache = set(line[len("Legal moves:"):].strip().split())
-            break
-
 def is_legal_move(move):
-    """Check if move is legal by asking Stockfish to search only that move"""
     move = normalize_move(move)
-    if not move:
-        return False
     send(position_cmd([move]))
     send("go depth 1 movetime 50")
     reply = read_until("bestmove")
     best = reply.split()[1]
-    # If bestmove is not (none), the move is legal
     return best != "(none)"
 
 def engine_move():
     send(position_cmd())
     send(f"go movetime {move_time}")
     reply = read_until("bestmove")
-    best = reply.split()[1]
-    return best
+    return reply.split()[1]
 
 def hint():
     send(position_cmd())
@@ -121,9 +73,6 @@ def hint():
     reply = read_until("bestmove")
     return reply.split()[1]
 
-# -----------------------------
-# Board display
-# -----------------------------
 def show_board():
     send(position_cmd())
     send("d")
@@ -139,27 +88,33 @@ def show_board():
             break
     print()
     for row in board_lines[:-1]:
-        if last_move and "|" in row:
-            a, b = last_move[:2], last_move[2:4]
-            if a[1] in row or b[1] in row:
-                print(row.replace("|", "║"))
-            else:
-                print(row)
-        else:
-            print(row)
+        print(row)
     print()
 
-# -----------------------------
-# Game-over detection
-# -----------------------------
 def check_game_over():
     send(position_cmd())
-    send("go depth 1")
+    send("go depth 1 movetime 50")
     reply = read_until("bestmove")
     if "bestmove (none)" in reply:
         print("=== GAME OVER ===")
         return True
     return False
+
+def new_game():
+    global move_list, last_move
+    move_list = []
+    last_move = None
+    send("ucinewgame")
+    sync_engine()
+    print("\n=== NEW GAME ===")
+    show_board()
+
+def set_skill(level):
+    global skill_level
+    skill_level = max(0, min(20, level))
+    send(f"setoption name Skill Level value {skill_level}")
+    sync_engine()
+    print(f"Skill level set to {skill_level}")
 
 # -----------------------------
 # Startup
@@ -233,7 +188,6 @@ quit           exit
             move_list.pop()
             move_list.pop()
             last_move = None
-            update_legal_moves()
             print("Last full move undone")
             show_board()
         else:
@@ -247,7 +201,6 @@ quit           exit
                 continue
             move_list.append(move)
             last_move = move
-            update_legal_moves()
             show_board()
             if check_game_over():
                 continue
@@ -255,7 +208,6 @@ quit           exit
             if best != "(none)":
                 move_list.append(best)
                 last_move = best
-                update_legal_moves()
                 show_board()
                 check_game_over()
             else:
@@ -265,8 +217,5 @@ quit           exit
         continue
     print("Unknown command")
 
-# -----------------------------
-# Shutdown
-# -----------------------------
 engine.terminate()
 print("Goodbye.")
