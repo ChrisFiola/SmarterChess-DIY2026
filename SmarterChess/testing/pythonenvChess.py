@@ -52,12 +52,50 @@ def set_move_time(ms: int):
     print(f"Engine move time set to {move_time} ms")
 
 # -----------------------------
-# Board display
+# Custom board display with last move highlighting using [♙]
 # -----------------------------
+PIECE_UNICODE = {
+    'P': '♙',
+    'N': '♘',
+    'B': '♗',
+    'R': '♖',
+    'Q': '♕',
+    'K': '♔',
+    'p': '♟',
+    'n': '♞',
+    'b': '♝',
+    'r': '♜',
+    'q': '♛',
+    'k': '♚'
+}
+
 def show_board():
     print()
-    print(board.unicode(borders=True))
+    print("  -----------------")
+    
+    last_from = last_to = None
+    if last_move:
+        last_from = last_move.from_square
+        last_to = last_move.to_square
+
+    for rank in range(8, 0, -1):
+        row = f"{rank} |"
+        for file in range(8):
+            square = chess.square(file, rank - 1)
+            piece = board.piece_at(square)
+            
+            symbol = PIECE_UNICODE[piece.symbol()] if piece else " "
+            
+            # Highlight last move with brackets
+            if square == last_from or square == last_to:
+                row += f"[{symbol}]"
+            else:
+                row += f" {symbol} "
+        print(row)
+        print("  -----------------")
+    print("    a b c d e f g h")
     print()
+
 
 # -----------------------------
 # Move handling
