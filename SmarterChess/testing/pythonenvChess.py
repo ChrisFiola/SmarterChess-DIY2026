@@ -53,36 +53,38 @@ def set_move_time(ms: int):
 
 def show_board():
     print()
-    # Get last move squares
     last_from = last_to = None
     if last_move:
         last_from = last_move.from_square
         last_to = last_move.to_square
 
-    board_str = ""
+    print("  -----------------")
     for rank in range(8, 0, -1):
-        board_str += f"{rank} |"
+        row = f"{rank} |"
         for file in range(8):
             square = chess.square(file, rank - 1)
             piece = board.piece_at(square)
-            symbol = piece.symbol() if piece else " "  # keep python-chess symbols for alignment
 
-            # Use unicode symbol
-            symbol_unicode = {
-                'P': '♙', 'N': '♘', 'B': '♗', 'R': '♖', 'Q': '♕', 'K': '♔',
-                'p': '♟', 'n': '♞', 'b': '♝', 'r': '♜', 'q': '♛', 'k': '♚'
-            }.get(symbol, " ")
-
-            # Highlight last move
-            if square == last_from or square == last_to:
-                board_str += f"[{symbol_unicode}]"
+            if piece:
+                symbol_unicode = {
+                    'P': '♙', 'N': '♘', 'B': '♗', 'R': '♖', 'Q': '♕', 'K': '♔',
+                    'p': '♟', 'n': '♞', 'b': '♝', 'r': '♜', 'q': '♛', 'k': '♚'
+                }[piece.symbol()]
             else:
-                board_str += f" {symbol_unicode} "
+                symbol_unicode = " "  # empty square
 
-        board_str += "\n"
-    board_str += "  -----------------\n"
-    board_str += "    a  b  c  d  e  f  g  h\n"
-    print(board_str)
+            # highlight last move
+            if square == last_from or square == last_to:
+                row += f"[{symbol_unicode}]"
+            else:
+                row += f"|{symbol_unicode}"
+
+        row += "|"
+        print(row)
+        print("  -----------------")
+
+    print("   a b c d e f g h\n")
+
 
 
 # -----------------------------
