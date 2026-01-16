@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/home/king/chessenv/bin/python
 """
 Console Chess using python-chess + Stockfish
 
