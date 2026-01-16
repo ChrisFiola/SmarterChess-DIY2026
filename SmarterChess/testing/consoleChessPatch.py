@@ -2,6 +2,9 @@ import subprocess
 
 ENGINE_PATH = "stockfish"
 
+# -----------------------------
+# Engine startup
+# -----------------------------
 engine = subprocess.Popen(
     ENGINE_PATH,
     stdin=subprocess.PIPE,
@@ -34,14 +37,18 @@ move_list = []
 last_move = None
 skill_level = 5
 move_time = 200  # ms
+legal_moves_cache = set()
 
 # -----------------------------
 # Move helpers
 # -----------------------------
 def normalize_move(move):
+    move = move.lower()  # always lowercase
     if len(move) == 4:
+        from_rank = int(move[1])
         to_rank = int(move[3])
-        if move[0] == 'p' and (to_rank == 8 or to_rank == 1):
+        # auto promote pawn
+        if (from_rank == 7 and to_rank == 8) or (from_rank == 2 and to_rank == 1):
             return move + "q"
     return move
 
@@ -53,13 +60,21 @@ def position_cmd(extra=None):
         return "position startpos moves " + " ".join(moves)
     return "position startpos"
 
+def update_legal_moves():
+    """Update legal moves from Stockfish"""
+    global legal_moves_cache
+    send(position_cmd())
+    send("d")
+    legal_moves_cache = set()
+    while True:
+        line = read_line()
+        if line.startswith("Legal moves:"):
+            legal_moves_cache = set(line[len("Legal moves:"):].strip().split())
+            break
+
 def is_legal_move(move):
     move = normalize_move(move)
-    send(position_cmd([move]))
-    send("go depth 1 movetime 50")
-    reply = read_until("bestmove")
-    best = reply.split()[1]
-    return best != "(none)"
+    return move in legal_moves_cache
 
 def engine_move():
     send(position_cmd())
@@ -73,6 +88,9 @@ def hint():
     reply = read_until("bestmove")
     return reply.split()[1]
 
+# -----------------------------
+# Board display
+# -----------------------------
 def show_board():
     send(position_cmd())
     send("d")
@@ -88,7 +106,6 @@ def show_board():
             break
     print()
     for row in board_lines[:-1]:
-        # highlight last move
         if last_move and "|" in row:
             a, b = last_move[:2], last_move[2:4]
             if a[1] in row or b[1] in row:
@@ -99,6 +116,9 @@ def show_board():
             print(row)
     print()
 
+# -----------------------------
+# Game-over detection
+# -----------------------------
 def check_game_over():
     send(position_cmd())
     send("go depth 1 movetime 50")
@@ -108,6 +128,9 @@ def check_game_over():
         return True
     return False
 
+# -----------------------------
+# Game control
+# -----------------------------
 def new_game():
     global move_list, last_move
     move_list = []
@@ -115,6 +138,7 @@ def new_game():
     send("ucinewgame")
     sync_engine()
     print("\n=== NEW GAME ===")
+    update_legal_moves()
     show_board()
 
 def set_skill(level):
@@ -141,15 +165,14 @@ print("Type 'help' for commands")
 # Main loop
 # -----------------------------
 while True:
-    cmd = input("> ").strip()
+    cmd = input("> ").strip().lower()
     if not cmd:
         continue
-    cmd_lower = cmd.lower()
 
-    if cmd_lower == "quit":
+    if cmd == "quit":
         break
 
-    if cmd_lower == "help":
+    if cmd == "help":
         print("""
 move e2e4      make a move
 move e7e8q     promotion (default = q)
@@ -164,28 +187,26 @@ quit           exit
 """)
         continue
 
-    if cmd_lower == "new":
+    if cmd == "new":
         new_game()
         continue
 
-    if cmd_lower.startswith("skill"):
-        parts = cmd_lower.split()
-        if len(parts) == 2 and parts[1].isdigit():
-            set_skill(int(parts[1]))
-        else:
+    if cmd.startswith("skill"):
+        try:
+            set_skill(int(cmd.split()[1]))
+        except:
             print("Usage: skill 0–20")
         continue
 
-    if cmd_lower.startswith("time"):
-        parts = cmd_lower.split()
-        if len(parts) == 2 and parts[1].isdigit():
-            move_time = int(parts[1])
+    if cmd.startswith("time"):
+        try:
+            move_time = int(cmd.split()[1])
             print(f"Move time set to {move_time} ms")
-        else:
+        except:
             print("Usage: time <ms>")
         continue
 
-    if cmd_lower == "moves":
+    if cmd == "moves":
         if not move_list:
             print("Moves: (none)")
         else:
@@ -195,32 +216,34 @@ quit           exit
                 print(f"{i//2+1}. {w} {b}")
         continue
 
-    if cmd_lower == "board":
+    if cmd == "board":
         show_board()
         continue
 
-    if cmd_lower == "hint":
+    if cmd == "hint":
         print("Hint:", hint())
         continue
 
-    if cmd_lower == "undo":
+    if cmd == "undo":
         if len(move_list) >= 2:
             move_list.pop()
             move_list.pop()
             last_move = None
+            update_legal_moves()
             print("Last full move undone")
             show_board()
         else:
             print("Nothing to undo")
         continue
 
-    if cmd_lower.startswith("move"):
+    if cmd.startswith("move"):
         parts = cmd.split()
         if len(parts) != 2:
             print("Usage: move e2e4 or e7e8q")
             continue
 
         move = normalize_move(parts[1])
+
         if not is_legal_move(move):
             print("Illegal move")
             continue
@@ -228,16 +251,18 @@ quit           exit
         # push human move
         move_list.append(move)
         last_move = move
+        update_legal_moves()
 
-        # get engine move
+        # engine move
         best = engine_move()
         if best != "(none)":
             move_list.append(best)
             last_move = best
+            update_legal_moves()
         else:
             print("Game over")
 
-        # show board once per turn
+        # show board once
         show_board()
         check_game_over()
         continue
