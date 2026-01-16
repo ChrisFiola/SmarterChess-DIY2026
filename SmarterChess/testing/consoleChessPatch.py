@@ -88,7 +88,15 @@ def show_board():
             break
     print()
     for row in board_lines[:-1]:
-        print(row)
+        # highlight last move
+        if last_move and "|" in row:
+            a, b = last_move[:2], last_move[2:4]
+            if a[1] in row or b[1] in row:
+                print(row.replace("|", "║"))
+            else:
+                print(row)
+        else:
+            print(row)
     print()
 
 def check_game_over():
@@ -133,12 +141,15 @@ print("Type 'help' for commands")
 # Main loop
 # -----------------------------
 while True:
-    cmd = input("> ").strip().lower()
+    cmd = input("> ").strip()
     if not cmd:
         continue
-    if cmd == "quit":
+    cmd_lower = cmd.lower()
+
+    if cmd_lower == "quit":
         break
-    if cmd == "help":
+
+    if cmd_lower == "help":
         print("""
 move e2e4      make a move
 move e7e8q     promotion (default = q)
@@ -152,23 +163,29 @@ moves          show move list
 quit           exit
 """)
         continue
-    if cmd == "new":
+
+    if cmd_lower == "new":
         new_game()
         continue
-    if cmd.startswith("skill"):
-        try:
-            set_skill(int(cmd.split()[1]))
-        except:
+
+    if cmd_lower.startswith("skill"):
+        parts = cmd_lower.split()
+        if len(parts) == 2 and parts[1].isdigit():
+            set_skill(int(parts[1]))
+        else:
             print("Usage: skill 0–20")
         continue
-    if cmd.startswith("time"):
-        try:
-            move_time = int(cmd.split()[1])
+
+    if cmd_lower.startswith("time"):
+        parts = cmd_lower.split()
+        if len(parts) == 2 and parts[1].isdigit():
+            move_time = int(parts[1])
             print(f"Move time set to {move_time} ms")
-        except:
+        else:
             print("Usage: time <ms>")
         continue
-    if cmd == "moves":
+
+    if cmd_lower == "moves":
         if not move_list:
             print("Moves: (none)")
         else:
@@ -177,13 +194,16 @@ quit           exit
                 b = move_list[i+1] if i+1 < len(move_list) else ""
                 print(f"{i//2+1}. {w} {b}")
         continue
-    if cmd == "board":
+
+    if cmd_lower == "board":
         show_board()
         continue
-    if cmd == "hint":
+
+    if cmd_lower == "hint":
         print("Hint:", hint())
         continue
-    if cmd == "undo":
+
+    if cmd_lower == "undo":
         if len(move_list) >= 2:
             move_list.pop()
             move_list.pop()
@@ -193,33 +213,39 @@ quit           exit
         else:
             print("Nothing to undo")
         continue
-    if cmd.startswith("move"):
-        try:
-            move = normalize_move(cmd.split()[1])
-            if not is_legal_move(move):
-                print("Illegal move")
-                continue
-    
-            # push human move
-            move_list.append(move)
-            last_move = move
-    
-            # get engine move
-            best = engine_move()
-            if best != "(none)":
-                move_list.append(best)
-                last_move = best
-            else:
-                print("Game over")
-    
-            # show board once
-            show_board()
-            check_game_over()
-    
-        except:
+
+    if cmd_lower.startswith("move"):
+        parts = cmd.split()
+        if len(parts) != 2:
             print("Usage: move e2e4 or e7e8q")
             continue
+
+        move = normalize_move(parts[1])
+        if not is_legal_move(move):
+            print("Illegal move")
+            continue
+
+        # push human move
+        move_list.append(move)
+        last_move = move
+
+        # get engine move
+        best = engine_move()
+        if best != "(none)":
+            move_list.append(best)
+            last_move = best
+        else:
+            print("Game over")
+
+        # show board once per turn
+        show_board()
+        check_game_over()
+        continue
+
     print("Unknown command")
 
+# -----------------------------
+# Shutdown
+# -----------------------------
 engine.terminate()
 print("Goodbye.")
