@@ -1,13 +1,13 @@
 # Super Smart Chessboard Revival
 
-#UPDATE 2026
+- UPDATE 2026
 I'm trying to revive this project in 2026. i want to be able to play chess IRL and record my moves so I can study them online.
 
 I am starting from the original DIY Machines's project and will update the code to make it work on a raspberry pi pico instead of arduino.
 
 The original code is not compatible with the latest python updates and is hardly running on the latest Stockfish.
 
-#Original README
+- Original README
 Play remotely over the internet, or locally against the inbuilt computer.
 
 Project video available at: https://youtu.be/Z92TdhsAWD4
