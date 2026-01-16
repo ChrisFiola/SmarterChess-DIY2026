@@ -60,13 +60,19 @@ def position_cmd(extra=None):
         return "position startpos moves " + " ".join(moves)
     return "position startpos"
 
+def update_legal_moves():
+    """Update legal moves from Stockfish"""
+    send(position_cmd())
+    send("d")
+    while True:
+        line = read_line()
+        if line.startswith("Legal moves:"):
+            return set(line[len("Legal moves:"):].strip().split())
+
 def is_legal_move(move):
     move = normalize_move(move)
-    send(position_cmd([move]))
-    send("go depth 1 movetime 50")
-    reply = read_until("bestmove")
-    best = reply.split()[1]
-    return best != "(none)"
+    legal_moves = update_legal_moves()
+    return move in legal_moves
 
 def engine_move():
     send(position_cmd())
