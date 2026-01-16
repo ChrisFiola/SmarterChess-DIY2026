@@ -194,31 +194,31 @@ quit           exit
             print("Nothing to undo")
         continue
     if cmd.startswith("move"):
-    try:
-        move = normalize_move(cmd.split()[1])
-        if not is_legal_move(move):
-            print("Illegal move")
+        try:
+            move = normalize_move(cmd.split()[1])
+            if not is_legal_move(move):
+                print("Illegal move")
+                continue
+    
+            # push human move
+            move_list.append(move)
+            last_move = move
+    
+            # get engine move
+            best = engine_move()
+            if best != "(none)":
+                move_list.append(best)
+                last_move = best
+            else:
+                print("Game over")
+    
+            # show board once
+            show_board()
+            check_game_over()
+    
+        except:
+            print("Usage: move e2e4 or e7e8q")
             continue
-
-        # push human move
-        move_list.append(move)
-        last_move = move
-
-        # get engine move
-        best = engine_move()
-        if best != "(none)":
-            move_list.append(best)
-            last_move = best
-        else:
-            print("Game over")
-
-        # show board once
-        show_board()
-        check_game_over()
-
-    except:
-        print("Usage: move e2e4 or e7e8q")
-        continue
     print("Unknown command")
 
 engine.terminate()
