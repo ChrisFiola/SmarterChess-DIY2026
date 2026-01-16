@@ -92,13 +92,14 @@ def takeback():
         print("No moves to undo")
 
 def engine_move():
-    """Get Stockfish move using current move time."""
+    """Get Stockfish move using current move time and return SAN string."""
     if board.is_game_over():
         return None
     result = engine.play(board, chess.engine.Limit(time=move_time/1000))
-    board.push(result.move)
+    move_san = board.san(result.move)   # get SAN while move is still legal
+    board.push(result.move)             # now push it
     move_list.append(result.move)
-    return result.move
+    return move_san
 
 def hint():
     """Get a hint from Stockfish without pushing it."""
@@ -159,7 +160,7 @@ quit            Exit
                 continue
             m = engine_move()
             if m:
-                print("Engine plays:", board.san(m))
+                print("Engine plays:", m)
             show_board()
             if board.is_game_over():
                 print("Game over:", board.result())
