@@ -7,6 +7,14 @@ I am starting from the original DIY Machines's project and will update the code 
 
 The original code is not compatible with the latest python updates and is hardly running on the latest Stockfish.
 
+This updated project will use:
+- Raspberry Pi Zero W or Raspberry Pi 3B+
+- Raspberry Pi Pico
+- LED Strip
+- Smaller 3D Print parts that can print with a CR20 218x218 base plate maximum
+- Waveshare 1.44" LCD Hat to show the menu and navigate it using its joystick and buttons
+- More eventually but as is until I get a working solution
+
 ## Original README
 Play remotely over the internet, or locally against the inbuilt computer.
 
