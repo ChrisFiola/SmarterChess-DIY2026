@@ -59,7 +59,7 @@ def position_cmd(extra=None):
         moves += extra
     if moves:
         return "position startpos moves " + " ".join(moves)
-    return "position startpos
+    return "position startpos"
 
 def update_legal_moves(timeout=1.0):
     global legal_moves_cache
