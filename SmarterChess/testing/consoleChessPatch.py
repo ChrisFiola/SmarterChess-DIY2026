@@ -1,5 +1,7 @@
 import subprocess
 import time
+import queue
+import threading
 
 ENGINE_PATH = "stockfish"
 
@@ -13,6 +15,23 @@ engine = subprocess.Popen(
     universal_newlines=True,
     bufsize=1
 )
+
+# thread to read engine output into a queue
+output_queue = queue.Queue()
+
+def reader_thread():
+    while True:
+        line = engine.stdout.readline()
+        if line:
+            output_queue.put(line.strip())
+
+threading.Thread(target=reader_thread, daemon=True).start()
+
+def read_line_nonblocking():
+    try:
+        return output_queue.get_nowait()
+    except queue.Empty:
+        return None
 
 def send(cmd):
     engine.stdin.write(cmd + "\n")
