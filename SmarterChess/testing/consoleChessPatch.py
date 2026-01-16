@@ -1,4 +1,5 @@
 import subprocess
+import time
 
 ENGINE_PATH = "stockfish"
 
@@ -58,19 +59,24 @@ def position_cmd(extra=None):
         moves += extra
     if moves:
         return "position startpos moves " + " ".join(moves)
-    return "position startpos"
+    return "position startpos
 
-def update_legal_moves():
-    """Update legal moves from Stockfish"""
+def update_legal_moves(timeout=1.0):
     global legal_moves_cache
     send(position_cmd())
     send("d")
+    start = time.time()
     legal_moves_cache = set()
-    while True:
-        line = read_line()
+    while time.time() - start < timeout:
+        line = read_line_nonblocking()
+        if line is None:
+            time.sleep(0.05)
+            continue
         if line.startswith("Legal moves:"):
             legal_moves_cache = set(line[len("Legal moves:"):].strip().split())
-            break
+            return
+    print("Warning: Legal moves not received. Cache empty.")
+
 
 def is_legal_move(move):
     move = normalize_move(move)
