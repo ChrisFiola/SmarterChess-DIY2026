@@ -120,7 +120,7 @@ def getboard(ser: serial.Serial) -> Optional[str]:
 def open_engine(path: str) -> chess.engine.SimpleEngine:
     try:
         eng = chess.engine.SimpleEngine.popen_uci(
-            path#,
+            path
             #timeout=ENGINE_TIMEOUT,
             #stderr=subprocess.DEVNULL  # avoid banner/warning deadlocks
         )
