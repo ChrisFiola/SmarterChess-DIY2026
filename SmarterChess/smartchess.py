@@ -1,5 +1,5 @@
 
-#/home/king/chessenv/bin/ python
+#/home/king/chessenv/bin/python
 # -*- coding: utf-8 -*-
 """
 Hardware Chess (Arduino + OLED) using python-chess + Stockfish
@@ -44,7 +44,7 @@ BAUD = 115200
 SERIAL_TIMEOUT = 2.0
 
 STOCKFISH_PATH = "stockfish"   # full path if needed, e.g. '/usr/bin/stockfish'
-ENGINE_TIMEOUT = 10.0          # seconds for UCI init
+#ENGINE_TIMEOUT = 10.0          # seconds for UCI init
 DEFAULT_SKILL = 5              # 0..20
 DEFAULT_MOVE_TIME_MS = 800     # engine think time in ms
 OLED_SCRIPT = "/home/king/SmartChess/RaspberryPiCode/printToOLED.py"
@@ -117,16 +117,11 @@ def getboard(ser: serial.Serial) -> Optional[str]:
 # -----------------------------
 # Engine Helpers
 # -----------------------------
-def open_engine(path: str) -> chess.engine.SimpleEngine:
+def open_engine(STOCKFISH_PATH) -> chess.engine.SimpleEngine:
     try:
-        eng = chess.engine.SimpleEngine.popen_uci(
-            path,
-            #timeout=ENGINE_TIMEOUT,
-            stderr=subprocess.DEVNULL  # avoid banner/warning deadlocks
-        )
-        return eng
-    except Exception as e:
-        print(f"[Engine] ERROR launching '{path}': {e}", file=sys.stderr)
+        engine = chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH)
+    except FileNotFoundError:
+        print("Stockfish not found at", STOCKFISH_PATH)
         sys.exit(1)
 
 def set_engine_skill(eng: chess.engine.SimpleEngine, level: int) -> int:
