@@ -119,9 +119,14 @@ def getboard(ser: serial.Serial) -> Optional[str]:
 # -----------------------------
 def open_engine(STOCKFISH_PATH) -> chess.engine.SimpleEngine:
     try:
-        engine = chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH)
-    except FileNotFoundError:
-        print("Stockfish not found at", STOCKFISH_PATH)
+        eng = chess.engine.SimpleEngine.popen_uci(
+            path,
+            timeout=ENGINE_TIMEOUT,
+            stderr=subprocess.DEVNULL  # avoid banner/warning deadlocks
+        )
+        return eng
+    except Exception as e:
+        print(f"[Engine] ERROR launching '{path}': {e}", file=sys.stderr)
         sys.exit(1)
 
 def set_engine_skill(eng: chess.engine.SimpleEngine, level: int) -> int:
