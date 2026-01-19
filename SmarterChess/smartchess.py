@@ -1,295 +1,349 @@
 
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-Rewritten SmartChess hardware-controller
-Modern Python‑3 version using python‑chess
+Hardware Chess (Arduino + OLED) using python-chess + Stockfish
+Option A: Add Arduino/Serial board support to the modern engine.
 
-Replaces:
-- Python 2.7 code
-- ChessBoard library
-with:
-- python-chess
-- modern subprocess control of Stockfish
+Protocol (serial):
+- Arduino -> Pi:  lines starting with 'heypi...'
+- Pi -> Arduino:  lines starting with 'heyArduino...'
 
-Supports:
-- Arduino serial hardware board
-- OLED display messages
-- Local Stockfish mode
-- Online human mode
+Expected Arduino payloads (examples):
+- heypistockfish         # choose vs engine mode
+- heypi5                 # skill level (0-20)
+- heypi1000              # move time in ms
+- heypim e2e4            # player move (with space)
+- heypime2e4             # player move (no space) also supported
+- heypin                 # new game
+- heypixshutdown         # shutdown signal
+
+Pi responses to Arduino:
+- heyArduinoChooseMode
+- heyArduinoReadyStockfish
+- heyArduinom<uci>       # engine move (e.g. "heyArduinome7e5")
+- heyArduinoerror_illegal_<uci>
+- heyArduinoerror_invalid_<payload>
+- heyArduinoGameOver:<result>
 """
 
+import sys
+import time
+import subprocess
+from typing import Optional
+
+import serial
 import chess
 import chess.engine
-import serial
-import subprocess
-import time
-import sys
 
-# -------------------------
-# CONFIGURATION
-# -------------------------
-SERIAL_PORT = "/dev/pts/8"      # Update for your hardware: /dev/ttyUSB0 etc.
+# -----------------------------
+# Configuration
+# -----------------------------
+SERIAL_PORT = "/dev/pts/9"     # e.g. '/dev/ttyUSB0' on real hardware
 BAUD = 115200
-STOCKFISH_PATH = "stockfish"
+SERIAL_TIMEOUT = 2.0
 
-# -------------------------
-# INITIALIZE ENGINE
-# -------------------------
-try:
-    engine = chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH)
-except FileNotFoundError:
-    print("ERROR: Stockfish not found.")
-    sys.exit(1)
+STOCKFISH_PATH = "stockfish"   # full path if needed, e.g. '/usr/bin/stockfish'
+ENGINE_TIMEOUT = 10.0          # seconds for UCI init
+DEFAULT_SKILL = 5              # 0..20
+DEFAULT_MOVE_TIME_MS = 800     # engine think time in ms
+OLED_SCRIPT = "/home/king/SmartChess/RaspberryPiCode/printToOLED.py"
 
-# -------------------------
-# INITIALIZE SERIAL
-# -------------------------
-ser = serial.Serial(SERIAL_PORT, BAUD, timeout=2)
-ser.flush()
-
-# -------------------------
-# GAME STATE
-# -------------------------
+# -----------------------------
+# Globals
+# -----------------------------
+engine: Optional[chess.engine.SimpleEngine] = None
 board = chess.Board()
-full_move_string = ""       # "e2e4 e7e5 ..."
-skill_level = 5
-move_time_ms = 1000
-remotePlayer = None         # For online mode
-colourChoice = None
+skill_level = DEFAULT_SKILL
+move_time_ms = DEFAULT_MOVE_TIME_MS
 
-
-# ---------------------------------------------------------
-# OLED DISPLAY
-# ---------------------------------------------------------
-def sendToScreen(a, b="", c="", size="14"):
-    """Send three lines of text to the OLED script."""
-    subprocess.Popen([
-        "python3", "/home/king/SmartChess/RaspberryPiCode/printToOLED.py",
-        "-a", a, "-b", b, "-c", c, "-s", size
-    ])
-
-
-# ---------------------------------------------------------
-# STOCKFISH CONTROL
-# ---------------------------------------------------------
-def engine_set_skill(level: int):
-    lvl = max(0, min(20, level))
-    engine.configure({"Skill Level": lvl})
-
-
-def engine_bestmove():
-    """Return best move from Stockfish (UCI format)."""
-    if board.is_game_over():
-        return None
-    result = engine.play(board, chess.engine.Limit(time=move_time_ms / 1000))
-    return result.move.uci()
-
-
-# ---------------------------------------------------------
-# SERIAL COMMUNICATION
-# ---------------------------------------------------------
-def getboard():
-    """Wait for Arduino board message beginning with 'heypi'."""
-    print("Waiting for command from the board...")
-    while True:
-        if ser.inWaiting() > 0:
-            msg = ser.readline().decode("utf-8").strip().lower()
-            if msg.startswith("heypixshutdown"):
-                shutdownPi()
-                return None
-            if msg.startswith("heypi"):
-                return msg[len("heypi"):]
-            # else ignore noise
-
-
-def sendtoboard(txt):
-    """Send message to Arduino hardware."""
-    payload = ("heyArduino" + txt).encode("utf-8")
-    time.sleep(0.1)
-    ser.write(payload + b"\n")
-    print("Sent to board:", txt)
-
-
-# ---------------------------------------------------------
-# ONLINE HUMAN (Adafruit) WRAPPER
-# ---------------------------------------------------------
-def putAdafruit(command):
-    print("Sending to remote:", command)
-    remotePlayer.stdin.write(command + "\n")
-    remotePlayer.stdin.flush()
-    # Wait for remote confirmation
-    while True:
-        line = remotePlayer.stdout.readline().strip()
-        if "piece moved" in line:
-            print("Remote ack:", line)
-            break
-
-
-def getAdafruit():
-    print("Waiting for remote move...")
-    remotePlayer.stdin.write("receive\n")
-    remotePlayer.stdin.write(colourChoice + "\n")
-    remotePlayer.stdin.flush()
-    move = remotePlayer.stdout.readline().strip()
-    print("Remote move:", move)
-    return move
-
-
-# ---------------------------------------------------------
-# GAME MANAGEMENT
-# ---------------------------------------------------------
-def reset_game():
-    global board, full_move_string
-    board = chess.Board()
-    full_move_string = ""
-    sendToScreen("NEW", "GAME")
-    return ""
-
-
-def apply_player_move(uci_move: str):
-    global full_move_string
-
+# -----------------------------
+# OLED Support
+# -----------------------------
+def send_to_screen(line1: str, line2: str = "", line3: str = "", size: str = "14") -> None:
+    """Fire-and-forget update to OLED (non-blocking)."""
     try:
-        move = chess.Move.from_uci(uci_move)
+        subprocess.Popen([
+            "python3", OLED_SCRIPT,
+            "-a", line1, "-b", line2, "-c", line3, "-s", size
+        ])
+    except Exception as e:
+        # Don't crash if OLED script is missing; just log.
+        print(f"[OLED] Warning: {e}", file=sys.stderr)
+
+# -----------------------------
+# Serial Helpers
+# -----------------------------
+def open_serial() -> serial.Serial:
+    ser = serial.Serial(SERIAL_PORT, BAUD, timeout=SERIAL_TIMEOUT)
+    ser.flush()
+    return ser
+
+def sendtoboard(ser: serial.Serial, text: str) -> None:
+    """Send a single line to Arduino, prefixed."""
+    payload = "heyArduino" + text
+    ser.write(payload.encode("utf-8") + b"\n")
+    print(f"[->Board] {payload}")
+
+def get_raw_from_board(ser: serial.Serial) -> Optional[str]:
+    """Return raw lowercased line or None on timeout."""
+    line = ser.readline()
+    if not line:
+        return None
+    try:
+        return line.decode("utf-8").strip().lower()
+    except UnicodeDecodeError:
+        return None
+
+def getboard(ser: serial.Serial) -> Optional[str]:
+    """
+    Wait for a line starting with 'heypi', strip the prefix and return payload.
+    - Returns None on timeout (so callers can decide to retry or continue).
+    - Triggers shutdown on 'heypixshutdown'.
+    """
+    while True:
+        raw = get_raw_from_board(ser)
+        if raw is None:
+            return None  # timeout, let caller handle
+        if raw.startswith("heypixshutdown"):
+            shutdown_pi(ser)
+            return None
+        if raw.startswith("heypi"):
+            payload = raw[5:]  # strip 'heypi'
+            print(f"[Board->] {raw}  | payload='{payload}'")
+            return payload
+        # Ignore noise/other traffic
+
+# -----------------------------
+# Engine Helpers
+# -----------------------------
+def open_engine(path: str) -> chess.engine.SimpleEngine:
+    try:
+        eng = chess.engine.SimpleEngine.popen_uci(
+            path,
+            timeout=ENGINE_TIMEOUT,
+            stderr=subprocess.DEVNULL  # avoid banner/warning deadlocks
+        )
+        return eng
+    except Exception as e:
+        print(f"[Engine] ERROR launching '{path}': {e}", file=sys.stderr)
+        sys.exit(1)
+
+def set_engine_skill(eng: chess.engine.SimpleEngine, level: int) -> int:
+    lvl = max(0, min(20, level))
+    try:
+        eng.configure({"Skill Level": lvl})
+    except chess.engine.EngineError:
+        # Some builds may not support Skill Level; continue anyway.
+        pass
+    return lvl
+
+def engine_bestmove(eng: chess.engine.SimpleEngine, brd: chess.Board, ms: int) -> Optional[str]:
+    if brd.is_game_over():
+        return None
+    limit = chess.engine.Limit(time=max(0.01, ms / 1000.0))
+    result = eng.play(brd, limit)
+    return result.move.uci() if result.move else None
+
+# -----------------------------
+# Game Management
+# -----------------------------
+def reset_game() -> None:
+    global board
+    board = chess.Board()
+    send_to_screen("NEW", "GAME", "", "30")
+    time.sleep(0.2)
+    send_to_screen("Please enter", "your move:", "")
+
+def parse_move_payload(payload: str) -> Optional[str]:
+    """
+    Accepts 'e2e4' or 'm e2e4' or 'me2e4' (tolerant).
+    Returns UCI string of length 4 or 5 (promotion).
+    """
+    p = payload.strip()
+    # Remove leading code letters and spaces (e.g., 'm e2e4', 'me2e4')
+    if p.startswith("m"):
+        p = p[1:].strip()
+    p = p.replace(" ", "")
+    # Now expect uci like 'e2e4' or 'e7e8q'
+    if 4 <= len(p) <= 5 and all(ch.isalnum() for ch in p):
+        return p
+    return None
+
+def apply_player_move(uci: str) -> bool:
+    """Validate and push player's move."""
+    try:
+        move = chess.Move.from_uci(uci)
     except ValueError:
-        sendtoboard("error_invalid_" + uci_move)
         return False
-
     if move not in board.legal_moves:
-        sendtoboard("error_illegal_" + uci_move)
         return False
-
     board.push(move)
-    full_move_string += " " + uci_move
     return True
 
+def report_game_over(ser: serial.Serial) -> None:
+    result = board.result(claim_draw=True)
+    reason = "checkmate" if board.is_checkmate() else \
+             "stalemate" if board.is_stalemate() else \
+             "draw" if board.is_insufficient_material() or board.can_claim_draw() else \
+             "gameover"
+    sendtoboard(ser, f"GameOver:{result}")
+    send_to_screen("Game Over", f"Result {result}", reason.upper())
 
-def play_stockfish_reply():
-    global full_move_string
+# -----------------------------
+# Mode: Player vs Stockfish
+# -----------------------------
+def run_stockfish_mode(ser: serial.Serial) -> None:
+    global skill_level, move_time_ms
 
-    best = engine_bestmove()
-    if best is None:
-        return None
-
-    move = chess.Move.from_uci(best)
-    board.push(move)
-    full_move_string += " " + best
-    return best
-
-
-# ---------------------------------------------------------
-# MAIN GAMEPLAY LOOP FOR STOCKFISH MODE
-# ---------------------------------------------------------
-def run_stockfish_mode():
-    global skill_level, move_time_ms, full_move_string
-
-    sendtoboard("ReadyStockfish")
-    sendToScreen("Choose computer", "difficulty (0-20)")
-    skill_level = int(getboard()[1:])
-    engine_set_skill(skill_level)
-
-    sendToScreen("Choose move time", "(ms)")
-    move_time_ms = int(getboard()[1:])
-
-    full_move_string = reset_game()
-    sendToScreen("Your move:")
-
+    sendtoboard(ser, "ReadyStockfish")
+    send_to_screen("Choose computer", "difficulty (0-20)", "")
+    # Read skill (tolerant: accept '', non-digits, timeouts)
     while True:
-        msg = getboard()
-        if not msg:
-            continue
-        code = msg[0]
+        msg = getboard(ser)
+        if msg is None:
+            continue  # timeout -> keep waiting
+        if msg.isdigit():
+            skill_level = int(msg)
+            break
+        # If Arduino sends something like 's5', extract digits:
+        digits = "".join(ch for ch in msg if ch.isdigit())
+        if digits:
+            skill_level = int(digits)
+            break
+        print(f"[Parse] Invalid skill payload '{msg}', waiting...")
 
-        if code == "n":
-            full_move_string = reset_game()
-            continue
+    skill_level = set_engine_skill(engine, skill_level)
+    print(f"[Engine] Skill set to {skill_level}")
 
-        if code == "m":
-            uci = msg[1:5]
-            if not apply_player_move(uci):
+    send_to_screen("Choose move time", f"(ms, now {move_time_ms})", "")
+    while True:
+        msg = getboard(ser)
+        if msg is None:
+            continue
+        digits = "".join(ch for ch in msg if ch.isdigit())
+        if digits:
+            move_time_ms = max(10, int(digits))
+            break
+        print(f"[Parse] Invalid time payload '{msg}', waiting...")
+    print(f"[Engine] Move time set to {move_time_ms} ms")
+
+    reset_game()
+
+    # Gameplay loop
+    while True:
+        if board.is_game_over():
+            report_game_over(ser)
+            # Wait for new game or power-cycle
+            msg = getboard(ser)
+            if msg and msg.startswith("n"):
+                reset_game()
                 continue
+            time.sleep(0.1)
+            continue
 
-            # Send player move to OLED
-            sendToScreen(uci[0:2] + "→" + uci[2:4], "", "Thinking...")
+        # Wait for a command from board
+        msg = getboard(ser)
+        if msg is None:
+            # timeout; continue listening
+            continue
 
-            # Engine reply
-            reply = play_stockfish_reply()
-            if reply:
-                sendtoboard("m" + reply)
-                sendToScreen(reply[0:2] + "→" + reply[2:4], "", "Your turn")
+        code = msg[:1]
+        if code == "n":
+            reset_game()
+            continue
 
+        # Expect a move
+        uci = parse_move_payload(msg)
+        if not uci:
+            sendtoboard(ser, f"error_invalid_{msg}")
+            continue
 
-# ---------------------------------------------------------
-# MAIN GAMEPLAY LOOP FOR ONLINE MODE
-# ---------------------------------------------------------
-def run_online_mode():
-    global colourChoice, full_move_string
+        # Player move
+        if not apply_player_move(uci):
+            sendtoboard(ser, f"error_illegal_{uci}")
+            send_to_screen("Illegal move!", "Enter new move…", "", "14")
+            continue
 
-    updateScript = ["python3", "/home/king/SmartChess/RaspberryPiCode/update-online.py"]
-    global remotePlayer
-    remotePlayer = subprocess.Popen(updateScript, stdin=subprocess.PIPE,
-                                    stdout=subprocess.PIPE, universal_newlines=True)
+        # Visual feedback
+        send_to_screen(f"{uci[0:2]} → {uci[2:4]}", "", "Thinking…", "20")
+        print(board)
 
-    sendtoboard("ReadyOnlinePlay")
-    sendToScreen("Select colour", "1=White 2=Black")
+        # Engine reply
+        reply = engine_bestmove(engine, board, move_time_ms)
+        if reply is None:
+            # No reply means game over
+            report_game_over(ser)
+            continue
 
-    colourChoice = getboard()
+        # Push engine move on the board state
+        board.push_uci(reply)
+        print(f"[Engine] {reply}")
+        print(board)
 
-    putAdafruit("ready")
-    full_move_string = reset_game()
+        # Notify Arduino and OLED
+        sendtoboard(ser, f"m{reply}")
+        send_to_screen(f"{reply[0:2]} → {reply[2:4]}", "", "Your turn", "20")
 
-    skipFirst = (colourChoice == "cblack")
+# -----------------------------
+# Mode: Online Human (Placeholder Hook)
+# -----------------------------
+def run_online_mode(ser: serial.Serial) -> None:
+    send_to_screen("Online mode", "Not implemented", "Use Stockfish mode")
+    sendtoboard(ser, "error_online_unimplemented")
+    # You can plug in your update-online.py + protocol here.
+    # Reuse parse_move_payload, apply_player_move, and sendtoboard helpers.
+
+# -----------------------------
+# Shutdown
+# -----------------------------
+def shutdown_pi(ser: Optional[serial.Serial]) -> None:
+    send_to_screen("Shutting down…", "Wait 20s then", "disconnect power")
+    time.sleep(2)
+    try:
+        subprocess.call("sudo nohup shutdown -h now", shell=True)
+    except Exception as e:
+        print(f"[Shutdown] {e}", file=sys.stderr)
+
+# -----------------------------
+# Main
+# -----------------------------
+def main():
+    global engine
+    print("[Init] Opening engine…")
+    engine = open_engine(STOCKFISH_PATH)
+    print("[Init] Engine OK")
+
+    print(f"[Init] Opening serial {SERIAL_PORT} @ {BAUD}…")
+    ser = open_serial()
+    print("[Init] Serial OK")
+
+    # Mode selection
+    sendtoboard(ser, "ChooseMode")
+    send_to_screen("Choose opponent:", "1) PC", "2) Remote")
 
     while True:
-        if skipFirst:
-            mv = getAdafruit()
-            apply_player_move(mv)
-            sendtoboard("m" + mv)
-            skipFirst = False
-
-        msg = getboard()
-        code = msg[0]
-
-        if code == "n":
-            full_move_string = reset_game()
-
-        if code == "m":
-            uci = msg[1:5]
-            if apply_player_move(uci):
-                putAdafruit(uci)
-                # Get remote reply
-                mv = getAdafruit()
-                apply_player_move(mv)
-                sendtoboard("m" + mv)
-
-
-# ---------------------------------------------------------
-# SYSTEM SHUTDOWN
-# ---------------------------------------------------------
-def shutdownPi():
-    sendToScreen("Shutting down...", "Please wait 20s")
-    time.sleep(3)
-    subprocess.call("sudo shutdown -h now", shell=True)
-
-
-# ---------------------------------------------------------
-# GAME MODE SELECTION
-# ---------------------------------------------------------
-def main():
-    sendtoboard("ChooseMode")
-    sendToScreen("Choose opponent:", "1) PC", "2) Remote")
-
-    mode = getboard()
-    print("Gameplay mode:", mode)
-
-    if mode == "stockfish":
-        run_stockfish_mode()
-    elif mode == "onlinehuman":
-        run_online_mode()
-    else:
-        sendtoboard("error_unknown_mode")
-
+        msg = getboard(ser)
+        if msg is None:
+            continue
+        mode = msg.strip()
+        print(f"[Mode] Requested: {mode}")
+        if mode == "stockfish" or mode == "1":
+            run_stockfish_mode(ser)
+        elif mode == "onlinehuman" or mode == "2":
+            run_online_mode(ser)
+        else:
+            sendtoboard(ser, "error_unknown_mode")
+            send_to_screen("Unknown mode", mode, "Send again")
 
 if __name__ == "__main__":
-    main()
-
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n[Exit] KeyboardInterrupt")
+    finally:
+        try:
+            if engine:
+                engine.quit()
+        except Exception:
+            pass
