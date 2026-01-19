@@ -367,5 +367,6 @@ if __name__ == "__main__":
         try:
             if engine:
                 engine.quit()
+                print("[Exit] Engine closed cleanly. ")
         except Exception:
             pass
