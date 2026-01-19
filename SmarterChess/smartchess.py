@@ -165,7 +165,7 @@ def send_hint_to_board(ser):
 # Game Management
 # -----------------------------
 def reset_game() -> None:
-    global board, gameover_reported
+    global board
     board = chess.Board()
     gameover_reported = False
     send_to_screen("NEW", "GAME", "", "30")
@@ -211,7 +211,7 @@ def report_game_over(ser: serial.Serial) -> None:
 # Mode: Player vs Stockfish
 # -----------------------------
 def run_stockfish_mode(ser: serial.Serial) -> None:
-    global skill_level, move_time_ms, gameover_reported
+    global skill_level, move_time_ms
 
     sendtoboard(ser, "ReadyStockfish")
     send_to_screen("Choose computer", "difficulty (0-20)", "")
@@ -246,7 +246,8 @@ def run_stockfish_mode(ser: serial.Serial) -> None:
     print(f"[Engine] Move time set to {move_time_ms} ms")
 
     reset_game()
-
+    gameover_reported = False
+    
     # Gameplay loop
     while True:
         if board.is_game_over():
@@ -257,6 +258,7 @@ def run_stockfish_mode(ser: serial.Serial) -> None:
             msg = getboard(ser)
             if msg and msg.startswith("n"):
                 reset_game()
+                gameover_reported = False
                 continue
             continue
 
@@ -296,7 +298,6 @@ def run_stockfish_mode(ser: serial.Serial) -> None:
         reply = engine_bestmove(engine, board, move_time_ms)
         if reply is None:
             # No reply means game over
-            report_game_over(ser)
             continue
 
         # Push engine move on the board state
