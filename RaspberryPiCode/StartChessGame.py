@@ -1,3 +1,4 @@
+#!/home/king/.pyenv/versions/chessenv2/bin/python
 # Interactive Chessboard - www.DIYmachines.co.uk
 # This codes includes large sections kindly shared on www.chess.fortherapy.co.uk, which itself incorporates alot of other peoples code.
 # Please feel free to modify, adapt and share. Any excisting licenses included must remain intact as well as including acknowledgment to those who have contribued.
@@ -12,7 +13,7 @@ import subprocess, time, serial
 maxchess = ChessBoard()
 
 if __name__ == '__main__':
-    ser = serial.Serial('/dev/pts/1', 115200, timeout=2)   # for Pi Zero use '/dev/ttyAMA0' and for others use '/dev/ttyUSB0'.
+    ser = serial.Serial('/dev/pts/4', 115200, timeout=2)   # for Pi Zero use '/dev/ttyAMA0' and for others use '/dev/ttyUSB0'.
     ser.flush()
     #print("SERIAL OPEN:", ser.port)
 
