@@ -3,12 +3,12 @@ Description=DIYM chess service
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/python2 -u StartChessGame.py
-WorkingDirectory=/home/pi/downloads
+ExecStart=/home/king/.pyenv/versions/chessenv2/bin/python -u StartChessGame.py
+WorkingDirectory=/home/king/downloads
 StandardOutput=inherit
 StandardError=inherit
 Restart=always
-User=pi
+User=king
 
 [Install]
 WantedBy=multi-user.target
