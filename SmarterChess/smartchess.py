@@ -1,5 +1,4 @@
-
-#/home/king/chessenv/bin/python
+#!/home/king/chessenv/bin/python
 # -*- coding: utf-8 -*-
 """
 Hardware Chess (Arduino + OLED) using python-chess + Stockfish
