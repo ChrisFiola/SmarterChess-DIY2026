@@ -43,7 +43,7 @@ BAUD = 115200
 SERIAL_TIMEOUT = 2.0
 
 STOCKFISH_PATH = "stockfish"   # full path if needed, e.g. '/usr/bin/stockfish'
-#ENGINE_TIMEOUT = 10.0          # seconds for UCI init
+ENGINE_TIMEOUT = 10.0          # seconds for UCI init
 DEFAULT_SKILL = 5              # 0..20
 DEFAULT_MOVE_TIME_MS = 800     # engine think time in ms
 OLED_SCRIPT = "/home/king/SmartChess/RaspberryPiCode/printToOLED.py"
