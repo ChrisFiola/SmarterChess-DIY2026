@@ -357,7 +357,7 @@ if gameplayMode == 'stockfish':
 elif gameplayMode == 'onlinehuman':
         print("Playing online chossen")
 
-        updateScriptToRun = ["python3", "/home/pi/SmartChess/RaspberryPiCode/update-online.py"]
+        updateScriptToRun = ["python3", "/home/king/SmartChess/RaspberryPiCode/update-online.py"]
 
 
         remotePlayer = subprocess.Popen(updateScriptToRun,
