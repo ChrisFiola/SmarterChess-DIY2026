@@ -54,8 +54,124 @@ OLED_SCRIPT = "/home/king/SmartChess/RaspberryPiCode/printToOLED.py"
 # -----------------------------
 engine: Optional[chess.engine.SimpleEngine] = None
 board = chess.Board()
+<<<<<<< HEAD
 skill_level = DEFAULT_SKILL
 move_time_ms = DEFAULT_MOVE_TIME_MS
+=======
+full_move_string = ""       # "e2e4 e7e5 ..."
+skill_level = 5
+move_time_ms = 1000
+remotePlayer = None         # For online mode
+colourChoice = None
+
+
+# ---------------------------------------------------------
+# OLED DISPLAY
+# ---------------------------------------------------------
+def sendToScreen(a, b="", c="", size="14"):
+    """Send three lines of text to the OLED script."""
+    subprocess.Popen([
+        "python3", "/home/king/SmartChess/RaspberryPiCode/printToOLED.py",
+        "-a", a, "-b", b, "-c", c, "-s", size
+    ])
+
+
+# ---------------------------------------------------------
+# STOCKFISH CONTROL
+# ---------------------------------------------------------
+def engine_set_skill(level: int):
+    lvl = max(0, min(20, level))
+    engine.configure({"Skill Level": lvl})
+
+
+def engine_bestmove():
+    """Return best move from Stockfish (UCI format)."""
+    if board.is_game_over():
+        return None
+    result = engine.play(board, chess.engine.Limit(time=move_time_ms / 1000))
+    return result.move.uci()
+
+
+# ---------------------------------------------------------
+# SERIAL COMMUNICATION
+# ---------------------------------------------------------
+def getboard():
+    """Wait for Arduino board message beginning with 'heypi'."""
+    print("Waiting for command from the board...")
+    while True:
+        if ser.inWaiting() > 0:
+            msg = ser.readline().decode("utf-8").strip().lower()
+            if msg.startswith("heypixshutdown"):
+                shutdownPi()
+                return None
+            if msg.startswith("heypi"):
+                return msg[len("heypi"):]
+            # else ignore noise
+
+
+def sendtoboard(txt):
+    """Send message to Arduino hardware."""
+    payload = ("heyArduino" + txt).encode("utf-8")
+    time.sleep(0.1)
+    ser.write(payload + b"\n")
+    print("Sent to board:", txt)
+
+
+def send_hint_to_board(ser):
+    """Compute a hint using Stockfish and send it to the Arduino."""
+    if board.is_game_over():
+        sendtoboard(ser, "hint_gameover")
+        send_to_screen("Game Over", "No hints", "")
+        return
+
+    # Ask Stockfish for a suggested move without committing it
+    info = engine.analyse(board, chess.engine.Limit(time=move_time_ms / 1000))
+    best_move = info["pv"][0].uci()
+
+    sendtoboard(ser, f"hint_{best_move}")
+    send_to_screen("Hint", best_move, "")
+    print(f"[Hint] {best_move}")
+
+
+# ---------------------------------------------------------
+# ONLINE HUMAN (Adafruit) WRAPPER
+# ---------------------------------------------------------
+def putAdafruit(command):
+    print("Sending to remote:", command)
+    remotePlayer.stdin.write(command + "\n")
+    remotePlayer.stdin.flush()
+    # Wait for remote confirmation
+    while True:
+        line = remotePlayer.stdout.readline().strip()
+        if "piece moved" in line:
+            print("Remote ack:", line)
+            break
+
+
+def getAdafruit():
+    print("Waiting for remote move...")
+    remotePlayer.stdin.write("receive\n")
+    remotePlayer.stdin.write(colourChoice + "\n")
+    remotePlayer.stdin.flush()
+    move = remotePlayer.stdout.readline().strip()
+    print("Remote move:", move)
+    return move
+
+
+# ---------------------------------------------------------
+# GAME MANAGEMENT
+# ---------------------------------------------------------
+def reset_game():
+    global board, full_move_string
+    board = chess.Board()
+    full_move_string = ""
+    sendToScreen("NEW", "GAME")
+    return ""
+
+
+def apply_player_move(uci_move: str):
+    global full_move_string
+>>>>>>> 45f02641561d5f8274e77dd92636536c8f523cc3
 
 # -----------------------------
 # OLED Support
@@ -213,8 +329,18 @@ def run_stockfish_mode(ser: serial.Serial) -> None:
             break
         print(f"[Parse] Invalid skill payload '{msg}', waiting...")
 
+<<<<<<< HEAD
     skill_level = set_engine_skill(engine, skill_level)
     print(f"[Engine] Skill set to {skill_level}")
+=======
+        if code == "n":
+            full_move_string = reset_game()
+            continue
+        
+        if code == "h":   # request for hint
+            send_hint_to_board(ser)
+            continue
+>>>>>>> 45f02641561d5f8274e77dd92636536c8f523cc3
 
     send_to_screen("Choose move time", f"(ms, now {move_time_ms})", "")
     while True:
