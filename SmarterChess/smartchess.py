@@ -116,7 +116,7 @@ def getboard(ser: serial.Serial) -> Optional[str]:
 # -----------------------------
 # Engine Helpers
 # -----------------------------
-def open_engine(STOCKFISH_PATH) -> chess.engine.SimpleEngine:
+def open_engine(path: str) -> chess.engine.SimpleEngine:
     try:
         eng = chess.engine.SimpleEngine.popen_uci(
             path,
