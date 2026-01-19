@@ -1,5 +1,5 @@
 
-#!/usr/bin/env python3
+#/home/king/chessenv/bin/ python
 # -*- coding: utf-8 -*-
 """
 Hardware Chess (Arduino + OLED) using python-chess + Stockfish
@@ -39,11 +39,11 @@ import chess.engine
 # -----------------------------
 # Configuration
 # -----------------------------
-SERIAL_PORT = "/dev/pts/9"     # e.g. '/dev/ttyUSB0' on real hardware
+SERIAL_PORT = "/dev/pts/4"     # e.g. '/dev/ttyUSB0' on real hardware
 BAUD = 115200
 SERIAL_TIMEOUT = 2.0
 
-STOCKFISH_PATH = "/usr/games/stockfish"   # full path if needed, e.g. '/usr/bin/stockfish'
+STOCKFISH_PATH = "stockfish"   # full path if needed, e.g. '/usr/bin/stockfish'
 ENGINE_TIMEOUT = 10.0          # seconds for UCI init
 DEFAULT_SKILL = 5              # 0..20
 DEFAULT_MOVE_TIME_MS = 800     # engine think time in ms
