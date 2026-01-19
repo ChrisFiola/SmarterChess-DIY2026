@@ -12,8 +12,9 @@ import subprocess, time, serial
 maxchess = ChessBoard()
 
 if __name__ == '__main__':
-    ser = serial.Serial('/dev/ttyAMA0', 9600, timeout=1)   # for Pi Zero use '/dev/ttyAMA0' and for others use '/dev/ttyUSB0'.
+    ser = serial.Serial('/dev/pts/1', 115200, timeout=2)   # for Pi Zero use '/dev/ttyAMA0' and for others use '/dev/ttyUSB0'.
     ser.flush()
+    #print("SERIAL OPEN:", ser.port)
 
 # initiate stockfish chess engine
 
@@ -85,8 +86,9 @@ def getboard():
     """ gets a text string from the board """
     print("\n Waiting for command from the Board")
     while True:
-        if ser.in_waiting > 0:
+        if ser.inWaiting > 0:
             btxt = ser.readline().decode('utf-8').rstrip().lower()
+            #print("RAW SERIAL:", repr(btxt))
             if btxt.startswith('heypixshutdown'):
                 shutdownPi()
                 break
@@ -286,7 +288,7 @@ def shutdownPi():
 
 def sendToScreen(line1,line2,line3,size = '14'):
     """Send three lines of text to the small OLED screen"""
-    screenScriptToRun = ["python3", "/home/pi/SmartChess/RaspberryPiCode/printToOLED.py", '-a '+ line1, '-b '+ line2, '-c '+ line3, '-s '+ size]
+    screenScriptToRun = ["python3", "/home/king/SmartChess/RaspberryPiCode/printToOLED.py", '-a '+ line1, '-b '+ line2, '-c '+ line3, '-s '+ size]
     subprocess.Popen(screenScriptToRun)
 
 #Choose a moe of gameplay on the Arduino

@@ -1,4 +1,4 @@
-#
+#!/home/king/.pyenv/versions/chessenv2/bin/python
 #This program plays chess using Stockfish the open source chess engine, using the ChessBoard library to manage the board.
 # it is written in Python 2.7 because chessboard is. Python 3 might work but I havn't tested it.
 # it assumes you have got the python libraries chessboard, subprocess and time
