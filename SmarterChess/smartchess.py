@@ -30,6 +30,7 @@ import sys
 import time
 import subprocess
 from typing import Optional
+import traceback
 
 import serial
 import chess
@@ -118,15 +119,20 @@ def getboard(ser: serial.Serial) -> Optional[str]:
 # -----------------------------
 def open_engine(path: str) -> chess.engine.SimpleEngine:
     try:
+        print(f"[Engine] Launching: {path!r}")
         eng = chess.engine.SimpleEngine.popen_uci(
             path,
             #timeout=ENGINE_TIMEOUT,
-            stderr=subprocess.DEVNULL  # avoid banner/warning deadlocks
+            stderr=None  # avoid banner/warning deadlocks
         )
         return eng
     except Exception as e:
-        print(f"[Engine] ERROR launching '{path}': {e}", file=sys.stderr)
+        print(f"[Engine] ERROR launching {path!r}")
+        print(f"[Engine] Exception type: {type(e).__name__}")
+        print(f"[Engine] Exception repr: {repr(e)}")
+        traceback.print_exc()
         sys.exit(1)
+
 
 def set_engine_skill(eng: chess.engine.SimpleEngine, level: int) -> int:
     lvl = max(0, min(20, level))
