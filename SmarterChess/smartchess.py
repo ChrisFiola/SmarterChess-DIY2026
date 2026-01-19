@@ -211,7 +211,7 @@ def report_game_over(ser: serial.Serial) -> None:
 # Mode: Player vs Stockfish
 # -----------------------------
 def run_stockfish_mode(ser: serial.Serial) -> None:
-    global skill_level, move_time_ms
+    global skill_level, move_time_ms, gameover_reported
 
     sendtoboard(ser, "ReadyStockfish")
     send_to_screen("Choose computer", "difficulty (0-20)", "")
