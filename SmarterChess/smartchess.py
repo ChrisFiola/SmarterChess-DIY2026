@@ -120,7 +120,7 @@ def open_engine(path: str) -> chess.engine.SimpleEngine:
     try:
         eng = chess.engine.SimpleEngine.popen_uci(
             path,
-            timeout=ENGINE_TIMEOUT,
+            #timeout=ENGINE_TIMEOUT,
             stderr=subprocess.DEVNULL  # avoid banner/warning deadlocks
         )
         return eng
