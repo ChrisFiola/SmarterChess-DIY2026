@@ -280,7 +280,7 @@ def run_stockfish_mode(ser: serial.Serial) -> None:
             continue
 
         
-        if code == "hint":   # request for hint
+        if msg == "hint" or msg.startswith("hint"):   # request for hint
             send_hint_to_board(ser)
             continue
 
