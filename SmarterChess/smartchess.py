@@ -231,9 +231,9 @@ def run_local_mode(ser: serial.Serial) -> None:
     send_to_screen("Local 2-Player", "Hints enabled", "Press n=new game","")
 
     # Optional: allow setting hint strength/time (reusing your existing UI flow)
-    send_to_screen("Hint difficulty", "0-20 (optional)", "","")
-    t0 = time.time()
-    while time.time() - t0 < 8:  # short window to set (optional)
+    send_to_screen("Hint strength", "0-20", "","")
+    
+    while True:  # short window to set (optional)
         msg = getboard(ser)
         if msg is None:
             continue
@@ -241,16 +241,19 @@ def run_local_mode(ser: serial.Serial) -> None:
             reset_game()
             break
         if msg.isdigit():
-            skill_level = set_engine_skill(engine, int(msg))
+            skill_level = int(msg)
             break
         digits = "".join(ch for ch in msg if ch.isdigit())
         if digits:
-            skill_level = set_engine_skill(engine, int(digits))
+            skill_level = int(digits)
             break
+        print(f"[Parse] Invalid skill payload '{msg}', waiting...")
+
+    skill_level = set_engine_skill(engine, skill_level)
+    print(f"[Engine] Skill set to {skill_level}")
 
     send_to_screen("Hint think time", f"ms (now {move_time_ms})", "","")
-    t0 = time.time()
-    while time.time() - t0 < 8:  # short window to set (optional)
+    while True:  # short window to set (optional)
         msg = getboard(ser)
         if msg is None:
             continue
@@ -261,6 +264,8 @@ def run_local_mode(ser: serial.Serial) -> None:
         if digits:
             move_time_ms = max(10, int(digits))
             break
+        print(f"[Parse] Invalid time payload '{msg}', waiting...")
+    print(f"[Engine] Move time set to {move_time_ms} ms")
 
     reset_game()
     gameover_reported = False
