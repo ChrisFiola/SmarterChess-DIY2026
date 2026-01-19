@@ -110,6 +110,22 @@ def sendtoboard(txt):
     print("Sent to board:", txt)
 
 
+def send_hint_to_board(ser):
+    """Compute a hint using Stockfish and send it to the Arduino."""
+    if board.is_game_over():
+        sendtoboard(ser, "hint_gameover")
+        send_to_screen("Game Over", "No hints", "")
+        return
+
+    # Ask Stockfish for a suggested move without committing it
+    info = engine.analyse(board, chess.engine.Limit(time=move_time_ms / 1000))
+    best_move = info["pv"][0].uci()
+
+    sendtoboard(ser, f"hint_{best_move}")
+    send_to_screen("Hint", best_move, "")
+    print(f"[Hint] {best_move}")
+
+
 # ---------------------------------------------------------
 # ONLINE HUMAN (Adafruit) WRAPPER
 # ---------------------------------------------------------
@@ -202,6 +218,10 @@ def run_stockfish_mode():
 
         if code == "n":
             full_move_string = reset_game()
+            continue
+        
+        if code == "h":   # request for hint
+            send_hint_to_board(ser)
             continue
 
         if code == "m":
