@@ -456,7 +456,7 @@ def main():
 
     # Mode selection
     sendtoboard(ser, "ChooseMode")
-    send_to_screen("Choose opponent:", "1) PC", "2) Remote", "3) Local","", "14")
+    send_to_screen("Choose opponent:", "1) PC", "2) Remote", "3) Local", "14")
     time.sleep(1)
 
 
