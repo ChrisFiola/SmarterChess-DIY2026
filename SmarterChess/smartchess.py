@@ -165,8 +165,9 @@ def send_hint_to_board(ser):
 # Game Management
 # -----------------------------
 def reset_game() -> None:
-    global board
+    global board, gameover_reported
     board = chess.Board()
+    gameover_reported = False
     send_to_screen("NEW", "GAME", "", "30")
     time.sleep(0.2)
     send_to_screen("Please enter", "your move:", "")
@@ -249,13 +250,14 @@ def run_stockfish_mode(ser: serial.Serial) -> None:
     # Gameplay loop
     while True:
         if board.is_game_over():
-            report_game_over(ser)
+            if not gameover_reported:
+                report_game_over(ser)
+                gameover_reported = True
             # Wait for new game or power-cycle
             msg = getboard(ser)
             if msg and msg.startswith("n"):
                 reset_game()
                 continue
-            time.sleep(0.1)
             continue
 
         # Wait for a command from board
