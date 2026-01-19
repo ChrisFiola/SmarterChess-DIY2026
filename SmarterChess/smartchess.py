@@ -39,7 +39,7 @@ import chess.engine
 # -----------------------------
 # Configuration
 # -----------------------------
-SERIAL_PORT = "/dev/pts/6"     # e.g. '/dev/ttyUSB0' on real hardware
+SERIAL_PORT = "/dev/pts/3"     # e.g. '/dev/ttyUSB0' on real hardware
 BAUD = 115200
 SERIAL_TIMEOUT = 2.0
 
@@ -470,7 +470,7 @@ def main():
             run_stockfish_mode(ser)
         elif mode == "onlinehuman" or mode == "2":
             run_online_mode(ser)
-        elif mode == "local" or mode == "3"):
+        elif mode == "local" or mode == "3":
             run_local_mode(ser)
         else:
             sendtoboard(ser, "error_unknown_mode")
