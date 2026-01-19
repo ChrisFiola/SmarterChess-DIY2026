@@ -167,7 +167,6 @@ def send_hint_to_board(ser):
 def reset_game() -> None:
     global board
     board = chess.Board()
-    gameover_reported = False
     send_to_screen("NEW", "GAME", "", "30")
     time.sleep(0.2)
     send_to_screen("Please enter", "your move:", "")
@@ -271,10 +270,11 @@ def run_stockfish_mode(ser: serial.Serial) -> None:
         code = msg[:1]
         if code == "n":
             reset_game()
+            gameover_reported = False
             continue
 
         
-        if code == "h":   # request for hint
+        if code == "hint":   # request for hint
             send_hint_to_board(ser)
             continue
 
