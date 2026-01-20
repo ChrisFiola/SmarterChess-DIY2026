@@ -27,25 +27,6 @@ for opt, arg in opts:
 
 
 # -------------------------------
-# FORK CHILD BEFORE INIT
-# Parent exits immediately after drawing.
-# Child keeps LCD object alive.
-# -------------------------------
-pid = os.fork()
-
-if pid > 0:
-    # Parent continues normally → will draw then exit
-    pass
-else:
-    # Child ➜ becomes the “keeper”, does nothing but wait forever
-    while True:
-        try:
-            os.read(0, 1)
-        except:
-            pass
-
-
-# -------------------------------
 # Waveshare display init
 # -------------------------------
 disp = LCD_1inch14.LCD_1inch14()
@@ -80,6 +61,3 @@ for line in lines:
     y += h + 6
 
 disp.ShowImage(img)
-
-if pid > 0:
-	sys.exit(0)

@@ -32,6 +32,7 @@ import subprocess
 from typing import Optional
 import traceback
 import random
+import os
 
 import serial
 import chess
@@ -40,7 +41,7 @@ import chess.engine
 # -----------------------------
 # Configuration
 # -----------------------------
-SERIAL_PORT = "/dev/pts/5"     # e.g. '/dev/ttyUSB0' on real hardware
+SERIAL_PORT = "/dev/pts/2"     # e.g. '/dev/ttyUSB0' on real hardware
 BAUD = 115200
 SERIAL_TIMEOUT = 2.0
 
@@ -61,6 +62,27 @@ human_is_white = True
 # -----------------------------
 # OLED Support
 # -----------------------------
+def ensure_display_server_running():
+    PIPE = "/tmp/lcdpipe"
+    if not os.path.exists(PIPE):
+        os.mkfifo(PIPE)
+
+    # Check if server already running
+    ps = subprocess.Popen("ps aux | grep display_server.py | grep -v grep",
+                          shell=True, stdout=subprocess.PIPE)
+    out = ps.stdout.read().decode()
+
+    if "display_server.py" in out:
+        return  # already running
+
+    # Start it in background
+    subprocess.Popen(
+        ["python3", "/home/king/SmarterChess-DIY2026/RaspberryPiCode/display_server.py"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL
+    )
+
+
 def send_to_screen(line1: str, line2: str = "", line3: str = "", line4: str ="", size: str = "14") -> None:
     """Fire-and-forget update to OLED (non-blocking)."""
     try:
@@ -521,6 +543,7 @@ def shutdown_pi(ser: Optional[serial.Serial]) -> None:
 # Main
 # -----------------------------
 def main():
+    ensure_display_server_running()
     global engine
     print("[Init] Opening engine…")
     engine = open_engine(STOCKFISH_PATH)
