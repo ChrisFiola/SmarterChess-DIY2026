@@ -565,8 +565,8 @@ def main():
 	start_display_server()
 	ensure_display_server_running()
 	print("[Init] Display server running")
-    global engine
-    print("[Init] Opening engine…")
+	global engine
+	print("[Init] Opening engine…")
 	send_to_screen("[Init]", "Opening engine..", "", "", "14")
     engine = open_engine(STOCKFISH_PATH)
     print("[Init] Engine OK")
