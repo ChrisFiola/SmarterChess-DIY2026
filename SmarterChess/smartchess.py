@@ -65,16 +65,15 @@ human_is_white = True
 # OLED Support
 # -----------------------------
 
-
-def wait_for_display_server_ready(timeout=5.0):
+def wait_for_display_server_ready():
     READY_FLAG = "/tmp/display_server_ready"
-    start = time.time()
-    while time.time() - start < timeout:
-        if os.path.exists(READY_FLAG):
-            return True
+
+    print("[Init] Waiting for display server to become ready...")
+    
+    # Loop forever until ready file appears
+    while not os.path.exists(READY_FLAG):
         time.sleep(0.05)
-    print("[Init] ERROR: display server did not become ready")
-    return False
+    print("[Init] Display server is ready.")
 
 
 def restart_display_server():
@@ -695,9 +694,9 @@ def main():
 
 
 if __name__ == "__main__":
+    restart_display_server()
+    wait_for_display_server_ready()
     try:
-        restart_display_server()
-        wait_for_display_server_ready()
         main()
     except KeyboardInterrupt:
         print("\n[Exit] KeyboardInterrupt")
