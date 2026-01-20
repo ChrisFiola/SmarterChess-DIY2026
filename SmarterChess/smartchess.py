@@ -565,7 +565,7 @@ def run_stockfish_mode(ser: serial.Serial) -> None:
         # Player move
         if not apply_player_move(uci):
             sendtoboard(ser, f"error_illegal_{uci}")
-            send_to_screen("Illegal move!", "Enter new move…")
+            send_to_screen("Illegal move!", uci, f"{turn_name()} again")
             continue
 
         # Visual feedback
