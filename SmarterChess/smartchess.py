@@ -122,20 +122,30 @@ def getboard(ser: serial.Serial) -> Optional[str]:
 # Engine Helpers
 # -----------------------------
 def open_engine(path: str) -> chess.engine.SimpleEngine:
-    try:
-        print(f"[Engine] Launching: {path!r}")
-        eng = chess.engine.SimpleEngine.popen_uci(
-            path,
-            #timeout=ENGINE_TIMEOUT,
-            stderr=None  # avoid banner/warning deadlocks
-        )
-        return eng
-    except Exception as e:
-        print(f"[Engine] ERROR launching {path!r}")
-        print(f"[Engine] Exception type: {type(e).__name__}")
-        print(f"[Engine] Exception repr: {repr(e)}")
-        traceback.print_exc()
-        sys.exit(1)
+    """Try repeatedly to open Stockfish until it succeeds."""
+    while True:
+        try:
+            print(f"[Engine] Launching: {path!r}")
+            eng = chess.engine.SimpleEngine.popen_uci(
+                path,
+                #timeout=ENGINE_TIMEOUT,
+                stderr=None  # avoid banner/warning deadlocks
+            )
+            return eng
+            
+        except Exception as e:
+            print(f"[Engine] ERROR launching {path!r}")
+            print(f"[Engine] Exception type: {type(e).__name__}")
+            print(f"[Engine] Exception repr: {repr(e)}")
+            traceback.print_exc()
+
+            
+            # Retry delay
+            for i in range(5, 0, -1):
+                print(f"[Engine] Retry in {i}…")
+                time.sleep(1)
+
+            sys.exit(1)
 
 
 def set_engine_skill(eng: chess.engine.SimpleEngine, level: int) -> int:
@@ -160,10 +170,9 @@ def engine_move_and_send(ser: serial.Serial) -> None:
     if reply is None:
         return
     board.push_uci(reply)
-    print(f"[Engine] {reply}")
-    print(board)
     sendtoboard(ser, f"m{reply}")
     send_to_screen(f"{reply[0:2]} → {reply[2:4]}", "", "Your turn", "", "20")
+    print("[Engine]", reply)
 
 
 def engine_bestmove(eng: chess.engine.SimpleEngine, brd: chess.Board, ms: int) -> Optional[str]:
@@ -346,10 +355,13 @@ def run_local_mode(ser: serial.Serial) -> None:
         # Optional: inform Arduino whose turn (if you want Arduino UI updates)
         sendtoboard(ser, f"turn_{'white' if board.turn == chess.WHITE else 'black'}")
 
+
 def run_stockfish_mode(ser: serial.Serial) -> None:
-    global skill_level, move_time_ms
+    global skill_level, move_time_ms, human_is_white
 
     sendtoboard(ser, "ReadyStockfish")
+
+    # Difficulty
     send_to_screen("Choose computer", "difficulty (0-20)", "","")
     # Read skill (tolerant: accept '', non-digits, timeouts)
     while True:
@@ -369,6 +381,7 @@ def run_stockfish_mode(ser: serial.Serial) -> None:
     skill_level = set_engine_skill(engine, skill_level)
     print(f"[Engine] Skill set to {skill_level}")
 
+    # Time
     send_to_screen("Choose move time", f"(ms, now {move_time_ms})", "","")
     while True:
         msg = getboard(ser)
@@ -382,7 +395,7 @@ def run_stockfish_mode(ser: serial.Serial) -> None:
     print(f"[Engine] Move time set to {move_time_ms} ms")
 
     
-    # side selection
+    # Side selection
     send_to_screen("Choose side", "w=White, b=Black", "", "")
     while True:
         msg = getboard(ser)
