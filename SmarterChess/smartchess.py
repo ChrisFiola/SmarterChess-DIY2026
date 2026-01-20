@@ -56,6 +56,7 @@ engine: Optional[chess.engine.SimpleEngine] = None
 board = chess.Board()
 skill_level = DEFAULT_SKILL
 move_time_ms = DEFAULT_MOVE_TIME_MS
+human_is_white = True
 
 # -----------------------------
 # OLED Support
@@ -146,6 +147,25 @@ def set_engine_skill(eng: chess.engine.SimpleEngine, level: int) -> int:
         pass
     return lvl
 
+
+def is_engine_turn() -> bool:
+    """Returns True if it's the engine's turn to move."""
+    return (board.turn == chess.WHITE and not human_is_white) or \
+           (board.turn == chess.BLACK and human_is_white)
+
+
+def engine_move_and_send(ser: serial.Serial) -> None:
+    """Make the engine play one move, push it, and notify the Arduino + OLED."""
+    reply = engine_bestmove(engine, board, move_time_ms)
+    if reply is None:
+        return
+    board.push_uci(reply)
+    print(f"[Engine] {reply}")
+    print(board)
+    sendtoboard(ser, f"m{reply}")
+    send_to_screen(f"{reply[0:2]} → {reply[2:4]}", "", "Your turn", "", "20")
+
+
 def engine_bestmove(eng: chess.engine.SimpleEngine, brd: chess.Board, ms: int) -> Optional[str]:
     if brd.is_game_over():
         return None
@@ -176,7 +196,7 @@ def send_hint_to_board(ser):
 def reset_game() -> None:
     global board
     board = chess.Board()
-    send_to_screen("NEW", "GAME", "","" "30")
+    send_to_screen("NEW", "GAME", "","", "30")
     time.sleep(0.2)
     send_to_screen("Please enter", "your move:", "","")
 
@@ -361,9 +381,31 @@ def run_stockfish_mode(ser: serial.Serial) -> None:
         print(f"[Parse] Invalid time payload '{msg}', waiting...")
     print(f"[Engine] Move time set to {move_time_ms} ms")
 
+    
+    # side selection
+    send_to_screen("Choose side", "w=White, b=Black", "", "")
+    while True:
+        msg = getboard(ser)
+        if msg is None:
+            continue
+        m = msg.strip().lower()
+        if m.startswith("w") or m == "1":
+            human_is_white = True
+            break
+        if m.startswith("b") or m == "2":
+            human_is_white = False
+            break
+        print(f"[Parse] Invalid color payload '{msg}', waiting...")
+
     reset_game()
     gameover_reported = False
+
     
+    # If engine starts (human chose black), let engine move now
+    if is_engine_turn():
+        send_to_screen("Engine", "Thinking…", "", "", "20")
+        engine_move_and_send(ser)
+
     # Gameplay loop
     while True:
         if board.is_game_over():
@@ -375,7 +417,16 @@ def run_stockfish_mode(ser: serial.Serial) -> None:
             if msg and msg.startswith("n"):
                 reset_game()
                 gameover_reported = False
+                
+                if is_engine_turn():
+                    send_to_screen("Engine", "Thinking…", "", "", "20")
+                    engine_move_and_send(ser)
                 continue
+            
+        # If it's engine's turn, move automatically
+        if is_engine_turn():
+            send_to_screen("Engine", "Thinking…", "", "", "20")
+            engine_move_and_send(ser)
             continue
 
         # Wait for a command from board
@@ -388,6 +439,11 @@ def run_stockfish_mode(ser: serial.Serial) -> None:
         if code == "n":
             reset_game()
             gameover_reported = False
+            
+            if is_engine_turn():
+                send_to_screen("Engine", "Thinking…", "", "", "20")
+                engine_move_and_send(ser)
+
             continue
 
         
