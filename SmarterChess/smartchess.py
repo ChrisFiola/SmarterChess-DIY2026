@@ -685,7 +685,7 @@ def main():
 if __name__ == "__main__":
     try:
         restart_display_server()
-        wait_for_display_server(
+        wait_for_display_server()
         main()
     except KeyboardInterrupt:
         print("\n[Exit] KeyboardInterrupt")
