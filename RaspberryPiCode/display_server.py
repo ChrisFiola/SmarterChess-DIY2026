@@ -14,7 +14,7 @@ disp.Init()
 disp.bl_DutyCycle(80)
 
 W, H = disp.width, disp.height
-FONT = "/home/king/SmarterChess-DIY2026/RaspberryPiCode/Font/Font00.ttf"
+FONT = "~/LCD_Module_RPI_code/RaspberryPi/python/Font/Font00.ttf"
 
 def draw_text(lines, size):
     img = Image.new("RGB", (W, H), "BLACK")
