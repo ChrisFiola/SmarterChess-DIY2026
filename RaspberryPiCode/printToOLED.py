@@ -4,7 +4,7 @@ import sys, getopt
 PIPE = "/tmp/lcdpipe"
 
 text1 = text2 = text3 = text4 = ""
-textSize = 30
+textSize = None  # auto-set if not provided
 
 opts, args = getopt.getopt(sys.argv[1:], "ha:b:c:d:s:")
 
@@ -19,6 +19,19 @@ for opt, arg in opts:
         text4 = arg
     elif opt == "-s":
         textSize = int(arg)
+
+# Auto-size text if not manually given
+line_count = len([t for t in [text1, text2, text3, text4] if t])
+
+if textSize is None:
+    if line_count == 1:
+        textSize = 48
+    elif line_count == 2:
+        textSize = 36
+    elif line_count == 3:
+        textSize = 30
+    else:
+        textSize = 26   # safe for 4 lines
 
 msg = f"{text1}|{text2}|{text3}|{text4}|{textSize}"
 
