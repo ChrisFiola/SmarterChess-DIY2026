@@ -31,7 +31,7 @@ for opt, arg in opts:
 # Auto-size text if not manually given
 line_count = len([t for t in [text1, text2, text3, text4] if t])
 
-if textSize is None:
+if textSize is 0:
     if line_count == 1:
         textSize = 48
     elif line_count == 2:
