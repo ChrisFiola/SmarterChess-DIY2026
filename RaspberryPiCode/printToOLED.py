@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 import sys, getopt
 import board
@@ -15,48 +16,36 @@ textLine2 = ""
 textLine3 = ""
 textLine4 = ""
 textSize = 24
-portrait = False  # default landscape (240x135)
+portrait = False
 
 opts, args = getopt.getopt(
     argv, "ha:b:c:d:s:", ["firstLine=", "secondLine=", "thirdLine=", "fourthLine=", "textSize=", "portrait"]
 )
 
 for opt, arg in opts:
-    if opt == "-h":
-        print("Usage: printToOLED.py -a <line1> -b <line2> -c <line3> -d <line4> -s <size> [--portrait]")
-        sys.exit(0)
-    elif opt in ("-a", "--firstLine"):
-        textLine1 = arg
-    elif opt in ("-b", "--secondLine"):
-        textLine2 = arg
-    elif opt in ("-c", "--thirdLine"):
-        textLine3 = arg
-    elif opt in ("-d", "--fourthLine"):
-        textLine4 = arg
-    elif opt in ("-s", "--textSize"):
-        textSize = int(arg)
-    elif opt == "--portrait":
-        portrait = True
+    if opt == "-a": textLine1 = arg
+    elif opt == "-b": textLine2 = arg
+    elif opt == "-c": textLine3 = arg
+    elif opt == "-d": textLine4 = arg
+    elif opt == "-s": textSize = int(arg)
+    elif opt == "--portrait": portrait = True
 
 # --------------------------
 # ST7789 SPI Setup (1.14" 240x135)
 # --------------------------
-spi = board.SPI()  # SCLK=GPIO11, MOSI=GPIO10
+spi = board.SPI()
 
-cs_pin = digitalio.DigitalInOut(board.CE0)     # GPIO8
-dc_pin = digitalio.DigitalInOut(board.D25)     # GPIO25
-reset_pin = digitalio.DigitalInOut(board.D27)  # GPIO27
+cs_pin = digitalio.DigitalInOut(board.CE0)
+dc_pin = digitalio.DigitalInOut(board.D25)
+reset_pin = digitalio.DigitalInOut(board.D27)
 
-# Adafruit 1.14" ST7789: 240x135 active area with controller offsets
 X_OFFSET = 53
 Y_OFFSET = 40
 
 if not portrait:
-    # Landscape: 240x135
     WIDTH, HEIGHT = 240, 135
-    ROTATION = 270  # choose 0/90/180/270 depending on connector side preference
+    ROTATION = 270
 else:
-    # Portrait: 135x240
     WIDTH, HEIGHT = 135, 240
     ROTATION = 0
 
@@ -79,21 +68,28 @@ display = ST7789(
 image = Image.new("RGB", (WIDTH, HEIGHT), "black")
 draw = ImageDraw.Draw(image)
 
-# Robust font loading
 try:
     font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", textSize)
-except Exception:
+except:
     font = ImageFont.load_default()
 
 lines = [textLine1, textLine2, textLine3, textLine4]
-y = 5
 
+y = 5
 for line in lines:
     if not line:
-        y += textSize + 6
+        y += textSize + 10
         continue
-    # Centered text
-    w, h = draw.textsize(line, font=font)
+
+    # Pillow 10+ compatible text measurement
+    bbox = draw.textbbox((0, 0), line, font=font)
+    w = bbox[2] - bbox[0]
+    h = bbox[3] - bbox[1]
+
     draw.text(((WIDTH - w) // 2, y), line, font=font, fill="white")
     y += h + 8
 
+# --------------------------
+# Display it
+# --------------------------
+display.image(image)
