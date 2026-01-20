@@ -62,6 +62,24 @@ human_is_white = True
 # -----------------------------
 # OLED Support
 # -----------------------------
+
+def start_display_server():
+    # check if already running
+    ps = subprocess.Popen(
+        "ps aux | grep display_server.py | grep -v grep",
+        shell=True, stdout=subprocess.PIPE
+    )
+    out = ps.stdout.read().decode()
+    if "display_server.py" in out:
+        return  # already running
+
+    # start it
+    subprocess.Popen(
+        ["python3", "/home/king/SmarterChess-DIY2026/RaspberryPiCode/display_server.py"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL
+    )
+
 def ensure_display_server_running():
     PIPE = "/tmp/lcdpipe"
     if not os.path.exists(PIPE):
@@ -543,15 +561,22 @@ def shutdown_pi(ser: Optional[serial.Serial]) -> None:
 # Main
 # -----------------------------
 def main():
-    ensure_display_server_running()
+	print("[Init] Starting display server")
+	start_display_server()
+	ensure_display_server_running()
+	print("[Init] Display server running")
     global engine
     print("[Init] Opening engine…")
+	send_to_screen("[Init]", "Opening engine..", "", "", "14")
     engine = open_engine(STOCKFISH_PATH)
     print("[Init] Engine OK")
+	send_to_screen("[Init]", "Engine OK", "", "", "14")
 
     print(f"[Init] Opening serial {SERIAL_PORT} @ {BAUD}…")
+	send_to_screen("[Init]", "Opening Serial..", "", "", "14")
     ser = open_serial()
     print("[Init] Serial OK")
+	send_to_screen("[Init]", "Serial OK", "", "", "14")
 
     # Mode selection
     sendtoboard(ser, "ChooseMode")
