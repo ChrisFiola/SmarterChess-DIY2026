@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 import sys, getopt
+from PIL import ImageFont, ImageDraw, Image
 
 PIPE = "/tmp/lcdpipe"
+FONT_PATH = "/home/king/SmarterChess-DIY2026/Font/Font00.ttf"
 
 text1 = text2 = text3 = text4 = ""
 textSize = None  # auto-set if not provided
@@ -24,22 +26,47 @@ for opt, arg in opts:
         else:
             textSize = None      # let auto-size decide
 
+# -----------------------------
+# AUTO-FIT TEXT SIZE
+# -----------------------------
+DISPLAY_W = 240
+DISPLAY_H = 135
 
+def fits(size):
+    """Return True if all lines fit inside 240×135 using this size."""
+    try:
+        font = ImageFont.truetype(FONT_PATH, size)
+    except:
+        font = ImageFont.load_default()
 
-# Auto-size text if not manually given
-line_count = len([t for t in [text1, text2, text3, text4] if t])
+    total_h = 0
+    for line in lines:
+        bbox = font.getbbox(line)
+        w = bbox[2] - bbox[0]
+        h = bbox[3] - bbox[1]
+        if w > DISPLAY_W - 5:   # keep small margin
+            return False
+        total_h += h + 8        # interline spacing
 
-if textSize is None:
-    if line_count == 1:
-        textSize = 48
-    elif line_count == 2:
-        textSize = 36
-    elif line_count == 3:
-        textSize = 30
+    return total_h <= DISPLAY_H
+
+# Forced size overrides auto-fit
+if forced_size is not None:
+    final_size = forced_size
+else:
+    # Try from big to small
+    for size in range(60, 10, -2):
+        if fits(size):
+            final_size = size
+            break
     else:
-        textSize = 26   # safe for 4 lines
+        final_size = 20  # fallback
 
-msg = f"{text1}|{text2}|{text3}|{text4}|{textSize}"
+# -----------------------------
+# SEND TO DISPLAY SERVER
+# -----------------------------
+msg = f"{text1}|{text2}|{text3}|{text4}|{final_size}"
 
 with open(PIPE, "w") as f:
     f.write(msg + "\n")
+
