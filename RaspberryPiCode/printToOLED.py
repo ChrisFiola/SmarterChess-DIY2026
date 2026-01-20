@@ -51,8 +51,8 @@ def fits(size):
     return total_h <= DISPLAY_H
 
 # Forced size overrides auto-fit
-if forced_size is not None:
-    final_size = forced_size
+if textSize is not None:
+    final_size = textSize
 else:
     # Try from big to small
     for size in range(60, 10, -2):
