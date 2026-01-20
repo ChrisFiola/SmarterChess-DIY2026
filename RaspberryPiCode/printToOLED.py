@@ -101,4 +101,4 @@ for line in lines:
 # -------------------------------
 # Push image to the display
 # -------------------------------
-display.image(image
+display.image(image)
