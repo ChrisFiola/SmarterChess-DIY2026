@@ -263,18 +263,35 @@ def reset_game() -> None:
 
 def parse_move_payload(payload: str) -> Optional[str]:
     """
-    Accepts 'e2e4' or 'm e2e4' or 'me2e4' (tolerant).
-    Returns UCI string of length 4 or 5 (promotion).
+    Accepts UCI like:
+      e2e4, E2E4, e7e8q
+    and tolerant forms:
+      'm e2e4', 'me2e4', 'm e2 e4', 'e2 e4', 'E2:E4', 'e2-e4'
+    Returns: normalized UCI string ('e2e4' or 'e7e8q') or None if invalid.
     """
+    if payload is None:
+        return None
+
     p = payload.strip()
-    # Remove leading code letters and spaces (e.g., 'm e2e4', 'me2e4')
-    if p.startswith("m"):
+
+    # Remove optional leading 'm' / 'M' used by some senders
+    if p.lower().startswith("m"):
+        # tolerate "m e2e4" or "m   e2 e4"
         p = p[1:].strip()
-    p = p.replace(" ")
-    # Now expect uci like 'e2e4' or 'e7e8q'
-    if 4 <= len(p) <= 5 and all(ch.isalnum() for ch in p):
-        return p
+
+    # Normalize separators and spaces (e.g., 'e2 e4', 'e2-e4', 'e2:e4')
+    # Keep only alphanumerics and drop the rest
+    cleaned = "".join(ch for ch in p if ch.isalnum())
+
+    # Lowercase for UCI
+    cleaned = cleaned.lower()
+
+    # Now expect a UCI move of length 4 (e.g., e2e4) or 5 (promotion, e7e8q)
+    if 4 <= len(cleaned) <= 5 and cleaned.isalnum():
+        return cleaned
+
     return None
+
 
 
 def apply_player_move(uci: str) -> bool:
