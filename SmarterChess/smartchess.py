@@ -94,6 +94,45 @@ def restart_display_server():
     )
 
 
+def wait_for_display_server(timeout=5.0):
+    """Wait until display_server.py is fully running and pipe is ready."""
+    PIPE = "/tmp/lcdpipe"
+    start_time = time.time()
+
+    # Wait for process to appear
+    while time.time() - start_time < timeout:
+        ps = subprocess.Popen(
+            "ps aux | grep display_server.py | grep -v grep",
+            shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+        out = ps.stdout.read().decode().strip()
+        if "display_server.py" in out:
+            break
+        time.sleep(0.05)
+
+    # Wait for pipe to exist
+    while not os.path.exists(PIPE):
+        if time.time() - start_time > timeout:
+            print("[Init] ERROR: LCD pipe not created")
+            return
+        time.sleep(0.05)
+
+    # Wait until pipe can be opened for writing
+    while True:
+        try:
+            with open(PIPE, "w") as f:
+                pass
+            break
+        except Exception:
+            if time.time() - start_time > timeout:
+                print("[Init] ERROR: LCD pipe cannot be opened")
+                break
+            time.sleep(0.05)
+
+    print("[Init] Display server ready")
+
+
+
 def send_to_screen(
     line1: str, line2: str = "", line3: str = "", line4: str = "", size: str = ""
 ) -> None:
@@ -646,6 +685,7 @@ def main():
 if __name__ == "__main__":
     try:
         restart_display_server()
+        wait_for_display_server(
         main()
     except KeyboardInterrupt:
         print("\n[Exit] KeyboardInterrupt")
