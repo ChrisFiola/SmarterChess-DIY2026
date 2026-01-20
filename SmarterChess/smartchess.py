@@ -44,7 +44,7 @@ SERIAL_PORT = "/dev/pts/5"     # e.g. '/dev/ttyUSB0' on real hardware
 BAUD = 115200
 SERIAL_TIMEOUT = 2.0
 
-STOCKFISH_PATH = "stockfish"   # full path if needed, e.g. '/usr/bin/stockfish'
+STOCKFISH_PATH = "/usr/games/stockfish"   # full path if needed, e.g. '/usr/bin/stockfish'
 DEFAULT_SKILL = 5              # 0..20
 DEFAULT_MOVE_TIME_MS = 800     # engine think time in ms
 OLED_SCRIPT = "/home/king/SmarterChess-DIY2026/RaspberryPiCode/printToOLED.py"
