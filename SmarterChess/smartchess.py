@@ -220,7 +220,7 @@ def engine_move_and_send(ser: serial.Serial) -> None:
         return
     board.push_uci(reply)
     sendtoboard(ser, f"m{reply}")
-    send_to_screen(f"{reply[0:2]} → {reply[2:4]}", "", "Your turn", "")
+    send_to_screen(f"{reply[0:2]} → {reply[2:4]}", "", "Your turn")
     print("[Engine]", reply)
     print(board)
 
@@ -237,7 +237,7 @@ def send_hint_to_board(ser):
     """Compute a hint using Stockfish and send it to the Arduino."""
     if board.is_game_over():
         sendtoboard(ser, "hint_gameover")
-        send_to_screen("Game Over", "No hints", "", "")
+        send_to_screen("Game Over", "No hints")
         return
 
     # Ask Stockfish for a suggested move without committing it
@@ -247,7 +247,7 @@ def send_hint_to_board(ser):
     sendtoboard(ser, f"hint_{best_move}")
     print(board)
     time.sleep(1)
-    send_to_screen("Hint", best_move, "", "")
+    send_to_screen("Hint", best_move)
     print(f"[Hint] {best_move}")
 
 
@@ -257,7 +257,7 @@ def send_hint_to_board(ser):
 def reset_game() -> None:
     global board
     board = chess.Board()
-    send_to_screen("NEW", "GAME", "", "")
+    send_to_screen("NEW", "GAME")
     time.sleep(0.2)
 
 
@@ -305,7 +305,7 @@ def report_game_over(ser: serial.Serial) -> None:
         )
     )
     sendtoboard(ser, f"GameOver:{result}")
-    send_to_screen("Game Over", f"Result {result}", reason.upper(), "")
+    send_to_screen("Game Over", f"Result {result}", reason.upper())
 
 
 # -----------------------------
@@ -322,10 +322,10 @@ def run_local_mode(ser: serial.Serial) -> None:
     global skill_level, move_time_ms
 
     sendtoboard(ser, "ReadyLocal")
-    send_to_screen("Local 2-Player", "Hints enabled", "Press n=new game", "")
+    send_to_screen("Local 2-Player", "Hints enabled", "Press n=new game")
 
     # Optional: allow setting hint strength/time (reusing your existing UI flow)
-    send_to_screen("Hint strength", "0-20", "", "")
+    send_to_screen("Hint strength", "0-20")
 
     while True:  # short window to set (optional)
         msg = getboard(ser)
@@ -346,7 +346,7 @@ def run_local_mode(ser: serial.Serial) -> None:
     skill_level = set_engine_skill(engine, skill_level)
     print(f"[Engine] Skill set to {skill_level}")
 
-    send_to_screen("Hint think time", f"ms (now {move_time_ms})", "", "")
+    send_to_screen("Hint think time", f"ms (now {move_time_ms})")
     while True:  # short window to set (optional)
         msg = getboard(ser)
         if msg is None:
@@ -366,7 +366,7 @@ def run_local_mode(ser: serial.Serial) -> None:
 
     # Let Arduino know starting turn (optional)
     sendtoboard(ser, "turn_white")
-    send_to_screen("Local Play", "White to move", "", "" )
+    send_to_screen("Local Play", "White to move")
 
     while True:
         if board.is_game_over():
@@ -380,7 +380,7 @@ def run_local_mode(ser: serial.Serial) -> None:
                 reset_game()
                 gameover_reported = False
                 sendtoboard(ser, "turn_white")
-                send_to_screen("Local Play", "White to move", "", "")
+                send_to_screen("Local Play", "White to move")
             continue
 
         msg = getboard(ser)
@@ -392,7 +392,7 @@ def run_local_mode(ser: serial.Serial) -> None:
             reset_game()
             gameover_reported = False
             sendtoboard(ser, "turn_white")
-            send_to_screen("Local Play", "White to move", "", "")
+            send_to_screen("Local Play", "White to move") 
             continue
 
         # Hint request
@@ -404,17 +404,17 @@ def run_local_mode(ser: serial.Serial) -> None:
         uci = parse_move_payload(msg)
         if not uci:
             sendtoboard(ser, f"error_invalid_{msg}")
-            send_to_screen("Invalid input", msg, "Try again", "")
+            send_to_screen("Invalid input", msg, "Try again")
             continue
 
         if not apply_player_move(uci):
             sendtoboard(ser, f"error_illegal_{uci}")
-            send_to_screen("Illegal move!", uci, f"{turn_name()} again", "")
+            send_to_screen("Illegal move!", uci, f"{turn_name()} again")
             continue
 
         # Show move + next turn
         next_turn = turn_name()
-        send_to_screen(f"{uci[0:2]} → {uci[2:4]}", "", f"{next_turn} to move", "")
+        send_to_screen(f"{uci[0:2]} → {uci[2:4]}", "", f"{next_turn} to move")
         print(board)
 
         # Optional: inform Arduino whose turn (if you want Arduino UI updates)
@@ -427,7 +427,7 @@ def run_stockfish_mode(ser: serial.Serial) -> None:
     sendtoboard(ser, "ReadyStockfish")
 
     # Difficulty
-    send_to_screen("Choose computer", "difficulty (0-20)", "", "")
+    send_to_screen("Choose computer", "difficulty (0-20)", "")
     # Read skill (tolerant: accept '', non-digits, timeouts)
     while True:
         msg = getboard(ser)
@@ -447,7 +447,7 @@ def run_stockfish_mode(ser: serial.Serial) -> None:
     print(f"[Engine] Skill set to {skill_level}")
 
     # Time
-    send_to_screen("Choose move time", f"(ms, now {move_time_ms})", "", "")
+    send_to_screen("Choose move time", f"(ms, now {move_time_ms})")
     while True:
         msg = getboard(ser)
         if msg is None:
@@ -485,12 +485,12 @@ def run_stockfish_mode(ser: serial.Serial) -> None:
     # If engine starts (human chose black), let engine move now
     if is_engine_turn():
         print("You are Black\n")
-        send_to_screen("Engine Starts", "Thinking…", "", "")
+        send_to_screen("Engine Starts", "Thinking…")
         time.sleep(1)
         engine_move_and_send(ser)
         print(board)
     else:
-        send_to_screen("You are white", "Your move...", "", "")
+        send_to_screen("You are white", "Your move...")
         print(board)
 
     # Gameplay loop
@@ -507,14 +507,14 @@ def run_stockfish_mode(ser: serial.Serial) -> None:
 
                 # Check if engine turn
                 if is_engine_turn():
-                    send_to_screen("Engine", "Thinking…", "", "")
+                    send_to_screen("Engine", "Thinking…")
                     engine_move_and_send(ser)
 
                 continue
 
         # If it's engine's turn, move automatically
         if is_engine_turn():
-            send_to_screen("Engine", "Thinking…", "", "")
+            send_to_screen("Engine", "Thinking…")
             engine_move_and_send(ser)
             continue
 
@@ -530,7 +530,7 @@ def run_stockfish_mode(ser: serial.Serial) -> None:
 
             # Check if engine turn
             if is_engine_turn():
-                send_to_screen("Engine", "Thinking…", "", "")
+                send_to_screen("Engine", "Thinking…")
                 engine_move_and_send(ser)
 
             continue
@@ -548,11 +548,11 @@ def run_stockfish_mode(ser: serial.Serial) -> None:
         # Player move
         if not apply_player_move(uci):
             sendtoboard(ser, f"error_illegal_{uci}")
-            send_to_screen("Illegal move!", "Enter new move…", "", "")
+            send_to_screen("Illegal move!", "Enter new move…")
             continue
 
         # Visual feedback
-        send_to_screen(f"{uci[0:2]} → {uci[2:4]}", "", "Thinking…", "")
+        send_to_screen(f"{uci[0:2]} → {uci[2:4]}", "", "Thinking…")
         print(board)
 
         # Engine reply
@@ -563,7 +563,7 @@ def run_stockfish_mode(ser: serial.Serial) -> None:
 # Mode: Online Human (Placeholder Hook)
 # -----------------------------
 def run_online_mode(ser: serial.Serial) -> None:
-    send_to_screen("Online mode", "Not implemented", "Use Stockfish mode", "")
+    send_to_screen("Online mode", "Not implemented", "Use Stockfish mode")
     sendtoboard(ser, "error_online_unimplemented")
     # You can plug in your update-online.py + protocol here.
     # Reuse parse_move_payload, apply_player_move, and sendtoboard helpers.
@@ -573,7 +573,7 @@ def run_online_mode(ser: serial.Serial) -> None:
 # Shutdown
 # -----------------------------
 def shutdown_pi(ser: Optional[serial.Serial]) -> None:
-    send_to_screen("Shutting down…", "Wait 20s then", "disconnect power", "")
+    send_to_screen("Shutting down…", "Wait 20s then", "disconnect power")
     time.sleep(2)
     try:
         subprocess.call("sudo nohup shutdown -h now", shell=True)
@@ -621,7 +621,7 @@ def main():
             run_local_mode(ser)
         else:
             sendtoboard(ser, "error_unknown_mode")
-            send_to_screen("Unknown mode", mode, "Send again", "")
+            send_to_screen("Unknown mode", mode, "Send again")
 
 
 if __name__ == "__main__":
