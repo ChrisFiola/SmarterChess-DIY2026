@@ -422,7 +422,6 @@ def run_stockfish_mode(ser: serial.Serial) -> None:
         time.sleep(1)
         engine_move_and_send(ser)
         print(board)
-        return
 
     # Gameplay loop
     while True:
