@@ -568,20 +568,19 @@ def main():
 	global engine
 	print("[Init] Opening engine…")
 	send_to_screen("[Init]", "Opening engine..", "", "", "14")
-    engine = open_engine(STOCKFISH_PATH)
-    print("[Init] Engine OK")
+	engine = open_engine(STOCKFISH_PATH)
+	print("[Init] Engine OK")
 	send_to_screen("[Init]", "Engine OK", "", "", "14")
-
-    print(f"[Init] Opening serial {SERIAL_PORT} @ {BAUD}…")
+	
+	print(f"[Init] Opening serial {SERIAL_PORT} @ {BAUD}…")
 	send_to_screen("[Init]", "Opening Serial..", "", "", "14")
-    ser = open_serial()
-    print("[Init] Serial OK")
+	ser = open_serial()
+	print("[Init] Serial OK")
 	send_to_screen("[Init]", "Serial OK", "", "", "14")
-
-    # Mode selection
-    sendtoboard(ser, "ChooseMode")
-    send_to_screen("Choose opponent:", "1) PC", "2) Remote", "3) Local", "14")
-    time.sleep(1)
+	# Mode selection
+	sendtoboard(ser, "ChooseMode")
+	send_to_screen("Choose opponent:", "1) PC", "2) Remote", "3) Local", "14")
+	time.sleep(1)
 
 
     while True:
