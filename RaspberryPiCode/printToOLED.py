@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 import sys, getopt
-from PIL import ImageFont, ImageDraw, Image
 
 PIPE = "/tmp/lcdpipe"
-FONT_PATH = "/home/king/SmarterChess-DIY2026/Font/Font00.ttf"
 
 text1 = text2 = text3 = text4 = ""
-textSize = None  # auto-set if not provided
+forced_size = None
 
 opts, args = getopt.getopt(sys.argv[1:], "ha:b:c:d:s:")
 
@@ -19,56 +17,29 @@ for opt, arg in opts:
         text3 = arg
     elif opt == "-d":
         text4 = arg
-    elif opt == "-s":  
+    elif opt == "-s":
         cleaned = arg.strip()
-        if cleaned.isdigit():    # only accept valid positive integers
-            textSize = int(cleaned)
-        else:
-            textSize = None      # let auto-size decide
+        if cleaned.isdigit():
+            forced_size = int(cleaned)
 
+# Count non-empty lines
 lines = [t for t in [text1, text2, text3, text4] if t]
+line_count = len(lines)
 
-# -----------------------------
-# AUTO-FIT TEXT SIZE
-# -----------------------------
-DISPLAY_W = 300
-DISPLAY_H = 170
-
-def fits(size):
-    """Return True if all lines fit inside 240×135 using this size."""
-    try:
-        font = ImageFont.truetype(FONT_PATH, size)
-    except:
-        font = ImageFont.load_default()
-
-    total_h = 0
-    for line in lines:
-        bbox = font.getbbox(line)
-        w = bbox[2] - bbox[0]
-        h = bbox[3] - bbox[1]
-        if w > DISPLAY_W - 5:   # keep small margin
-            return False
-        total_h += h + 8        # interline spacing
-
-    return total_h <= DISPLAY_H
-
-# Forced size overrides auto-fit
-if textSize is not None:
-    final_size = textSize
+# WAVESHARE-STYLE FIXED SIZES (perfect on 1.14")
+if forced_size:
+    textSize = forced_size
 else:
-    # Try from big to small
-    for size in range(60, 10, -2):
-        if fits(size):
-            final_size = size
-            break
+    if line_count == 1:
+        textSize = 32   # Waveshare Font00 30–32 works perfectly
+    elif line_count == 2:
+        textSize = 28
+    elif line_count == 3:
+        textSize = 24
     else:
-        final_size = 20  # fallback
+        textSize = 22   # fits 4 lines cleanly
 
-# -----------------------------
-# SEND TO DISPLAY SERVER
-# -----------------------------
-msg = f"{text1}|{text2}|{text3}|{text4}|{final_size}"
+msg = f"{text1}|{text2}|{text3}|{text4}|{textSize}"
 
 with open(PIPE, "w") as f:
     f.write(msg + "\n")
-
