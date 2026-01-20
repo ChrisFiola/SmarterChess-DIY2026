@@ -128,8 +128,9 @@ def open_engine(path: str) -> chess.engine.SimpleEngine:
             print(f"[Engine] Launching: {path!r}")
             eng = chess.engine.SimpleEngine.popen_uci(
                 path,
-                stderr=None  # avoid banner/warning deadlocks
-            )
+                stderr=None,  # avoid banner/warning deadlocks
+            	timeout=None
+		)
             return eng
             
         except Exception as e:
