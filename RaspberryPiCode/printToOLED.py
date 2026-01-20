@@ -19,13 +19,14 @@ for opt, arg in opts:
         text4 = arg
     elif opt == "-s":
         textSize = int(arg)
-
-        # FIX: avoid crashing on empty strin
+        # COMPLETE SAFETY: only accept positive integers
         try:
-            if arg.strip() != "":
-                textSize = int(arg)
+            cleaned = arg.strip()
+            if cleaned.isdigit():      # only digits allowed
+                textSize = int(cleaned)
         except Exception:
             textSize = None
+
 
 # Auto-size text if not manually given
 line_count = len([t for t in [text1, text2, text3, text4] if t])
