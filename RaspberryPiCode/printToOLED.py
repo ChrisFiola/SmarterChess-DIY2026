@@ -26,6 +26,8 @@ for opt, arg in opts:
         else:
             textSize = None      # let auto-size decide
 
+lines = [t for t in [text1, text2, text3, text4] if t]
+
 # -----------------------------
 # AUTO-FIT TEXT SIZE
 # -----------------------------
