@@ -13,6 +13,7 @@ if not os.path.exists(PIPE):
 disp = LCD_1inch14()
 disp.Init()
 disp.bl_DutyCycle(80)
+disp.clear()
 
 W, H = disp.width, disp.height
 FONT = "/home/king/LCD_Module_RPI_code/RaspberryPi/python/Font/Font00.ttf"
