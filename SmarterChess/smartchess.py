@@ -65,6 +65,18 @@ human_is_white = True
 # OLED Support
 # -----------------------------
 
+
+def wait_for_display_server_ready(timeout=5.0):
+    READY_FLAG = "/tmp/display_server_ready"
+    start = time.time()
+    while time.time() - start < timeout:
+        if os.path.exists(READY_FLAG):
+            return True
+        time.sleep(0.05)
+    print("[Init] ERROR: display server did not become ready")
+    return False
+
+
 def restart_display_server():
     PIPE = "/tmp/lcdpipe"
 
@@ -685,7 +697,7 @@ def main():
 if __name__ == "__main__":
     try:
         restart_display_server()
-        wait_for_display_server()
+        wait_for_display_server_ready()
         main()
     except KeyboardInterrupt:
         print("\n[Exit] KeyboardInterrupt")
