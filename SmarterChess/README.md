@@ -14,7 +14,7 @@
 - Play in the console with virtual serial connection
 
 ### Hardware
-- OLED Screen connection
+- Waveshare ST7789 1.14" LCD Screen connection
 
 
 #
