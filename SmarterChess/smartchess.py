@@ -98,7 +98,7 @@ def get_raw_from_board(ser: serial.Serial) -> Optional[str]:
         return None
 
 def turn_name() -> str:
-    return "White" if board.turn == chess.WHITE else "Black"
+    return "WHITE" if board.turn == chess.WHITE else "BLACK"
 
 def getboard(ser: serial.Serial) -> Optional[str]:
     """
@@ -418,10 +418,16 @@ def run_stockfish_mode(ser: serial.Serial) -> None:
     
     # If engine starts (human chose black), let engine move now
     if is_engine_turn():
+        print("You are Black\n")
         send_to_screen("Engine Starts", "Thinking…", "", "", "20")
         time.sleep(1)
         engine_move_and_send(ser)
         print(board)
+    else
+        send_to_screen("You are white", "Your move...", "","")
+        print(board)
+        
+        
 
     # Gameplay loop
     while True:
@@ -434,7 +440,8 @@ def run_stockfish_mode(ser: serial.Serial) -> None:
             if msg and msg.startswith("n"):
                 reset_game()
                 gameover_reported = False
-                
+
+                # Check if engine turn
                 if is_engine_turn():
                     send_to_screen("Engine", "Thinking…", "", "", "20")
                     engine_move_and_send(ser)
@@ -445,7 +452,6 @@ def run_stockfish_mode(ser: serial.Serial) -> None:
         if is_engine_turn():
             send_to_screen("Engine", "Thinking…", "", "", "20")
             engine_move_and_send(ser)
-            
             continue
 
         # Wait for a command from board
@@ -458,12 +464,12 @@ def run_stockfish_mode(ser: serial.Serial) -> None:
         if code == "n":
             reset_game()
             gameover_reported = False
-            
+
+            # Check if engine turn
             if is_engine_turn():
                 send_to_screen("Engine", "Thinking…", "", "", "20")
                 engine_move_and_send(ser)
                 
-
             continue
 
         
