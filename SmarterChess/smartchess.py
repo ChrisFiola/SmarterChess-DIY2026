@@ -95,7 +95,7 @@ def restart_display_server():
 
 
 def send_to_screen(
-    line1: str, line2: str = "", line3: str = "", line4: str = "", size: int = ""
+    line1: str, line2: str = "", line3: str = "", line4: str = "", size: int = 0
 ) -> None:
     """Fire-and-forget update to OLED (non-blocking)."""
     try:
