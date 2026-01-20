@@ -1,4 +1,3 @@
-
 import board, digitalio
 from PIL import Image, ImageDraw
 from adafruit_rgb_display.st7789 import ST7789
@@ -15,11 +14,11 @@ display = ST7789(
     dc=dc,
     rst=rst,
     baudrate=40_000_000,
-    width=135,        # logical driver width
-    height=240,       # logical driver height
-    rotation=90,      # landscape
+    width=135,  # logical driver width
+    height=240,  # logical driver height
+    rotation=90,  # landscape
     x_offset=0,
-    y_offset=0
+    y_offset=0,
 )
 
 print("Display reports size:", display.width, "x", display.height)
@@ -33,6 +32,6 @@ img = Image.new("RGB", (w, h), "blue")
 draw = ImageDraw.Draw(img)
 
 # Draw border to see edges clearly
-draw.rectangle((0, 0, w-1, h-1), outline="white", width=3)
+draw.rectangle((0, 0, w - 1, h - 1), outline="white", width=3)
 
 display.image(img)

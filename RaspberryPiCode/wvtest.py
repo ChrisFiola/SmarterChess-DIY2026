@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
@@ -7,7 +6,7 @@ import time
 from PIL import Image, ImageDraw, ImageFont
 import logging
 import spidev as SPI
-from lib import LCD_1inch14     # Waveshare’s official driver
+from lib import LCD_1inch14  # Waveshare’s official driver
 
 logging.basicConfig(level=logging.ERROR)
 
@@ -23,8 +22,9 @@ text4 = ""
 textSize = 24
 
 opts, args = getopt.getopt(
-    argv, "ha:b:c:d:s:",
-    ["firstLine=", "secondLine=", "thirdLine=", "fourthLine=", "textSize="]
+    argv,
+    "ha:b:c:d:s:",
+    ["firstLine=", "secondLine=", "thirdLine=", "fourthLine=", "textSize="],
 )
 
 for opt, arg in opts:

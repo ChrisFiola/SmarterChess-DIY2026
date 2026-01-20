@@ -6,11 +6,7 @@ import time
 # -----------------------------
 # Serial Setup (Pico)
 # -----------------------------
-ser = serial.Serial(
-    '/dev/serial0',
-    baudrate=115200,
-    timeout=0.05
-)
+ser = serial.Serial("/dev/serial0", baudrate=115200, timeout=0.05)
 
 # -----------------------------
 # Stockfish Setup (fast + robust)
@@ -20,11 +16,7 @@ ENGINE_PATH = "/usr/games/stockfish"
 print("Starting Stockfish...")
 
 try:
-    engine = chess.engine.SimpleEngine.popen_uci(
-        ENGINE_PATH,
-        setpgrp=True,
-        timeout=60
-    )
+    engine = chess.engine.SimpleEngine.popen_uci(ENGINE_PATH, setpgrp=True, timeout=60)
 except Exception as e:
     print("FATAL: Stockfish failed to start:", e)
     raise SystemExit(1)
@@ -40,21 +32,23 @@ print("Stockfish ready.")
 # -----------------------------
 board = chess.Board()
 ai_difficulty = 1
-opponent = 'AI'
+opponent = "AI"
 
 print(board)
+
 
 # -----------------------------
 # Helpers
 # -----------------------------
 def is_valid_uci(s):
     return (
-        len(s) == 4 and
-        s[0] in 'ABCDEFGH' and
-        s[1] in '12345678' and
-        s[2] in 'ABCDEFGH' and
-        s[3] in '12345678'
+        len(s) == 4
+        and s[0] in "ABCDEFGH"
+        and s[1] in "12345678"
+        and s[2] in "ABCDEFGH"
+        and s[3] in "12345678"
     )
+
 
 # -----------------------------
 # Main Loop
@@ -68,7 +62,7 @@ try:
                 continue
 
             try:
-                line = raw.decode(errors='ignore').strip()
+                line = raw.decode(errors="ignore").strip()
             except:
                 continue
 
@@ -87,10 +81,7 @@ try:
             # -------------------------
             if line == "REQUEST_HINT":
                 try:
-                    hint = engine.play(
-                        board,
-                        chess.engine.Limit(depth=10)
-                    )
+                    hint = engine.play(board, chess.engine.Limit(depth=10))
                     ser.write(f"HINT:{hint.move}\n".encode())
                 except:
                     pass
@@ -107,11 +98,8 @@ try:
 
                     board.push(move)
 
-                    if opponent == 'AI':
-                        result = engine.play(
-                            board,
-                            chess.engine.Limit(time=0.1)
-                        )
+                    if opponent == "AI":
+                        result = engine.play(board, chess.engine.Limit(time=0.1))
                         board.push(result.move)
                         ser.write(f"{result.move}\n".encode())
 

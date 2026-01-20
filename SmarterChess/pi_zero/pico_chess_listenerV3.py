@@ -6,7 +6,7 @@ import chess.engine
 # -----------------------------
 # UART Setup (from Pico)
 # -----------------------------
-ser = serial.Serial('/dev/serial0', 115200, timeout=1)
+ser = serial.Serial("/dev/serial0", 115200, timeout=1)
 
 # -----------------------------
 # Chess Engine Setup
@@ -18,18 +18,20 @@ engine = chess.engine.SimpleEngine.popen_uci(engine_path, timeout=60)
 # Game State
 # -----------------------------
 board = chess.Board()
-opponent = 'H'   # default Human, Pico menu can override
-ai_skill = 1     # Stockfish skill level (1–20)
-ai_elo = 400     # optional ELO mapping
+opponent = "H"  # default Human, Pico menu can override
+ai_skill = 1  # Stockfish skill level (1–20)
+ai_elo = 400  # optional ELO mapping
 
 print("Chess listener ready.")
 print("Initial Board:\n", board)
+
 
 def print_board_moves():
     print("\nCurrent board:")
     print(board)
     print("Legal moves:", [board.san(m) for m in board.legal_moves])
     print("---------------------------\n")
+
 
 # -----------------------------
 # Main Loop
@@ -46,7 +48,7 @@ while not board.is_game_over():
             try:
                 ai_skill = max(1, min(20, int(val)))
                 ai_elo = ai_skill * 100  # optional mapping
-                opponent = 'A'
+                opponent = "A"
                 print(f"AI opponent selected, skill level: {ai_skill}, ELO: {ai_elo}")
             except ValueError:
                 print("Invalid AI difficulty received:", val)
@@ -80,7 +82,7 @@ while not board.is_game_over():
         # -----------------------------
         # If opponent is AI, generate move
         # -----------------------------
-        if opponent == 'A' and not board.is_game_over():
+        if opponent == "A" and not board.is_game_over():
             # Set Stockfish skill level
             engine.configure({"Skill Level": ai_skill})
             result = engine.play(board, chess.engine.Limit(time=0.5))

@@ -40,16 +40,19 @@ except FileNotFoundError:
     print("Stockfish not found at", STOCKFISH_PATH)
     sys.exit(1)
 
+
 def set_skill(level: int):
     global engine_skill
     engine_skill = max(0, min(20, level))
     engine.configure({"Skill Level": engine_skill})
     print(f"Skill level set to {engine_skill}")
 
+
 def set_move_time(ms: int):
     global move_time
     move_time = max(10, ms)
     print(f"Engine move time set to {move_time} ms")
+
 
 # -----------------------------
 # Board display
@@ -58,6 +61,7 @@ def show_board():
     print()
     print(board.unicode(borders=True))
     print()
+
 
 # -----------------------------
 # Move handling
@@ -82,6 +86,7 @@ def make_move(move_str: str):
     move_list.append(move)
     return True
 
+
 def takeback():
     if board.move_stack:
         board.pop()
@@ -91,23 +96,26 @@ def takeback():
     else:
         print("No moves to undo")
 
+
 def engine_move():
     """Get Stockfish move using current move time and return SAN string."""
     if board.is_game_over():
         return None
-    result = engine.play(board, chess.engine.Limit(time=move_time/1000))
-    move_san = board.san(result.move)   # get SAN while move is still legal
-    board.push(result.move)             # now push it
+    result = engine.play(board, chess.engine.Limit(time=move_time / 1000))
+    move_san = board.san(result.move)  # get SAN while move is still legal
+    board.push(result.move)  # now push it
     move_list.append(result.move)
     return move_san
+
 
 def hint():
     """Get a hint from Stockfish without pushing it."""
     if board.is_game_over():
         print("Game over")
         return None
-    info = engine.analyse(board, chess.engine.Limit(time=move_time/1000))
+    info = engine.analyse(board, chess.engine.Limit(time=move_time / 1000))
     print("Hint:", info["pv"][0])
+
 
 def show_moves():
     if not move_list:
@@ -115,8 +123,9 @@ def show_moves():
         return
     for i in range(0, len(move_list), 2):
         w = move_list[i]
-        b = move_list[i+1] if i+1 < len(move_list) else ""
+        b = move_list[i + 1] if i + 1 < len(move_list) else ""
         print(f"{i//2+1}. {board.san(w)} {board.san(b) if b else ''}")
+
 
 # -----------------------------
 # Main loop
@@ -135,7 +144,8 @@ def main():
         if cmd == "quit":
             break
         elif cmd == "help":
-            print("""
+            print(
+                """
 Commands:
 move <move>     Make a move (e2e4 or Nf3 or e7e8q)
 hint            Show best move from engine
@@ -146,7 +156,8 @@ time <ms>       Set engine move time in milliseconds
 board           Show board
 moves           Show move list
 quit            Exit
-""")
+"""
+            )
         elif cmd.startswith("move"):
             parts = cmd.split()
             if len(parts) != 2:
@@ -192,6 +203,7 @@ quit            Exit
 
     engine.quit()
     print("Goodbye.")
+
 
 if __name__ == "__main__":
     main()

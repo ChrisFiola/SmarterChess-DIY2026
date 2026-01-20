@@ -6,7 +6,7 @@ import time
 # -----------------------------
 # Serial Setup (from Pico)
 # -----------------------------
-ser = serial.Serial('/dev/serial0', 115200, timeout=0.1)
+ser = serial.Serial("/dev/serial0", 115200, timeout=0.1)
 
 # -----------------------------
 # Chess Engine Setup (robust)
@@ -19,9 +19,7 @@ print("Starting Stockfish engine...")
 while engine is None:
     try:
         engine = chess.engine.SimpleEngine.popen_uci(
-            engine_path,
-            setpgrp=True,
-            timeout=60
+            engine_path, setpgrp=True, timeout=60
         )
         print("Stockfish engine ready!")
     except Exception as e:
@@ -34,7 +32,7 @@ while engine is None:
 # -----------------------------
 board = chess.Board()
 ai_difficulty = 1
-opponent = 'AI'
+opponent = "AI"
 
 print("Initial Board:")
 print(board)
@@ -62,7 +60,7 @@ try:
                 continue
 
             try:
-                line = raw_line.decode('utf-8', errors='ignore').strip()
+                line = raw_line.decode("utf-8", errors="ignore").strip()
             except:
                 continue
 
@@ -88,13 +86,8 @@ try:
             # -------------------------
             if line == "REQUEST_HINT":
                 try:
-                    hint_move = engine.play(
-                        board,
-                        chess.engine.Limit(depth=10)
-                    )
-                    ser.write(
-                        ("HINT:" + str(hint_move.move) + "\n").encode()
-                    )
+                    hint_move = engine.play(board, chess.engine.Limit(depth=10))
+                    ser.write(("HINT:" + str(hint_move.move) + "\n").encode())
                     print("Hint sent:", hint_move.move)
                 except Exception as e:
                     print("Error generating hint:", e)
@@ -113,17 +106,12 @@ try:
                         print("Move received:", move)
                         print(board)
 
-                        if opponent == 'AI':
-                            result = engine.play(
-                                board,
-                                chess.engine.Limit(time=0.1)
-                            )
+                        if opponent == "AI":
+                            result = engine.play(board, chess.engine.Limit(time=0.1))
                             board.push(result.move)
                             print("AI move:", result.move)
                             print(board)
-                            ser.write(
-                                (str(result.move) + "\n").encode()
-                            )
+                            ser.write((str(result.move) + "\n").encode())
                     else:
                         print("Illegal move received:", move_str)
                 except Exception as e:

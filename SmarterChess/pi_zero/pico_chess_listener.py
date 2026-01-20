@@ -9,7 +9,7 @@ import chess.engine
 # Adjust this to your Pico connection
 # e.g., '/dev/ttyAMA0' for GPIO UART, '/dev/ttyACM0' for USB
 # My device serial: /dev/serial0 -> ttyS0
-ser = serial.Serial('/dev/serial0', 115200, timeout=1)
+ser = serial.Serial("/dev/serial0", 115200, timeout=1)
 
 # -----------------------------
 # Chess Engine Setup
@@ -20,6 +20,7 @@ engine = chess.engine.SimpleEngine.popen_uci(engine_path)
 board = chess.Board()
 print("Board ready:")
 print(board)
+
 
 # -----------------------------
 # Helper: process move from Pico
@@ -39,13 +40,14 @@ def process_move(move_str):
     else:
         print("Illegal move:", move_str)
 
+
 # -----------------------------
 # Main Loop
 # -----------------------------
 print("\nListening for moves from Pico (e.g., E2E4)...")
 while True:
     if ser.in_waiting > 0:
-        move = ser.readline().decode('utf-8').strip()
+        move = ser.readline().decode("utf-8").strip()
         if move:
             print("\nReceived move:", move)
             process_move(move)

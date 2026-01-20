@@ -10,21 +10,25 @@ engine = subprocess.Popen(
     stdin=subprocess.PIPE,
     stdout=subprocess.PIPE,
     universal_newlines=True,
-    bufsize=1
+    bufsize=1,
 )
+
 
 def send(cmd):
     engine.stdin.write(cmd + "\n")
     engine.stdin.flush()
 
+
 def read_line():
     return engine.stdout.readline().strip()
+
 
 def read_until(prefix):
     while True:
         line = read_line()
         if line.startswith(prefix):
             return line
+
 
 # -----------------------------
 # Game state
@@ -33,12 +37,14 @@ move_list = []
 skill_level = 5
 move_time = 200  # ms
 
+
 # -----------------------------
 # Engine helpers
 # -----------------------------
 def sync_engine():
     send("isready")
     read_until("readyok")
+
 
 def new_game():
     global move_list
@@ -48,6 +54,7 @@ def new_game():
     print("\n=== NEW GAME ===")
     show_board()
 
+
 def set_skill(level):
     global skill_level
     skill_level = max(0, min(20, level))
@@ -55,11 +62,13 @@ def set_skill(level):
     sync_engine()
     print(f"Skill level set to {skill_level}")
 
+
 def position_cmd(extra=None):
     moves = move_list[:]
     if extra:
         moves += extra
     return "position startpos moves " + " ".join(moves)
+
 
 def is_legal_move(move):
     send(position_cmd([move]))
@@ -67,17 +76,20 @@ def is_legal_move(move):
     reply = read_until("bestmove")
     return "bestmove (none)" not in reply
 
+
 def engine_move():
     send(position_cmd())
     send(f"go movetime {move_time}")
     reply = read_until("bestmove")
     return reply.split()[1]
 
+
 def hint():
     send(position_cmd())
     send("go depth 10")
     reply = read_until("bestmove")
     return reply.split()[1]
+
 
 # -----------------------------
 # Board display
@@ -106,6 +118,7 @@ def show_board():
         print(l)
     print()
 
+
 # -----------------------------
 # Startup
 # -----------------------------
@@ -116,7 +129,8 @@ new_game()
 
 print("Console Chess (UCI only)")
 print("Type 'help' for commands")
-print("""
+print(
+    """
 move e2e4    make a move
 hint         show engine hint
 undo         take back last full move
@@ -126,7 +140,8 @@ time MS      set engine move time (ms)
 moves        show moves played
 board        show board
 quit         exit
-""")
+"""
+)
 # -----------------------------
 # Main loop
 # -----------------------------
@@ -140,7 +155,8 @@ while True:
         break
 
     if cmd == "help":
-        print("""
+        print(
+            """
 move e2e4    make a move
 hint         show engine hint
 undo         take back last full move
@@ -150,7 +166,8 @@ time MS      set engine move time (ms)
 moves        show move list
 board        show board
 quit         exit
-""")
+"""
+        )
         continue
 
     if cmd == "new":

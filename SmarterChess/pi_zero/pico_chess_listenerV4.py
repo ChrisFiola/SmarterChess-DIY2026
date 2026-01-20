@@ -6,7 +6,7 @@ import time
 # -----------------------------
 # Serial Setup (from Pico)
 # -----------------------------
-ser = serial.Serial('/dev/serial0', 115200, timeout=1)
+ser = serial.Serial("/dev/serial0", 115200, timeout=1)
 
 # -----------------------------
 # Chess Engine Setup
@@ -19,7 +19,7 @@ engine = chess.engine.SimpleEngine.popen_uci(engine_path, setpgrp=True, timeout=
 # -----------------------------
 board = chess.Board()
 ai_difficulty = 1200
-opponent = 'AI'
+opponent = "AI"
 
 print("Chess listener ready.")
 print("Initial Board:")
@@ -36,7 +36,7 @@ try:
                 continue
 
             try:
-                line = raw_line.decode('utf-8', errors='ignore').strip()
+                line = raw_line.decode("utf-8", errors="ignore").strip()
             except Exception as e:
                 print("UART decode error:", e)
                 continue
@@ -60,12 +60,12 @@ try:
                         print("Move received:", move)
                         print(board)
 
-                        if opponent == 'AI':
+                        if opponent == "AI":
                             result = engine.play(board, chess.engine.Limit(time=0.1))
                             board.push(result.move)
                             print("AI move:", result.move)
                             print(board)
-                            ser.write((str(result.move) + "\n").encode('utf-8'))
+                            ser.write((str(result.move) + "\n").encode("utf-8"))
                     else:
                         print("Illegal move received:", move)
                 except Exception as e:

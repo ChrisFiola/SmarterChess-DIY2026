@@ -12,46 +12,50 @@ import digitalio
 from PIL import Image, ImageDraw, ImageFont
 import adafruit_ssd1306
 
-#print ('Number of arguments', len(sys.argv), 'arguments.')
-#print ('Arguments list:', str(sys.argv))
+# print ('Number of arguments', len(sys.argv), 'arguments.')
+# print ('Arguments list:', str(sys.argv))
 
-#Grab the arguments
+# Grab the arguments
 argv = sys.argv[1:]
 
-textLine1 = ''
-textLine2 = ''
-textLine3 = ''
-textSize = ''
+textLine1 = ""
+textLine2 = ""
+textLine3 = ""
+textSize = ""
 
-#work through those arguments
+# work through those arguments
 try:
-  opts, args = getopt.getopt(argv,"ha:b:c:s:",["firstLine=","secondLine=","thirdLine=","textSize="])
+    opts, args = getopt.getopt(
+        argv, "ha:b:c:s:", ["firstLine=", "secondLine=", "thirdLine=", "textSize="]
+    )
 except getopt.GetoptError:
-  print ('test.py -i <inputfile> -o <outputfile>')
-  sys.exit(2)
+    print("test.py -i <inputfile> -o <outputfile>")
+    sys.exit(2)
 for opt, arg in opts:
-  if opt == '-h':
-     print ('printToOLED.py -a <firstline> -b <secondline> -c <thirdline> -s <textsize>')
-     sys.exit()
-  elif opt in ("-a", "--firstLine"):
-     textLine1 = arg
-  elif opt in ("-b", "--secondLine"):
-     textLine2 = arg
-  elif opt in ("-c", "--thirdLine"):
-     textLine3 = arg
-  elif opt in ("-s", "--textSize"):
-     textSize = int(arg)
-#print ('First line is ', textLine1)
-#print ('Second line is ', textLine2)
-#print ('Third line is ', textLine3)
-#print ('Text size is ', textSize)
+    if opt == "-h":
+        print(
+            "printToOLED.py -a <firstline> -b <secondline> -c <thirdline> -s <textsize>"
+        )
+        sys.exit()
+    elif opt in ("-a", "--firstLine"):
+        textLine1 = arg
+    elif opt in ("-b", "--secondLine"):
+        textLine2 = arg
+    elif opt in ("-c", "--thirdLine"):
+        textLine3 = arg
+    elif opt in ("-s", "--textSize"):
+        textSize = int(arg)
+# print ('First line is ', textLine1)
+# print ('Second line is ', textLine2)
+# print ('Third line is ', textLine3)
+# print ('Text size is ', textSize)
 
 
 # Define the Reset Pin
 oled_reset = None
 
 WIDTH = 128
-HEIGHT = 64  
+HEIGHT = 64
 BORDER = 5
 
 # Use for I2C.
@@ -76,17 +80,19 @@ image = Image.new("1", (oled.width, oled.height))
 draw = ImageDraw.Draw(image)
 
 # Load default font.
-#font = ImageFont.load_default()
+# font = ImageFont.load_default()
 
-#load the Truetype font.
-font = ImageFont.truetype("/home/pi/SmartChess/RaspberryPiCode/WorkSans-Medium.ttf", textSize)
+# load the Truetype font.
+font = ImageFont.truetype(
+    "/home/pi/SmartChess/RaspberryPiCode/WorkSans-Medium.ttf", textSize
+)
 
 # Draw Some Text
-#textLine1 = "Choose a mode"
-#textLine2 = "1 = Play computer"
-#textLine3 = "2 = Remote play"
+# textLine1 = "Choose a mode"
+# textLine2 = "1 = Play computer"
+# textLine3 = "2 = Remote play"
 
-(font_width, font_height) = font.getsize(textLine1)
+font_width, font_height = font.getsize(textLine1)
 draw.text(
     (oled.width // 2 - font_width // 2, 0),
     textLine1,
@@ -95,7 +101,7 @@ draw.text(
 )
 
 
-(font_width, font_height) = font.getsize(textLine2)
+font_width, font_height = font.getsize(textLine2)
 draw.text(
     (oled.width // 2 - font_width // 2, 20),
     textLine2,
@@ -103,7 +109,7 @@ draw.text(
     fill=255,
 )
 
-(font_width, font_height) = font.getsize(textLine3)
+font_width, font_height = font.getsize(textLine3)
 draw.text(
     (oled.width // 2 - font_width // 2, 40),
     textLine3,
@@ -114,5 +120,3 @@ draw.text(
 # Display image
 oled.image(image)
 oled.show()
-
-

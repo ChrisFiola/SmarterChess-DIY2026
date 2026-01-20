@@ -11,15 +11,18 @@ engine = subprocess.Popen(
     stdin=subprocess.PIPE,
     stdout=subprocess.PIPE,
     universal_newlines=True,
-    bufsize=1
+    bufsize=1,
 )
+
 
 def send(cmd):
     engine.stdin.write(cmd + "\n")
     engine.stdin.flush()
 
+
 def read_line():
     return engine.stdout.readline().strip()
+
 
 def read_until(prefix):
     while True:
@@ -27,9 +30,11 @@ def read_until(prefix):
         if line.startswith(prefix):
             return line
 
+
 def sync_engine():
     send("isready")
     read_until("readyok")
+
 
 # -----------------------------
 # Game state
@@ -38,6 +43,7 @@ move_list = []
 last_move = None
 skill_level = 5
 move_time = 200  # ms
+
 
 # -----------------------------
 # Helpers
@@ -52,6 +58,7 @@ def normalize_move(move):
             return move + "q"
     return move
 
+
 def position_cmd(extra=None):
     moves = move_list[:]
     if extra:
@@ -59,6 +66,7 @@ def position_cmd(extra=None):
     if moves:
         return "position startpos moves " + " ".join(moves)
     return "position startpos"
+
 
 def is_legal_move(move):
     move = move.lower()
@@ -75,11 +83,13 @@ def engine_move():
     reply = read_until("bestmove")
     return reply.split()[1]
 
+
 def hint():
     send(position_cmd())
     send("go depth 10")
     reply = read_until("bestmove")
     return reply.split()[1]
+
 
 def show_board():
     send(position_cmd())
@@ -106,6 +116,7 @@ def show_board():
             print(row)
     print()
 
+
 def check_game_over():
     send(position_cmd())
     send("go depth 1 movetime 50")
@@ -114,6 +125,7 @@ def check_game_over():
         print("=== GAME OVER ===")
         return True
     return False
+
 
 def new_game():
     global move_list, last_move
@@ -124,12 +136,14 @@ def new_game():
     print("\n=== NEW GAME ===")
     show_board()
 
+
 def set_skill(level):
     global skill_level
     skill_level = max(0, min(20, level))
     send(f"setoption name Skill Level value {skill_level}")
     sync_engine()
     print(f"Skill level set to {skill_level}")
+
 
 # -----------------------------
 # Startup
@@ -156,7 +170,8 @@ while True:
         break
 
     if cmd == "help":
-        print("""
+        print(
+            """
 move e2e4      make a move
 move e7e8q     promotion (default = q)
 hint           engine hint
@@ -167,7 +182,8 @@ time MS        engine move time
 board          show board
 moves          show move list
 quit           exit
-""")
+"""
+        )
         continue
 
     if cmd == "new":
@@ -195,7 +211,7 @@ quit           exit
         else:
             for i in range(0, len(move_list), 2):
                 w = move_list[i]
-                b = move_list[i+1] if i+1 < len(move_list) else ""
+                b = move_list[i + 1] if i + 1 < len(move_list) else ""
                 print(f"{i//2+1}. {w} {b}")
         continue
 

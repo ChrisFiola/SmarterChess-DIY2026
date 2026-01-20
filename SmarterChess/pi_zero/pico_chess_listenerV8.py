@@ -6,7 +6,7 @@ import time
 # -----------------------------
 # Serial Setup (from Pico)
 # -----------------------------
-ser = serial.Serial('/dev/serial0', 115200, timeout=1)
+ser = serial.Serial("/dev/serial0", 115200, timeout=1)
 
 # -----------------------------
 # Chess Engine Setup with Safe Fallback
@@ -45,7 +45,7 @@ while True:
 # -----------------------------
 board = chess.Board()
 ai_difficulty = 1
-opponent = 'AI'
+opponent = "AI"
 
 print("Initial Board:")
 print(board)
@@ -61,7 +61,7 @@ try:
                 continue
 
             try:
-                line = raw_line.decode('utf-8', errors='ignore').strip()
+                line = raw_line.decode("utf-8", errors="ignore").strip()
             except Exception as e:
                 print("UART decode error:", e)
                 continue
@@ -79,7 +79,7 @@ try:
             if line == "REQUEST_HINT":
                 try:
                     hint_move = engine.play(board, chess.engine.Limit(depth=10))
-                    ser.write(("HINT:" + str(hint_move.move) + "\n").encode('utf-8'))
+                    ser.write(("HINT:" + str(hint_move.move) + "\n").encode("utf-8"))
                     print("Hint sent:", hint_move.move)
                 except Exception as e:
                     print("Error generating hint:", e)
@@ -95,12 +95,12 @@ try:
                         print("Move received:", move)
                         print(board)
 
-                        if opponent == 'AI':
+                        if opponent == "AI":
                             result = engine.play(board, chess.engine.Limit(time=0.1))
                             board.push(result.move)
                             print("AI move:", result.move)
                             print(board)
-                            ser.write((str(result.move) + "\n").encode('utf-8'))
+                            ser.write((str(result.move) + "\n").encode("utf-8"))
                     else:
                         print("Illegal move received:", move)
                 except Exception as e:

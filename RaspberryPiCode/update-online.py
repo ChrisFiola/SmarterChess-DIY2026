@@ -6,28 +6,28 @@ from Adafruit_IO import Client, Feed, RequestError
 # Set to your Adafruit IO key.
 # Remember, your key is a secret,
 # so make sure not to publish it when you publish this code!
-ADAFRUIT_IO_KEY = 'AddYourKeyHere'
+ADAFRUIT_IO_KEY = "AddYourKeyHere"
 
 # Set to your Adafruit IO username.
 # (go to https://accounts.adafruit.com to find your username)
-ADAFRUIT_IO_USERNAME = 'AddYurUserNameHere'
+ADAFRUIT_IO_USERNAME = "AddYurUserNameHere"
 
 # Create an instance of the REST client.
 aio = Client(ADAFRUIT_IO_USERNAME, ADAFRUIT_IO_KEY)
 
-try: # if we have a 'whiteplayer' feed
-    whiteplayermove = aio.feeds('whiteplayermove')
-except RequestError: # create a text-test feed
+try:  # if we have a 'whiteplayer' feed
+    whiteplayermove = aio.feeds("whiteplayermove")
+except RequestError:  # create a text-test feed
     feed = Feed(name="whiteplayermove")
     whiteplayermove = aio.create_feed(feed)
 
-try: # if we have a 'boardb' feed
-    blackplayermove = aio.feeds('blackplayermove')
-except RequestError: # create a digital feed
+try:  # if we have a 'boardb' feed
+    blackplayermove = aio.feeds("blackplayermove")
+except RequestError:  # create a digital feed
     feed = Feed(name="blackplayermove")
     whiteplayermove = aio.create_feed(feed)
 
-#----------------------
+# ----------------------
 sendOrReceive = "neither"
 previousData = "ready"
 colourChoice = "neither"
@@ -41,14 +41,14 @@ while True:
         colourChoice = input()
         if colourChoice == "cwhite":
             chesspiecemoved = input()
-            print('White piece moved -> ', chesspiecemoved, ' succesfully.')
+            print("White piece moved -> ", chesspiecemoved, " succesfully.")
             aio.send(whiteplayermove.key, chesspiecemoved)
-            #break
+            # break
         elif colourChoice == "cblack":
             chesspiecemoved = input()
-            print('Black piece moved -> ', chesspiecemoved, ' succesfully.')
+            print("Black piece moved -> ", chesspiecemoved, " succesfully.")
             aio.send(blackplayermove.key, chesspiecemoved)
-            #break
+            # break
     elif sendOrReceive == "receive":
         while True:
             if colourChoice == "cwhite":
@@ -59,7 +59,7 @@ while True:
                 data = data.value.strip().lower()
             if previousData != data:
                 previousData = data
-                print(data + '\n')
+                print(data + "\n")
                 break
             time.sleep(3)
 

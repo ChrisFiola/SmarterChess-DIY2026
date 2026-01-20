@@ -11,18 +11,21 @@ engine = subprocess.Popen(
     stdin=subprocess.PIPE,
     stdout=subprocess.PIPE,
     universal_newlines=True,
-    bufsize=1
+    bufsize=1,
 )
+
 
 def send(cmd):
     engine.stdin.write(cmd + "\n")
     engine.stdin.flush()
+
 
 def read_until(prefix):
     while True:
         line = engine.stdout.readline().strip()
         if line.startswith(prefix):
             return line
+
 
 # -----------------------------
 # Game state
@@ -31,12 +34,14 @@ move_list = []
 skill_level = 5
 move_time = 200  # ms
 
+
 # -----------------------------
 # Engine helpers
 # -----------------------------
 def sync_engine():
     send("isready")
     read_until("readyok")
+
 
 def new_game():
     global move_list
@@ -45,6 +50,7 @@ def new_game():
     sync_engine()
     print("\n=== NEW GAME ===")
 
+
 def set_skill(level):
     global skill_level
     skill_level = max(0, min(20, level))
@@ -52,11 +58,13 @@ def set_skill(level):
     sync_engine()
     print(f"Skill level set to {skill_level}")
 
+
 def position_cmd(extra_moves=None):
     moves = move_list[:]
     if extra_moves:
         moves += extra_moves
     return "position startpos moves " + " ".join(moves)
+
 
 def is_legal_move(move):
     send(position_cmd([move]))
@@ -64,17 +72,20 @@ def is_legal_move(move):
     reply = read_until("bestmove")
     return "bestmove (none)" not in reply
 
+
 def engine_move():
     send(position_cmd())
     send(f"go movetime {move_time}")
     reply = read_until("bestmove")
     return reply.split()[1]
 
+
 def hint():
     send(position_cmd())
     send("go depth 10")
     reply = read_until("bestmove")
     return reply.split()[1]
+
 
 # -----------------------------
 # Startup
@@ -88,7 +99,9 @@ new_game()
 
 print("Console Chess (UCI only)")
 print("Type 'help' for commands")
-print("\nSupported moves: \n\nmove e2e4\t make a move\nhint\t engine suggestion\nundo\ttake back last full move\nnew\tnew game\nskill 0-20\tengine strength\ntime 200\tengine move time (ms) recommended 1000\nmoves\tshow move list\nquit\tquit")
+print(
+    "\nSupported moves: \n\nmove e2e4\t make a move\nhint\t engine suggestion\nundo\ttake back last full move\nnew\tnew game\nskill 0-20\tengine strength\ntime 200\tengine move time (ms) recommended 1000\nmoves\tshow move list\nquit\tquit"
+)
 
 # -----------------------------
 # Main loop
@@ -103,7 +116,8 @@ while True:
         break
 
     if cmd == "help":
-        print("""
+        print(
+            """
 move e2e4    make a move
 hint         show engine hint
 undo         take back last full move
@@ -112,7 +126,8 @@ skill N      set engine skill (0–20)
 time MS      set engine move time (ms)
 moves        show move list
 quit         exit
-""")
+"""
+        )
         continue
 
     if cmd == "new":
