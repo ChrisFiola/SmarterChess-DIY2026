@@ -423,7 +423,7 @@ def run_stockfish_mode(ser: serial.Serial) -> None:
         time.sleep(1)
         engine_move_and_send(ser)
         print(board)
-    else
+    else:
         send_to_screen("You are white", "Your move...", "","")
         print(board)
         
