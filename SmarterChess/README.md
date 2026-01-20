@@ -1,29 +1,29 @@
 # Now implemented
 
-## Game Modes
+### Game Modes
 - Local 2 player
 - Stockfish mode
 
-## Game features
+### Game features
 - Hints
 - Promotions
 - Game Over
 - Pick black or white or random vs Stockfish
 
-## Testing
+### Testing
 - Play in the console with virtual serial connection
 
 
 # Todo
 
-## Game modes
+### Game modes
 - Implement Online Play according to DIY Machines instructions
 
-## Game features
+### Game features
 - Undo
 - Exit
 
-## Hardware
+### Hardware
 - Serial Connection with Pico
 - LEDS
 - OLED Screen connection
