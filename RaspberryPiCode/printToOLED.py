@@ -31,13 +31,13 @@ if forced_size:
     textSize = forced_size
 else:
     if line_count == 1:
-        textSize = 32   # Waveshare Font00 30–32 works perfectly
+        textSize = 28   # Waveshare Font00 30–32 works perfectly
     elif line_count == 2:
-        textSize = 28
+        textSize = 26
     elif line_count == 3:
-        textSize = 24
+        textSize = 22
     else:
-        textSize = 22   # fits 4 lines cleanly
+        textSize = 20   # fits 4 lines cleanly
 
 msg = f"{text1}|{text2}|{text3}|{text4}|{textSize}"
 
