@@ -170,6 +170,7 @@ def engine_move_and_send(ser: serial.Serial) -> None:
     sendtoboard(ser, f"m{reply}")
     send_to_screen(f"{reply[0:2]} → {reply[2:4]}", "", "Your turn", "", "20")
     print("[Engine]", reply)
+    print(board)
 
 
 def engine_bestmove(brd: chess.Board, ms: int) -> Optional[str]:
