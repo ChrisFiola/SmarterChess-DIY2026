@@ -420,6 +420,7 @@ def run_stockfish_mode(ser: serial.Serial) -> None:
     if is_engine_turn():
         send_to_screen("Engine Starts", "Thinking…", "", "", "20")
         engine_move_and_send(ser)
+        print(board)
         return
 
     # Gameplay loop
@@ -437,12 +438,14 @@ def run_stockfish_mode(ser: serial.Serial) -> None:
                 if is_engine_turn():
                     send_to_screen("Engine", "Thinking…", "", "", "20")
                     engine_move_and_send(ser)
+                    
                 continue
             
         # If it's engine's turn, move automatically
         if is_engine_turn():
             send_to_screen("Engine", "Thinking…", "", "", "20")
             engine_move_and_send(ser)
+            
             continue
 
         # Wait for a command from board
@@ -459,6 +462,7 @@ def run_stockfish_mode(ser: serial.Serial) -> None:
             if is_engine_turn():
                 send_to_screen("Engine", "Thinking…", "", "", "20")
                 engine_move_and_send(ser)
+                
 
             continue
 
