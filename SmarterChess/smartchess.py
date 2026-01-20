@@ -604,10 +604,9 @@ def shutdown_pi(ser: Optional[serial.Serial]) -> None:
 def main():
 
     # Starting the display server for persistent image
-    print("[Init] Starting display server")
-    restart_display_server()
-    print("[Init] Display server running")
-    send_to_screen("[Init]", "Display server", "[OK]")
+    #print("[Init] Starting display server")
+    #restart_display_server()
+    #print("[Init] Display server running")
 
     # Starting the stockfish engine
     global engine
@@ -646,6 +645,7 @@ def main():
 
 if __name__ == "__main__":
     try:
+        restart_display_server()
         main()
     except KeyboardInterrupt:
         print("\n[Exit] KeyboardInterrupt")
