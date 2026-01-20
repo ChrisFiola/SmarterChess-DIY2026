@@ -607,17 +607,20 @@ def main():
     print("[Init] Starting display server")
     restart_display_server()
     print("[Init] Display server running")
+    send_to_screen("[Init]", "Display server", "[OK]")
 
     # Starting the stockfish engine
     global engine
     print("[Init] Opening engine…")
     engine = open_engine(STOCKFISH_PATH)
     print("[Init] Engine OK")
+    send_to_screen("[Init]", "Engine Start", "[OK]")
 
     # Opening serial connection
     print(f"[Init] Opening serial {SERIAL_PORT} @ {BAUD}…")
     ser = open_serial()
     print("[Init] Serial OK")
+    send_to_screen("[Init]", "Serial connection", "[OK]")
     
     # Mode selection
     sendtoboard(ser, "ChooseMode")
