@@ -39,7 +39,7 @@ import chess.engine
 # -----------------------------
 # Configuration
 # -----------------------------
-SERIAL_PORT = "/dev/pts/3"     # e.g. '/dev/ttyUSB0' on real hardware
+SERIAL_PORT = "/dev/pts/5"     # e.g. '/dev/ttyUSB0' on real hardware
 BAUD = 115200
 SERIAL_TIMEOUT = 2.0
 
