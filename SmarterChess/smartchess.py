@@ -419,6 +419,7 @@ def run_stockfish_mode(ser: serial.Serial) -> None:
     # If engine starts (human chose black), let engine move now
     if is_engine_turn():
         send_to_screen("Engine Starts", "Thinking…", "", "", "20")
+        time.sleep(1)
         engine_move_and_send(ser)
         print(board)
         return
