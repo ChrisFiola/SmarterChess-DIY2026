@@ -13,6 +13,8 @@ if not os.path.exists(PIPE):
 disp = LCD_1inch14()
 disp.Init()
 disp.bl_DutyCycle(80)
+
+# clear screen once at startup
 disp.clear()
 
 W, H = disp.width, disp.height
