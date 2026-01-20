@@ -1,9 +1,29 @@
-# New
+# Now implemented
 
-- smartchess.py makes playing chess in the console possible without relying on python2 environments
+## Game Modes
+- Local 2 player
+- Stockfish mode
+
+## Game features
+- Hints
+- Promotions
+- Game Over
+- Pick black or white or random vs Stockfish
+
+## Testing
+- Play in the console with virtual serial connection
+
 
 # Todo
 
-- Connect to pico
-- Connect to OLED instead of displaying in console
-- Implement local play
+## Game modes
+- Implement Online Play according to DIY Machines instructions
+
+## Game features
+- Undo
+- Exit
+
+## Hardware
+- Serial Connection with Pico
+- LEDS
+- OLED Screen connection
