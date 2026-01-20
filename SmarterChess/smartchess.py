@@ -493,7 +493,7 @@ def run_stockfish_mode(ser: serial.Serial) -> None:
         print(board)
 
         # Engine reply
-        engin_move_and_send(ser)
+        engine_move_and_send(ser)
 
 # -----------------------------
 # Mode: Online Human (Placeholder Hook)
