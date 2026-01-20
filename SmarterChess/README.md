@@ -12,10 +12,10 @@
 
 ### Testing
 - Play in the console with virtual serial connection
-
-
-
-
+#
+#
+#
+#
 # Todo
 
 ### Game modes
