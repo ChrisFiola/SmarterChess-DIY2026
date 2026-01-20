@@ -31,6 +31,7 @@ import time
 import subprocess
 from typing import Optional
 import traceback
+import random
 
 import serial
 import chess
@@ -145,8 +146,6 @@ def open_engine(path: str) -> chess.engine.SimpleEngine:
                 print(f"[Engine] Retry in {i}…")
                 time.sleep(1)
 
-            sys.exit(1)
-
 
 def set_engine_skill(eng: chess.engine.SimpleEngine, level: int) -> int:
     lvl = max(0, min(20, level))
@@ -207,7 +206,6 @@ def reset_game() -> None:
     board = chess.Board()
     send_to_screen("NEW", "GAME", "","", "30")
     time.sleep(0.2)
-    send_to_screen("Please enter", "your move:", "","")
 
 def parse_move_payload(payload: str) -> Optional[str]:
     """
@@ -395,8 +393,8 @@ def run_stockfish_mode(ser: serial.Serial) -> None:
     print(f"[Engine] Move time set to {move_time_ms} ms")
 
     
-    # Side selection
-    send_to_screen("Choose side", "w=White, b=Black", "", "")
+    # Side selection w / b / r
+    send_to_screen("Choose side", "w = White, b = Black", " r = Random", "14")
     while True:
         msg = getboard(ser)
         if msg is None:
@@ -408,16 +406,21 @@ def run_stockfish_mode(ser: serial.Serial) -> None:
         if m.startswith("b") or m == "2":
             human_is_white = False
             break
+        if m.startswith("r") or m == "3":
+            human_is_white = bool(random.getrandbits(1))
+            break
+
         print(f"[Parse] Invalid color payload '{msg}', waiting...")
 
+    # NEW GAME
     reset_game()
     gameover_reported = False
-
     
     # If engine starts (human chose black), let engine move now
     if is_engine_turn():
-        send_to_screen("Engine", "Thinking…", "", "", "20")
+        send_to_screen("Engine Starts", "Thinking…", "", "", "20")
         engine_move_and_send(ser)
+        return
 
     # Gameplay loop
     while True:
