@@ -194,6 +194,8 @@ def send_hint_to_board(ser):
     best_move = info["pv"][0].uci()
 
     sendtoboard(ser, f"hint_{best_move}")
+    print(board)
+    time.sleep(1)
     send_to_screen("Hint", best_move, "","")
     print(f"[Hint] {best_move}")
 
