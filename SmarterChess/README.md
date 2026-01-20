@@ -13,6 +13,9 @@
 ### Testing
 - Play in the console with virtual serial connection
 
+### Hardware
+- OLED Screen connection
+
 
 #
 # Todo
@@ -22,9 +25,7 @@
 
 ### Game features
 - Undo
-- Exit
 
 ### Hardware
 - Serial Connection with Pico
 - LEDS
-- OLED Screen connection
