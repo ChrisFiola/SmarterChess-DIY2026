@@ -45,7 +45,6 @@ BAUD = 115200
 SERIAL_TIMEOUT = 2.0
 
 STOCKFISH_PATH = "stockfish"   # full path if needed, e.g. '/usr/bin/stockfish'
-ENGINE_TIMEOUT = 10.0          # seconds for UCI init
 DEFAULT_SKILL = 5              # 0..20
 DEFAULT_MOVE_TIME_MS = 800     # engine think time in ms
 OLED_SCRIPT = "/home/king/SmarterChess-DIY2026/RaspberryPiCode/printToOLED.py"
@@ -129,7 +128,6 @@ def open_engine(path: str) -> chess.engine.SimpleEngine:
             print(f"[Engine] Launching: {path!r}")
             eng = chess.engine.SimpleEngine.popen_uci(
                 path,
-                #timeout=ENGINE_TIMEOUT,
                 stderr=None  # avoid banner/warning deadlocks
             )
             return eng
@@ -165,7 +163,7 @@ def is_engine_turn() -> bool:
 
 def engine_move_and_send(ser: serial.Serial) -> None:
     """Make the engine play one move, push it, and notify the Arduino + OLED."""
-    reply = engine_bestmove(engine, board, move_time_ms)
+    reply = engine_bestmove(board, move_time_ms)
     if reply is None:
         return
     board.push_uci(reply)
@@ -174,11 +172,11 @@ def engine_move_and_send(ser: serial.Serial) -> None:
     print("[Engine]", reply)
 
 
-def engine_bestmove(eng: chess.engine.SimpleEngine, brd: chess.Board, ms: int) -> Optional[str]:
+def engine_bestmove(brd: chess.Board, ms: int) -> Optional[str]:
     if brd.is_game_over():
         return None
     limit = chess.engine.Limit(time=max(0.01, ms / 1000.0))
-    result = eng.play(brd, limit)
+    result = engine.play(brd, limit) # Uses global engine
     return result.move.uci() if result.move else None
 
 
@@ -462,8 +460,7 @@ def run_stockfish_mode(ser: serial.Serial) -> None:
             # timeout; continue listening
             continue
 
-        code = msg[:1]
-        if code == "n":
+        if msg == "new" or msg.startswith("n"):
             reset_game()
             gameover_reported = False
 
@@ -496,19 +493,7 @@ def run_stockfish_mode(ser: serial.Serial) -> None:
         print(board)
 
         # Engine reply
-        reply = engine_bestmove(engine, board, move_time_ms)
-        if reply is None:
-            # No reply means game over
-            continue
-
-        # Push engine move on the board state
-        board.push_uci(reply)
-        print(f"[Engine] {reply}")
-        print(board)
-
-        # Notify Arduino and OLED
-        sendtoboard(ser, f"m{reply}")
-        send_to_screen(f"{reply[0:2]} → {reply[2:4]}", "", "Your turn", "", "20")
+        engin_move_and_send(ser)
 
 # -----------------------------
 # Mode: Online Human (Placeholder Hook)
