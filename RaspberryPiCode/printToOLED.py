@@ -31,8 +31,8 @@ lines = [t for t in [text1, text2, text3, text4] if t]
 # -----------------------------
 # AUTO-FIT TEXT SIZE
 # -----------------------------
-DISPLAY_W = 135
-DISPLAY_H = 240
+DISPLAY_W = 300
+DISPLAY_H = 170
 
 def fits(size):
     """Return True if all lines fit inside 240×135 using this size."""
