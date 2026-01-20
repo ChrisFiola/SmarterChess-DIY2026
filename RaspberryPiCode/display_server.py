@@ -1,8 +1,9 @@
 
 #!/usr/bin/env python3
-import os
+import os,sys
 from PIL import Image, ImageDraw, ImageFont
-from lib import LCD_1inch14
+sys.path.append("/home/king/LCD_Module_RPI_code/RaspberryPi/python/lib")
+import LCD_1inch14
 
 PIPE = "/tmp/lcdpipe"
 
@@ -14,7 +15,7 @@ disp.Init()
 disp.bl_DutyCycle(80)
 
 W, H = disp.width, disp.height
-FONT = "~/LCD_Module_RPI_code/RaspberryPi/python/Font/Font00.ttf"
+FONT = "/home/king/LCD_Module_RPI_code/RaspberryPi/python/Font/Font00.ttf"
 
 def draw_text(lines, size):
     img = Image.new("RGB", (W, H), "BLACK")
