@@ -18,14 +18,15 @@ for opt, arg in opts:
     elif opt == "-d":
         text4 = arg
     elif opt == "-s":
-        textSize = int(arg)
+        textsize = arg
+        #textSize = int(arg)
         # COMPLETE SAFETY: only accept positive integers
-        try:
-            cleaned = arg.strip()
-            if cleaned.isdigit():      # only digits allowed
-                textSize = int(cleaned)
-        except Exception:
-            textSize = None
+        #try:
+            #cleaned = arg.strip()
+            #if cleaned.isdigit():      # only digits allowed
+                #textSize = int(cleaned)
+        #except Exception:
+            #textSize = None
 
 
 # Auto-size text if not manually given
