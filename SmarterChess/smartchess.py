@@ -65,46 +65,25 @@ human_is_white = True
 # OLED Support
 # -----------------------------
 
+def restart_display_server():
+    PIPE = "/tmp/lcdpipe"
 
-def start_display_server():
-    # check if already running
-    ps = subprocess.Popen(
-        "ps aux | grep display_server.py | grep -v grep",
-        shell=True,
-        stdout=subprocess.PIPE,
-    )
-    out = ps.stdout.read().decode()
-    if "display_server.py" in out:
-        return  # already running
-
-    # start it
+    # Kill any existing display_server.py processes
     subprocess.Popen(
-        [
-            "python3",
-            "/home/king/SmarterChess-DIY2026/RaspberryPiCode/display_server.py",
-        ],
+        "pkill -f display_server.py",
+        shell=True,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
 
+    # Give the OS a moment to release GPIO / SPI
+    time.sleep(0.2)
 
-def ensure_display_server_running():
-    PIPE = "/tmp/lcdpipe"
+    # Ensure pipe exists
     if not os.path.exists(PIPE):
         os.mkfifo(PIPE)
 
-    # Check if server already running
-    ps = subprocess.Popen(
-        "ps aux | grep display_server.py | grep -v grep",
-        shell=True,
-        stdout=subprocess.PIPE,
-    )
-    out = ps.stdout.read().decode()
-
-    if "display_server.py" in out:
-        return  # already running
-
-    # Start it in background
+    # Start fresh display server
     subprocess.Popen(
         [
             "python3",
@@ -609,7 +588,7 @@ def main():
 
     # Starting the display server for persistent image
     print("[Init] Starting display server")
-    start_display_server()
+    restart_display_server()
     print("[Init] Display server running")
 
     # Starting the stockfish engine
