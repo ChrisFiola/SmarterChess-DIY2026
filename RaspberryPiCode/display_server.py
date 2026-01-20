@@ -6,20 +6,23 @@ sys.path.append("/home/king/LCD_Module_RPI_code/RaspberryPi/python")
 from lib.LCD_1inch14 import LCD_1inch14
 
 PIPE = "/tmp/lcdpipe"
+READY_FLAG = "/tmp/display_server_ready"
 
-if not os.path.exists(PIPE):
-    os.mkfifo(PIPE)
+# Remove any stale flag
+if os.path.exists(READY_FLAG):
+    os.remove(READY_FLAG)
 
 disp = LCD_1inch14()
 disp.Init()
 disp.bl_DutyCycle(80)
-
-# clear screen once at startup
 disp.clear()
+
+# Signal READY
+with open(READY_FLAG, "w") as f:
+    f.write("ready\n")
 
 W, H = disp.width, disp.height
 FONT = "/home/king/LCD_Module_RPI_code/RaspberryPi/python/Font/Font00.ttf"
-
 
 def draw_text(lines, size):
     img = Image.new("RGB", (W, H), "BLACK")
@@ -42,7 +45,6 @@ def draw_text(lines, size):
         y += h + 8
 
     disp.ShowImage(img)
-
 
 while True:
     with open(PIPE, "r") as pipe:
