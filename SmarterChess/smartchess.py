@@ -41,7 +41,7 @@ import chess.engine
 # -----------------------------
 # Configuration
 # -----------------------------
-SERIAL_PORT = "/dev/pts/2"  # e.g. '/dev/ttyUSB0' on real hardware
+SERIAL_PORT = "/dev/serial0"  # e.g. '/dev/ttyUSB0' on real hardware
 BAUD = 115200
 SERIAL_TIMEOUT = 2.0
 
@@ -65,11 +65,12 @@ human_is_white = True
 # OLED Support
 # -----------------------------
 
+
 def wait_for_display_server_ready():
     READY_FLAG = "/tmp/display_server_ready"
 
     print("[Init] Waiting for display server to become ready...")
-    
+
     # Loop forever until ready file appears
     while not os.path.exists(READY_FLAG):
         time.sleep(0.05)
@@ -114,7 +115,9 @@ def wait_for_display_server(timeout=5.0):
     while time.time() - start_time < timeout:
         ps = subprocess.Popen(
             "ps aux | grep display_server.py | grep -v grep",
-            shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
         )
         out = ps.stdout.read().decode().strip()
         if "display_server.py" in out:
@@ -141,7 +144,6 @@ def wait_for_display_server(timeout=5.0):
             time.sleep(0.05)
 
     print("[Init] Display server ready")
-
 
 
 def send_to_screen(
@@ -343,7 +345,6 @@ def parse_move_payload(payload: str) -> Optional[str]:
     return None
 
 
-
 def apply_player_move(uci: str) -> bool:
     """Validate and push player's move."""
     try:
@@ -459,7 +460,7 @@ def run_local_mode(ser: serial.Serial) -> None:
             reset_game()
             gameover_reported = False
             sendtoboard(ser, "turn_white")
-            send_to_screen("Local Play", "White to move") 
+            send_to_screen("Local Play", "White to move")
             continue
 
         # Hint request
@@ -654,9 +655,9 @@ def shutdown_pi(ser: Optional[serial.Serial]) -> None:
 def main():
 
     # Starting the display server for persistent image
-    #print("[Init] Starting display server")
-    #restart_display_server()
-    #print("[Init] Display server running")
+    # print("[Init] Starting display server")
+    # restart_display_server()
+    # print("[Init] Display server running")
 
     # Starting the stockfish engine
     global engine
@@ -668,7 +669,7 @@ def main():
     print(f"[Init] Opening serial {SERIAL_PORT} @ {BAUD}…")
     ser = open_serial()
     print("[Init] Serial OK")
-    
+
     # Mode selection
     sendtoboard(ser, "ChooseMode")
     send_to_screen("Choose opponent:", "1) PC", "2) Remote", "3) Local")
