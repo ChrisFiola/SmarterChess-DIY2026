@@ -139,3 +139,6 @@ README.txt
 
 # Executables
 *.exe
+
+# vscode settings
+.vscode
