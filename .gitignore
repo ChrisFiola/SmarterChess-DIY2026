@@ -122,3 +122,17 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Fonts
+*.ttf
+
+# Some text
+Copying.txt
+HowToUseChessBoard.txt
+ReadMe.txt
+.pre-commit-config.yaml
+README.md
+README.txt
+
+# Images
+*.png
