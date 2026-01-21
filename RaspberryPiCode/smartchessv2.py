@@ -1,4 +1,3 @@
-
 #!/home/king/chessenv/bin/python
 # -*- coding: utf-8 -*-
 """
@@ -16,19 +15,21 @@ import traceback
 import random
 import os
 
-import serial # type: ignore
-import chess # type: ignore
-import chess.engine # type: ignore
+import serial  # type: ignore
+import chess  # type: ignore
+import chess.engine  # type: ignore
 
 # -----------------------------
 # Configuration
 # -----------------------------
-SERIAL_PORT = "/dev/serial0"  # <<< Use your real UART when on hardware; e.g. "/dev/ttyUSB0"
+SERIAL_PORT = (
+    "/dev/serial0"  # <<< Use your real UART when on hardware; e.g. "/dev/ttyUSB0"
+)
 BAUD = 115200
 SERIAL_TIMEOUT = 2.0
 
 STOCKFISH_PATH = "/usr/games/stockfish"
-DEFAULT_SKILL = 5          # 0..20
+DEFAULT_SKILL = 5  # 0..20
 DEFAULT_MOVE_TIME_MS = 800  # engine think time in ms for engine/hints
 OLED_SCRIPT = "/home/king/SmarterChess-DIY2026/RaspberryPiCode/printToOLED.py"
 
@@ -71,7 +72,10 @@ def restart_display_server():
         os.mkfifo(PIPE)
 
     subprocess.Popen(
-        ["python3", "/home/king/SmarterChess-DIY2026/RaspberryPiCode/display_server.py"],
+        [
+            "python3",
+            "/home/king/SmarterChess-DIY2026/RaspberryPiCode/display_server.py",
+        ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
@@ -86,11 +90,16 @@ def send_to_screen(
             [
                 "python3",
                 OLED_SCRIPT,
-                "-a", line1,
-                "-b", line2,
-                "-c", line3,
-                "-d", line4,
-                "-s", size,
+                "-a",
+                line1,
+                "-b",
+                line2,
+                "-c",
+                line3,
+                "-d",
+                line4,
+                "-s",
+                size,
             ]
         )
     except Exception as e:
@@ -198,9 +207,7 @@ def open_engine(path: str) -> chess.engine.SimpleEngine:
     while True:
         try:
             print(f"[Engine] Launching: {path!r}")
-            eng = chess.engine.SimpleEngine.popen_uci(
-                path, stderr=None, timeout=None
-            )
+            eng = chess.engine.SimpleEngine.popen_uci(path, stderr=None, timeout=None)
             return eng
         except Exception as e:
             print(f"[Engine] ERROR launching {path!r}")
@@ -233,7 +240,9 @@ def send_hint_to_board(ser: serial.Serial) -> None:
         sendtoboard(ser, "hint_gameover")
         send_to_screen("Game Over", "No hints")
         return
-    info = engine.analyse(board, chess.engine.Limit(time=max(0.01, move_time_ms / 1000.0)))
+    info = engine.analyse(
+        board, chess.engine.Limit(time=max(0.01, move_time_ms / 1000.0))
+    )
     best_move = info["pv"][0].uci()
     sendtoboard(ser, f"hint_{best_move}")
     send_to_screen("Hint", best_move)
@@ -246,10 +255,17 @@ def send_hint_to_board(ser: serial.Serial) -> None:
 def report_game_over(ser: serial.Serial) -> None:
     result = board.result(claim_draw=True)
     reason = (
-        "checkmate" if board.is_checkmate()
-        else ("stalemate" if board.is_stalemate()
-              else ("draw" if board.is_insufficient_material() or board.can_claim_draw()
-                    else "gameover"))
+        "checkmate"
+        if board.is_checkmate()
+        else (
+            "stalemate"
+            if board.is_stalemate()
+            else (
+                "draw"
+                if board.is_insufficient_material() or board.can_claim_draw()
+                else "gameover"
+            )
+        )
     )
     sendtoboard(ser, f"GameOver:{result}")
     send_to_screen("Game Over", f"Result {result}", reason.upper())
@@ -336,7 +352,9 @@ def setup_stockfish(ser: serial.Serial) -> None:
             break
         print(f"[Parse] Invalid color payload '{msg}', waiting...")
 
-    print(f"[Engine] Skill={skill_level} | Time={move_time_ms}ms | HumanWhite={human_is_white}")
+    print(
+        f"[Engine] Skill={skill_level} | Time={move_time_ms}ms | HumanWhite={human_is_white}"
+    )
 
 
 def setup_local(ser: serial.Serial) -> None:
@@ -406,7 +424,9 @@ def play_game(ser: serial.Serial, mode: str) -> None:
             send_to_screen("Engine starts", "Thinking…")
             engine_move_and_send(ser)
         else:
-            send_to_screen("You are white" if human_is_white else "You are black", "Your move…")
+            send_to_screen(
+                "You are white" if human_is_white else "You are black", "Your move…"
+            )
     else:
         # local
         sendtoboard(ser, "turn_white")
@@ -422,8 +442,9 @@ def play_game(ser: serial.Serial, mode: str) -> None:
 
         # If engine should play (only in stockfish mode)
         if mode == "stockfish":
-            engine_should_move = ((board.turn == chess.WHITE and not human_is_white)
-                                  or (board.turn == chess.BLACK and human_is_white))
+            engine_should_move = (board.turn == chess.WHITE and not human_is_white) or (
+                board.turn == chess.BLACK and human_is_white
+            )
             if engine_should_move and not board.is_game_over():
                 send_to_screen("Engine", "Thinking…")
                 engine_move_and_send(ser)
@@ -435,7 +456,9 @@ def play_game(ser: serial.Serial, mode: str) -> None:
             continue
 
         # NEW GAME -> back to mode selection
-        if msg.startswith("n") or msg == "new" or msg == "in":  # tolerate different 'new' variants
+        if (
+            msg.startswith("n") or msg == "new" or msg == "in"
+        ):  # tolerate different 'new' variants
             raise GoToModeSelect()
 
         # HINT request in any mode

@@ -34,9 +34,9 @@ import traceback
 import random
 import os
 
-import serial # type: ignore
-import chess # type: ignore
-import chess.engine # type: ignore
+import serial  # type: ignore
+import chess  # type: ignore
+import chess.engine  # type: ignore
 
 # -----------------------------
 # Configuration
