@@ -188,16 +188,48 @@ def extract_digits(s: str) -> Optional[int]:
 def parse_side_choice(s: str) -> Optional[bool]:
     """
     Returns True if human is white, False if human is black, None if random/invalid.
-    Accepts: w/1, b/2, r/3
+    Accepts: s1, s2, s3
     """
     s = (s or "").strip().lower()
-    if s.startswith("w") or s == "1":
+    if s.startswith("s1"):
         return True
-    if s.startswith("b") or s == "2":
+    if s.startswith("s2"):
         return False
-    if s.startswith("r") or s == "3":
+    if s.startswith("3"):
         return bool(random.getrandbits(1))
     return None
+
+
+def timed_input_with_oled(ser, prompt1, prompt2, timeout_sec=5, default=None):
+    """
+    Show a timed selection prompt.
+    Returns:
+        - digits as int if user enters input within time
+        - raises GoToModeSelect if 'n'
+        - default if timed out or no digits received
+    """
+    for remaining in range(timeout_sec, 0, -1):
+        # Show countdown
+        send_to_screen(prompt1, prompt2, f"{remaining} sec...")
+
+        start = time.time()
+        while time.time() - start < 1:
+            msg = getboard(ser)
+            if msg is None:
+                continue
+
+            if msg.startswith("n"):
+                raise GoToModeSelect()
+
+            digits = extract_digits(msg)
+            if digits is not None:
+                return digits
+
+            # ignore other invalid messages
+
+    # timed out
+    return default
+
 
 
 # -----------------------------
@@ -311,8 +343,9 @@ def setup_stockfish(ser: serial.Serial) -> None:
     global skill_level, move_time_ms, human_is_white
 
     sendtoboard(ser, "ReadyStockfish")
-    send_to_screen("Choose computer", "difficulty (0-20)")
 
+    # Computer skill level selection
+    send_to_screen("Choose computer", "difficulty (0-20)")
     while True:
         msg = getboard(ser)
         if msg is None:
@@ -326,19 +359,19 @@ def setup_stockfish(ser: serial.Serial) -> None:
             break
         print(f"[Parse] Invalid skill payload '{msg}', waiting...")
 
+    # Move time selection
     send_to_screen("Choose move time", f"(ms, now {move_time_ms})")
-    while True:
-        msg = getboard(ser)
-        if msg is None:
-            continue
-        if msg.startswith("n"):
-            raise GoToModeSelect()
-        val = extract_digits(msg)
-        if val is not None:
-            move_time_ms = max(10, int(val))
-            break
-        print(f"[Parse] Invalid time payload '{msg}', waiting...")
+    val = timed_input_with_oled(
+        ser,
+        "Choose move time",
+        f"(now {move_time_ms})",
+        timeout_sec=5,
+        default=move_time_ms
+    )
+    move_time_ms = max(10, val)
+    print(f"[Engine] Move time set to {move_time_ms} ms")
 
+    # Side selection
     send_to_screen("Choose side", "w = White, b = Black", " r = Random")
     while True:
         msg = getboard(ser)
@@ -351,7 +384,6 @@ def setup_stockfish(ser: serial.Serial) -> None:
             human_is_white = side
             break
         print(f"[Parse] Invalid color payload '{msg}', waiting...")
-
     print(
         f"[Engine] Skill={skill_level} | Time={move_time_ms}ms | HumanWhite={human_is_white}"
     )
@@ -363,9 +395,10 @@ def setup_local(ser: serial.Serial) -> None:
     """
     global skill_level, move_time_ms
     sendtoboard(ser, "ReadyLocal")
-    send_to_screen("Local 2-Player", "Hints enabled", "Press n to restart")
+    send_to_screen("Local 2-Player", "Hints enabled")
     time.sleep(0.5)
 
+    # Hint skill level selection
     send_to_screen("Hint strength", f"0-20 (now {skill_level})")
     while True:
         msg = getboard(ser)
@@ -382,21 +415,16 @@ def setup_local(ser: serial.Serial) -> None:
             break
         print(f"[Parse] Invalid skill payload '{msg}', waiting...")
 
+    # Hint move time selection
     send_to_screen("Hint think time", f"ms (now {move_time_ms})")
-    while True:
-        msg = getboard(ser)
-        if msg is None:
-            continue
-        if msg.startswith("n"):
-            raise GoToModeSelect()
-        val = extract_digits(msg)
-        if val is not None:
-            move_time_ms = max(10, int(val))
-            break
-        if msg in ("ok", "skip"):
-            break
-        print(f"[Parse] Invalid time payload '{msg}', waiting...")
-
+    val = timed_input_with_oled(
+        ser,
+        "Hint think time",
+        f"(now {move_time_ms})",
+        timeout_sec=5,
+        default=move_time_ms
+    )
+    move_time_ms = max(10, val)
     print(f"[Local] HintSkill={skill_level} | HintTime={move_time_ms}ms")
 
 
