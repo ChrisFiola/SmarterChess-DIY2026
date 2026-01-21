@@ -30,7 +30,7 @@ SERIAL_TIMEOUT = 2.0
 
 STOCKFISH_PATH = "/usr/games/stockfish"
 DEFAULT_SKILL = 5  # 0..20
-DEFAULT_MOVE_TIME_MS = 800  # engine think time in ms for engine/hints
+DEFAULT_MOVE_TIME_MS = 2000  # engine think time in ms for engine/hints
 OLED_SCRIPT = "/home/king/SmarterChess-DIY2026/RaspberryPiCode/printToOLED.py"
 
 # -----------------------------
@@ -195,7 +195,7 @@ def parse_side_choice(s: str) -> Optional[bool]:
         return True
     if s.startswith("s2"):
         return False
-    if s.startswith("3"):
+    if s.startswith("s3"):
         return bool(random.getrandbits(1))
     return None
 
@@ -372,7 +372,7 @@ def setup_stockfish(ser: serial.Serial) -> None:
     print(f"[Engine] Move time set to {move_time_ms} ms")
 
     # Side selection
-    send_to_screen("Choose side", "w = White, b = Black", " r = Random")
+    send_to_screen("Choose side", "1 = White, 2 = Black", "3 = Random")
     while True:
         msg = getboard(ser)
         if msg is None:
