@@ -231,6 +231,55 @@ def timed_input_with_oled(ser, prompt1, prompt2, timeout_sec=5, default=None):
     return default
 
 
+def requires_promotion(move: chess.Move, brd: chess.Board) -> bool:
+    """Returns True if the move is a pawn reaching last rank without piece selected."""
+    if brd.piece_at(move.from_square).piece_type != chess.PAWN:
+        return False
+    # White promoting
+    if brd.turn == chess.WHITE and chess.square_rank(move.to_square) == 7:
+        return move.promotion is None
+    # Black promoting
+    if brd.turn == chess.BLACK and chess.square_rank(move.to_square) == 0:
+        return move.promotion is None
+    return False
+
+
+def ask_promotion_piece(ser) -> str:
+    """
+    Ask user which piece to promote to.
+    Returns one of: 'q','r','b','n'
+    """
+    send_to_screen(
+        "Promotion!",
+        "1=Queen",
+        "2=Rook 3=Bishop",
+        "4=Knight"
+    )
+    sendtoboard(ser, "promotion_choice_needed")
+
+    while True:
+        msg = getboard(ser)
+        if msg is None:
+            continue
+
+        if msg.startswith("n"):
+            raise GoToModeSelect()
+
+        choice = msg.strip()
+        if choice in ("1", "q", "queen"):
+            return "q"
+        if choice in ("2", "r", "rook"):
+            return "r"
+        if choice in ("3", "b", "bishop"):
+            return "b"
+        if choice in ("4", "n", "knight"):
+            return "n"
+
+        # If user sends garbage, remind:
+        send_to_screen("Promotion!", "1=Q 2=R", "3=B 4=N", "Try again")
+
+
+
 
 # -----------------------------
 # Stockfish engine
@@ -502,6 +551,7 @@ def play_game(ser: serial.Serial, mode: str) -> None:
             send_to_screen("Invalid", msg, "Try again")
             continue
 
+        # --- FIRST: try to parse the move ---
         try:
             move = chess.Move.from_uci(uci)
         except ValueError:
@@ -509,20 +559,25 @@ def play_game(ser: serial.Serial, mode: str) -> None:
             send_to_screen("Invalid move", uci, f"{turn_name()} again")
             continue
 
+        # --- PROMOTION CHECK ---
+        if requires_promotion(move, board):
+            promo_piece = ask_promotion_piece(ser)   # returns 'q','r','b','n'
+            uci = uci + promo_piece                  # update UCI
+            move = chess.Move.from_uci(uci)          # rebuild move with promotion
+
+        # --- FINAL legality check ---
         if move not in board.legal_moves:
             sendtoboard(ser, f"error_illegal_{uci}")
             send_to_screen("Illegal move!", uci, f"{turn_name()} again")
             continue
 
-        # Apply human move
+        # --- APPLY MOVE ---
         board.push(move)
         next_turn = turn_name()
         send_to_screen(f"{uci[0:2]} → {uci[2:4]}", "", f"{next_turn} to move")
         print(board)
 
-        # Optional inform Arduino whose turn (for UI)
         sendtoboard(ser, f"turn_{'white' if board.turn == chess.WHITE else 'black'}")
-
 
 # -----------------------------
 # Online placeholder
