@@ -46,6 +46,8 @@ move_time_ms = DEFAULT_MOVE_TIME_MS
 # In Local mode, both sides are human; this flag is ignored except for hints.
 human_is_white = True
 
+game_started = False
+
 
 # -----------------------------
 # OLED Support
@@ -159,8 +161,9 @@ def turn_name() -> str:
 
 
 def reset_game_state() -> None:
-    global board
+    global board, game_started
     board = chess.Board()
+    game_started = False
     print("[Game] Board reset.")
 
 
@@ -266,13 +269,13 @@ def ask_promotion_piece(ser) -> str:
             raise GoToModeSelect()
 
         choice = msg.strip()
-        if choice in ("1", "q", "queen"):
+        if choice in ("btn_q", "btn_queen"):
             return "q"
-        if choice in ("2", "r", "rook"):
+        if choice in ("btn_r", "btn_rook"):
             return "r"
-        if choice in ("3", "b", "bishop"):
+        if choice in ("btn_b", "btn_bishop"):
             return "b"
-        if choice in ("4", "n", "knight"):
+        if choice in ("btn_n", "btn_knight"):
             return "n"
 
         # If user sends garbage, remind:
@@ -378,11 +381,11 @@ def select_mode(ser: serial.Serial) -> str:
         if msg is None:
             continue
         m = msg.strip().lower()
-        if m in ("1", "stockfish", "pc"):
+        if m in ("1", "stockfish", "pc", "btn_mode_pc"):
             return "stockfish"
-        if m in ("2", "onlinehuman", "remote", "online"):
+        if m in ("2", "onlinehuman", "remote", "online", "btn_mode_online"):
             return "online"
-        if m in ("3", "local", "human"):
+        if m in ("3", "local", "human", "btn_mode_local"):
             return "local"
         sendtoboard(ser, "error_unknown_mode")
         send_to_screen("Unknown mode", m, "Send again")
@@ -492,6 +495,7 @@ def play_game(ser: serial.Serial, mode: str) -> None:
     - 'n' (heypin) anywhere -> GoToModeSelect to re-ask mode.
     """
     reset_game_state()
+    global game_started
     gameover_reported = False
 
     # Opening display hints
@@ -500,14 +504,17 @@ def play_game(ser: serial.Serial, mode: str) -> None:
             # Engine starts
             send_to_screen("You are black", "Engine starts", "Thinking…")
             engine_move_and_send(ser)
+            game_started = True
         else:
             send_to_screen(
                 "You are white" if human_is_white else "You are black", "Your move…"
             )
+
     else:
         # local
         sendtoboard(ser, "turn_white")
         send_to_screen("Local Play", "White to move")
+        game_started = True
 
     while True:
         # Global "new game" detection (also used at game over)
@@ -532,14 +539,16 @@ def play_game(ser: serial.Serial, mode: str) -> None:
         if msg is None:
             continue
 
+        if not game_started:
+            sendtoboard(ser, "error_game_not_started")
+            continue
+
         # NEW GAME -> back to mode selection
-        if (
-            msg.startswith("n") or msg == "new" or msg == "in"
-        ):  # tolerate different 'new' variants
+        if msg in ("n", "new", "in", "newgame", "btn_new"):
             raise GoToModeSelect()
 
         # HINT request in any mode
-        if msg == "hint" or msg.startswith("hint"):
+        if msg in ("hint", "btn_hint"):
             send_hint_to_board(ser)
             continue
 
