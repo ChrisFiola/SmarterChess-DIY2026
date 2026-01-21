@@ -449,7 +449,7 @@ def play_game(ser: serial.Serial, mode: str) -> None:
     if mode == "stockfish":
         if not human_is_white and board.turn == chess.WHITE:
             # Engine starts
-            send_to_screen("Engine starts", "Thinking…")
+            send_to_screen("You are black", "Engine starts", "Thinking…")
             engine_move_and_send(ser)
         else:
             send_to_screen(
