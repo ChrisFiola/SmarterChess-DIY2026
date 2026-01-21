@@ -1,4 +1,4 @@
-import serial
+import serial # type: ignore
 
 PORT = "/dev/serial0"
 BAUD = 115200
