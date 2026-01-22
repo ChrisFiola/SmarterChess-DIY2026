@@ -80,8 +80,8 @@ def restart_display_server():
 
 def send_to_screen(message):
     parts = message.split("\n")
-    while len(parts) < 4:
-        parts.append("")
+    #while len(parts) < 4:
+        #parts.append("")
 
     payload = "|".join(parts) + "|25\n"
     with open("/tmp/lcdpipe", "w") as pipe:
