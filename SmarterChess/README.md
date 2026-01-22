@@ -15,6 +15,7 @@
 
 ### Hardware
 - Waveshare ST7789 1.14" LCD Screen connection
+- Buttons but no yet functional
 
 
 #
@@ -29,3 +30,4 @@
 ### Hardware
 - Serial Connection with Pico
 - LEDS
+- Button logic with messages
