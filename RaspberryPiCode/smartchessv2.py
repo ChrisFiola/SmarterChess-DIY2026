@@ -374,6 +374,7 @@ def setup_stockfish(ser: serial.Serial) -> None:
 
     send_to_screen("Choose computer\ndifficulty (0-20)")
     sendtoboard(ser, "EngineStrength")
+    sendtoboard(ser, f"default_strength_{skill_level}")
 
     while True:
         msg = getboard(ser)
@@ -419,19 +420,12 @@ def setup_local(ser: serial.Serial) -> None:
 
     sendtoboard(ser, "EngineStrength")
     send_to_screen("Hint strength\n"+f"0-20 (now {skill_level})")
+    sendtoboard(ser, f"default_strength_{skill_level}")
 
-    while True:
-        msg = getboard(ser)
-        if msg is None:
-            continue
-        if msg.startswith("n"):
-            raise GoToModeSelect()
-        val = extract_digits(msg)
-        if val is not None:
-            skill_level = set_engine_skill(engine, val)
-            break
-        if msg in ("ok", "skip"):
-            break
+    val = timed_input_with_oled(
+        ser, "Hint strength", f"(now {skill_level})", timeout_sec=5, default=skill_level
+    )
+    move_time_ms = max(10, val)
 
     sendtoboard(ser, "TimeControl")
     sendtoboard(ser, f"default_time_{move_time_ms}")

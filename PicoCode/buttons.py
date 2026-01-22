@@ -14,6 +14,7 @@ GAME_RUNNING = 2
 GAME_PROMOTION = 3
 
 default_move_time = 2000
+default_strength = 5
 
 # Button state tracking
 _last_btn_state = [1] * len(BUTTON_PINS)  # 1 = released
@@ -174,14 +175,19 @@ def select_game_mode():
             return
 
 
-
 def select_engine_strength():
-    print("[Info] Selecting engine strength with timeout")
-    btn = timed_button_choice(5, default_value=DEFAULT_STRENGTH)  # pick your default
-    
-    send_to_pi(str(btn))
+    global default_strength
+    print("[Info] Selecting strength (with timeout)")
 
+    # Button press OR timeout
+    btn = timed_button_choice(5, default_value=None)
 
+    if btn is None:
+        # timeout → use the Pi default
+        send_to_pi(str(default_strength))
+        return
+    else:
+        send_to_pi(str(btn))
 
 
 def select_time_control():
@@ -196,10 +202,6 @@ def select_time_control():
         # timeout → use the Pi default
         send_to_pi(str(default_move_time))
         return
-
-    # button pressed:
-    if btn == 2:
-        send_to_pi("2000")
     else:
         send_to_pi(str(btn))
 
@@ -228,6 +230,13 @@ def wait_for_setup():
             time.sleep_ms(10)
             continue
             
+        elif msg.startswith("heyArduinodefault_strength_"):
+            try:
+                default_strength = int(msg.split("_")[-1])
+                print("Default strength from Pi:", default_strength)
+            except:
+                pass
+
         elif msg.startswith("heyArduinoEngineStrength"):
             select_engine_strength()
             return
