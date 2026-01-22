@@ -13,6 +13,13 @@ GAME_SETUP = 1
 GAME_RUNNING = 2
 GAME_PROMOTION = 3
 
+
+# ---- Non-blocking button state (for countdown screens) ----
+_last_state = [1] * len(BUTTON_PINS)        # 1 = not pressed (pull-up)
+_press_start_ms = [None] * len(BUTTON_PINS) # None or start time in ms
+_longpress_fired = [False] * len(BUTTON_PINS)
+
+
 game_state = GAME_IDLE
 
 uart = UART(
@@ -59,16 +66,47 @@ def detect_button():
         time.sleep_ms(10)
 
 def detect_button_with_longpress():
-    while True:
-        for idx, btn in enumerate(buttons):
-            if btn.value() == 0:
-                start = time.ticks_ms()
-                while btn.value() == 0:
-                    if time.ticks_diff(time.ticks_ms(), start) > LONG_PRESS_MS:
-                        return idx + 1, True
-                time.sleep_ms(DEBOUNCE_MS)
-                return idx + 1, False
-        time.sleep_ms(10)
+
+    now = time.ticks_ms()
+
+    for idx, btn in enumerate(buttons):
+        cur = btn.value()  # 0 = pressed, 1 = released (PULL_UP)
+        prev = _last_state[idx]
+
+        # Edge: just pressed
+        if prev == 1 and cur == 0:
+            _press_start_ms[idx] = now
+            _longpress_fired[idx] = False
+
+        # Held
+        if cur == 0 and _press_start_ms[idx] is not None:
+            held_ms = time.ticks_diff(now, _press_start_ms[idx])
+            if (held_ms > LONG_PRESS_MS) and not _longpress_fired[idx]:
+                _longpress_fired[idx] = True
+                # Emit immediately on long hold (no wait for release)
+                _last_state[idx] = cur
+                return (idx + 1, True)
+
+        # Edge: just released
+        if prev == 0 and cur == 1:
+            if _press_start_ms[idx] is not None:
+                held_ms = time.ticks_diff(now, _press_start_ms[idx])
+                was_long = held_ms > LONG_PRESS_MS
+                # Only emit short press on release if not already emitted as long press
+                if not was_long and not _longpress_fired[idx]:
+                    # Debounce *after* emitting by ignoring future bounce naturally
+                    _press_start_ms[idx] = None
+                    _longpress_fired[idx] = False
+                    _last_state[idx] = cur
+                    return (idx + 1, False)
+                # reset after long or whatever
+                _press_start_ms[idx] = None
+                _longpress_fired[idx] = False
+
+        _last_state[idx] = cur
+
+    return (None, None)
+
 
 def get_coordinate():
     col_btn = detect_button()
@@ -191,13 +229,13 @@ def select_color_choice():
             send_to_pi("n")
             return
         if btn == 1:
-            send_to_pi("1")
+            send_to_pi("s1")
             return
         if btn == 2:
-            send_to_pi("2")
+            send_to_pi("s2")
             return
         if btn == 3:
-            send_to_pi("3")
+            send_to_pi("s3")
             return
 
 def wait_for_setup():
@@ -215,9 +253,19 @@ def wait_for_setup():
 
         print("Setup message:", msg)
 
+        # --- Promotion ---
         if msg.startswith("heyArduinopromotion_choice_needed"):
+            print("[Info] Promotion requested by Pi")
             game_state = GAME_PROMOTION
-            print("[Info] Promotion requested during setup")
+
+            print("[Prompt] Choose promotion (1=Q,2=R,3=B,4=N)")
+            btn = detect_button()          # short press only!
+            if btn == 1: send_to_pi("btn_q")
+            if btn == 2: send_to_pi("btn_r")
+            if btn == 3: send_to_pi("btn_b")
+            if btn == 4: send_to_pi("btn_n")
+
+            game_state = GAME_RUNNING
             break
 
         elif msg.startswith("heyArduinoEngineStrength"):
@@ -234,83 +282,78 @@ def wait_for_setup():
             game_state = GAME_SETUP
             select_color_choice()
             return
+        
         elif msg.startswith("heyArduinoSetupComplete"):
             game_state = GAME_RUNNING
-            return
+            break
+
 
 def main_loop():
     global game_state
-    print("Entering main loop")
 
+    print("Entering main loop")
     while True:
-        # 1️⃣ Check serial messages first
         msg = read_from_pi()
         if not msg:
             time.sleep_ms(10)
             continue
-        if msg:
-            if msg.startswith("heyArduinopromotion_choice_needed"):
-                print("[Info] Promotion requested by Pi")
-                game_state = GAME_PROMOTION
-            elif msg.startswith("heyArduinoerror"):
-                print("[Error] Illegal move reported by Pi")
-            elif msg.startswith("heyArduinom"):
-                pi_move = msg[11:]
-                print("Pi move:", pi_move)
 
-        # 2️⃣ Handle global long-press commands
+        # --- GLOBAL ACTIONS ---
+        # Fully non-blocking button check (no longpress)
         btn, longp = detect_button_with_longpress()
         if longp:
             if btn == 1:
-                print("[Command] Request new game")
                 send_to_pi("btn_new")
                 return
-            if btn == 2 and game_state == GAME_RUNNING:
-                print("[Command] Request hint")
+            if btn == 2:
                 send_to_pi("btn_hint")
                 continue
 
-        # 3️⃣ Handle promotion if requested
-        if game_state == GAME_PROMOTION:
-            print("[Prompt] Choose promotion (1=Q, 2=R, 3=B, 4=N)")
-            btn, _ = detect_button_with_longpress()
-            if btn == 1:
-                send_to_pi("btn_q")
-            elif btn == 2:
-                send_to_pi("btn_r")
-            elif btn == 3:
-                send_to_pi("btn_b")
-            elif btn == 4:
-                send_to_pi("btn_n")
-            game_state = GAME_RUNNING
-            print("[Info] Promotion sent, resuming game")
-            continue
-        # 4️⃣ Handle normal human move
-        if msg.startswith("heyArduinoGameStart"):
-            game_state = GAME_RUNNING
-            print("[Info] Game starting")
+        # --- Promotion ---
+        if msg.startswith("heyArduinopromotion_choice_needed"):
+            print("[Info] Promotion requested by Pi")
+            game_state = GAME_PROMOTION
 
-            print("[Prompt] Enter move FROM (column+row)")
+            print("[Prompt] Choose promotion (1=Q,2=R,3=B,4=N)")
+            btn = detect_button()          # short press only!
+            if btn == 1: send_to_pi("btn_q")
+            if btn == 2: send_to_pi("btn_r")
+            if btn == 3: send_to_pi("btn_b")
+            if btn == 4: send_to_pi("btn_n")
+
+            game_state = GAME_RUNNING
+            break
+
+        elif msg.startswith("heyArduinoGameStart"):
+            game_state = GAME_RUNNING
+            return    
+
+        elif msg.startswith("heyArduinoturn_") or msg.startswith("heyArduinoerror"):
+            game_state = GAME_RUNNING
+
+            if msg.startswith("heyArduinoerror"):
+                print("[Error] Illegal move reported by Pi")
+            
+             # --- TURN MESSAGES: ALWAYS REQUEST A MOVE ---
+            print("[Info] Your turn now")
+
+            print("[Prompt] Enter move FROM")
             move_from = get_coordinate()
-            print("[Prompt] Enter move TO (column+row)")
+
+            print("[Prompt] Enter move TO")
             move_to = get_coordinate()
 
             move = move_from + move_to
-            send_to_pi("M", move)
-            print(f"[Sent] Move {move} sent to Pi")
+            send_to_pi(move)
+            print("[Sent] Move:", move)
+            return
 
-            # 5️⃣ Wait briefly for Pi to respond with error or promotion request
-            start = time.ticks_ms()
-            while time.ticks_diff(time.ticks_ms(), start) < 3000:
-                msg = read_from_pi()
-                if msg:
-                    if msg.startswith("heyArduinopromotion_choice_needed"):
-                        print("[Info] Promotion requested during move")
-                        game_state = GAME_PROMOTION
-                        break
-                    elif msg.startswith("heyArduinoerror"):
-                        print("[Error] Illegal move reported by Pi")
-                        break
+        
+        elif msg.startswith("heyArduinom"):
+            game_state = GAME_RUNNING
+            pi_move = msg[11:]
+            print("Pi move:", pi_move)
+            break
 
 # -----------------------------
 # Entry
@@ -321,6 +364,7 @@ wait_for_mode_request()
 select_game_mode()
 while game_state == GAME_SETUP:
     wait_for_setup()
-main_loop()
+while game_state == GAME_RUNNING:
+    main_loop()
 
 

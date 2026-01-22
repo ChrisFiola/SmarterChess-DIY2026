@@ -514,6 +514,8 @@ def play_game(ser: serial.Serial, mode: str) -> None:
             send_to_screen(
                 "You are white" if human_is_white else "You are black", "Your move…"
             )
+            sendtoboard(ser, "turn_white")
+            game_started = True
 
     else:
         # local
