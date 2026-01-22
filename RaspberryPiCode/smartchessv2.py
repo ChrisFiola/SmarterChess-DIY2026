@@ -78,31 +78,12 @@ def restart_display_server():
         stderr=subprocess.DEVNULL,
     )
 
-
-def send_to_screen(
-    line1: str, line2: str = "", line3: str = "", line4: str = "", size: str = ""
-) -> None:
-    """Fire-and-forget update to OLED (non-blocking)."""
-    try:
-        subprocess.Popen(
-            [
-                "python3",
-                OLED_SCRIPT,
-                "-a",
-                line1,
-                "-b",
-                line2,
-                "-c",
-                line3,
-                "-d",
-                line4,
-                "-s",
-                size,
-            ]
-        )
-    except Exception as e:
-        print(f"[OLED] Warning: {e}", file=sys.stderr)
-
+def send_to_screen(message):
+    lines = message.split("\n")
+    while len(lines) < 4:
+        lines.append("")
+    
+    os.system(f"printToOLED -a \"{lines[0]}\" -b \"{lines[1]}\" -c \"{lines[2]}\" -d \"{lines[3]}\"")
 
 # -----------------------------
 # Serial Helpers
@@ -193,7 +174,7 @@ def parse_side_choice(s: str) -> Optional[bool]:
 
 def timed_input_with_oled(ser, prompt1, prompt2, timeout_sec=5, default=None):
     for remaining in range(timeout_sec, 0, -1):
-        send_to_screen(prompt1, prompt2, f"{remaining} sec...")
+        send_to_screen(prompt1 + "\n" + prompt2 + "\n"+f"{remaining} sec...")
 
         start = time.time()
         while time.time() - start < 1:
@@ -239,11 +220,8 @@ def requires_promotion(move: chess.Move, brd: chess.Board) -> bool:
 
 def ask_promotion_piece(ser) -> str:
     send_to_screen(
-        "Promotion!",
-        "1=Queen",
-        "2=Rook 3=Bishop",
-        "4=Knight"
-    )
+        "Promotion!\n1=Queen\n2=Rook\n3=Bishop\n4=Knight"
+        )
     sendtoboard(ser, "promotion_choice_needed")
 
     while True:
@@ -264,7 +242,7 @@ def ask_promotion_piece(ser) -> str:
         if choice in ("btn_n", "btn_knight"):
             return "n"
 
-        send_to_screen("Promotion!", "1=Q 2=R", "3=B 4=N", "Try again")
+        send_to_screen("Promotion!\n1=Q\n=R\n3=B\n4=N\n\nTry again")
 
 
 # -----------------------------
@@ -308,7 +286,7 @@ def engine_bestmove(brd: chess.Board, ms: int) -> Optional[str]:
 def send_hint_to_board(ser: serial.Serial) -> None:
     if board.is_game_over():
         sendtoboard(ser, "hint_gameover")
-        send_to_screen("Game Over", "No hints")
+        send_to_screen("Game Over\nNo hints")
         return
 
     info = engine.analyse(
@@ -316,7 +294,7 @@ def send_hint_to_board(ser: serial.Serial) -> None:
     )
     best_move = info["pv"][0].uci()
     sendtoboard(ser, f"hint_{best_move}")
-    send_to_screen("Hint", best_move)
+    send_to_screen("Hint\n"+best_move)
     print(f"[Hint] {best_move}")
 
 
@@ -339,7 +317,7 @@ def report_game_over(ser: serial.Serial) -> None:
         )
     )
     sendtoboard(ser, f"GameOver:{result}")
-    send_to_screen("Game Over", f"Result {result}", reason.upper())
+    send_to_screen("Game Over\n"+f"Result {result}"+"\n"+reason.upper())
 
 
 def engine_move_and_send(ser: serial.Serial) -> None:
@@ -360,9 +338,8 @@ def engine_move_and_send(ser: serial.Serial) -> None:
     )
 
     send_to_screen(
-        f"{reply[:2]} → {reply[2:4]}",
-        "",
-        "Your turn"
+        f"{reply[:2]} → {reply[2:4]}"+
+        "\nYour turn"
     )
 
     print("[Engine]", reply)
@@ -374,7 +351,7 @@ def engine_move_and_send(ser: serial.Serial) -> None:
 # -----------------------------
 def select_mode(ser: serial.Serial) -> str:
     sendtoboard(ser, "ChooseMode")
-    send_to_screen("Choose opponent:", "1) PC", "2) Remote", "3) Local")
+    send_to_screen("Choose opponent: \n1) PC\n2) Remote\n3) Local")
     while True:
         msg = getboard(ser)
         if msg is None:
@@ -387,7 +364,7 @@ def select_mode(ser: serial.Serial) -> str:
         if m in ("3", "local", "human", "btn_mode_local"):
             return "local"
         sendtoboard(ser, "error_unknown_mode")
-        send_to_screen("Unknown mode", m, "Send again")
+        send_to_screen("Unknown mode\n" + m + "\nSend again")
 
 
 def setup_stockfish(ser: serial.Serial) -> None:
@@ -408,14 +385,14 @@ def setup_stockfish(ser: serial.Serial) -> None:
             break
         print(f"[Parse] Invalid skill payload '{msg}', waiting...")
 
-    send_to_screen("Choose move time", f"(ms, now {move_time_ms})")
+    send_to_screen("Choose move time\n" + f"(ms, now {move_time_ms})")
     sendtoboard(ser, "TimeControl")
     val = timed_input_with_oled(
         ser, "Choose move time", f"(now {move_time_ms})", timeout_sec=5, default=move_time_ms
     )
     move_time_ms = max(10, val)
 
-    send_to_screen("Choose side", "1 = White, 2 = Black", "3 = Random")
+    send_to_screen("Choose side\n1 = White\n2 = Black\n3 = Random")
     sendtoboard(ser, "PlayerColor")
 
     while True:
@@ -434,11 +411,11 @@ def setup_stockfish(ser: serial.Serial) -> None:
 def setup_local(ser: serial.Serial) -> None:
     global skill_level, move_time_ms
 
-    send_to_screen("Local 2-Player", "Hints enabled")
-    time.sleep(0.5)
+    send_to_screen("Local 2-Player\nHints enabled")
+    time.sleep(3)
 
     sendtoboard(ser, "EngineStrength")
-    send_to_screen("Hint strength", f"0-20 (now {skill_level})")
+    send_to_screen("Hint strength\n"+f"0-20 (now {skill_level})")
 
     while True:
         msg = getboard(ser)
@@ -454,7 +431,7 @@ def setup_local(ser: serial.Serial) -> None:
             break
 
     sendtoboard(ser, "TimeControl")
-    send_to_screen("Hint think time", f"ms (now {move_time_ms})")
+    send_to_screen("Hint think time\n" + f"ms (now {move_time_ms})")
 
     val = timed_input_with_oled(
         ser, "Hint think time", f"(now {move_time_ms})", timeout_sec=5, default=move_time_ms
@@ -479,17 +456,17 @@ def play_game(ser: serial.Serial, mode: str) -> None:
     # Opening behavior (match old version)
     if mode == "stockfish":
         if not human_is_white:
-            send_to_screen("You are black", "Engine starts", "Thinking…")
+            send_to_screen("You are black\nEngine starts\nThinking…")
             time.sleep(0.1)
             engine_move_and_send(ser)
             game_started = True
         else:
-            send_to_screen("You are white", "Your move…")
+            send_to_screen("You are white\nYour move…")
             sendtoboard(ser, "turn_white")
             game_started = True
     else:
         sendtoboard(ser, "turn_white")
-        send_to_screen("Local Play", "White to move")
+        send_to_screen("Local Play\nWhite to move")
         game_started = True
 
     while True:
@@ -497,7 +474,7 @@ def play_game(ser: serial.Serial, mode: str) -> None:
             if not gameover_reported:
                 report_game_over(ser)
                 gameover_reported = True
-                send_to_screen("Press n", "to start over")
+                send_to_screen("Press n to start over")
 
         if mode == "stockfish":
             engine_should_move = (
@@ -505,7 +482,7 @@ def play_game(ser: serial.Serial, mode: str) -> None:
                 or (board.turn == chess.BLACK and human_is_white)
             )
             if engine_should_move and not board.is_game_over():
-                send_to_screen("Engine", "Thinking…")
+                send_to_screen("Engine Thinking…")
                 engine_move_and_send(ser)
                 continue
 
@@ -527,14 +504,14 @@ def play_game(ser: serial.Serial, mode: str) -> None:
         uci = parse_move_payload(msg)
         if not uci:
             sendtoboard(ser, f"error_invalid_{msg}")
-            send_to_screen("Invalid", msg, "Try again")
+            send_to_screen("Invalid\n" + msg + "\nTry again")
             continue
 
         try:
             move = chess.Move.from_uci(uci)
         except ValueError:
             sendtoboard(ser, f"error_invalid_{uci}")
-            send_to_screen("Invalid move", uci, f"{turn_name()} again")
+            send_to_screen("Invalid move\n" + uci + f"\n{turn_name()} again")
             continue
 
         if requires_promotion(move, board):
@@ -544,13 +521,13 @@ def play_game(ser: serial.Serial, mode: str) -> None:
 
         if move not in board.legal_moves:
             sendtoboard(ser, f"error_illegal_{uci}")
-            send_to_screen("Illegal move!", uci, f"{turn_name()} again")
+            send_to_screen("Illegal move!\n" + uci + f"\n{turn_name()} again")
             continue
 
         board.push(move)
         next_turn = turn_name()
 
-        send_to_screen(f"{uci[:2]} → {uci[2:4]}", "", f"{next_turn} to move")
+        send_to_screen(f"{uci[:2]} → {uci[2:4]}\n" + f"{next_turn} to move")
         print(board)
 
         sendtoboard(
@@ -563,7 +540,7 @@ def play_game(ser: serial.Serial, mode: str) -> None:
 # Online placeholder
 # -----------------------------
 def run_online_mode(ser: serial.Serial) -> None:
-    send_to_screen("Online mode", "Not implemented", "Use Stockfish/Local")
+    send_to_screen("Online mode not implemented\nUse Stockfish/Local")
     sendtoboard(ser, "error_online_unimplemented")
 
 
@@ -571,7 +548,7 @@ def run_online_mode(ser: serial.Serial) -> None:
 # Shutdown
 # -----------------------------
 def shutdown_pi(ser: Optional[serial.Serial]) -> None:
-    send_to_screen("Shutting down…", "Wait 20s then", "disconnect power")
+    send_to_screen("Shutting down…\nWait 20s then disconnect power")
     time.sleep(2)
     try:
         subprocess.call("sudo nohup shutdown -h now", shell=True)
@@ -616,7 +593,7 @@ def main():
             mode_dispatch(ser, mode)
         except GoToModeSelect:
             reset_game_state()
-            send_to_screen("NEW", "GAME")
+            send_to_screen("NEW GAME")
             time.sleep(0.2)
             continue
         except KeyboardInterrupt:
