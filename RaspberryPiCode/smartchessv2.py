@@ -109,6 +109,24 @@ def get_raw_from_board(ser: serial.Serial) -> Optional[str]:
     except UnicodeDecodeError:
         return None
 
+def getboard_nonblocking(ser: serial.Serial) -> Optional[str]:
+    # Do not block; only read what is already in buffer
+    if ser.in_waiting:
+        raw = ser.readline()
+        if not raw:
+            return None
+        try:
+            s = raw.decode("utf-8").strip().lower()
+        except UnicodeDecodeError:
+            return None
+        if s.startswith("heypixshutdown"):
+            shutdown_pi(ser)
+            return None
+        if s.startswith("heypi"):
+            payload = s[5:]
+            print(f"[Board->] {s}  | payload='{payload}'")
+            return payload
+    return None
 
 def getboard(ser: serial.Serial) -> Optional[str]:
     """
@@ -173,22 +191,40 @@ def parse_side_choice(s: str) -> Optional[bool]:
 
 
 def timed_input_with_oled(ser, prompt1, prompt2, timeout_sec=5, default=None):
-    for remaining in range(timeout_sec, 0, -1):
-        send_to_screen(prompt1 + "\n" + prompt2 + "\n"+f"{remaining} sec...", size="auto")
+    """
+    Show a true 1 Hz countdown and accept digits until timeout.
+    Non-blocking serial so we don't miss ticks.
+    """
+    end_time = time.monotonic() + timeout_sec
+    last_shown = None
 
-        start = time.time()
-        while time.time() - start < 1:
-            msg = getboard(ser)
+    while True:
+        now = time.monotonic()
+        remaining = int(max(0, round(end_time - now)))  # whole seconds remaining
+
+        # Only refresh OLED when the remaining second actually changes
+        if remaining != last_shown:
+            send_to_screen(f"{prompt1}\n{prompt2}\n{remaining} sec...", size="auto")
+            last_shown = remaining
+
+        # Poll non-blocking for input ~10 times per second
+        deadline = now + 0.1
+        while time.monotonic() < deadline:
+            msg = getboard_nonblocking(ser)
             if msg is None:
+                time.sleep(0.01)
                 continue
+
             if msg.startswith("n"):
                 raise GoToModeSelect()
+
             digits = extract_digits(msg)
             if digits is not None:
                 return digits
 
-    return default
-
+        # Timeout reached
+        if now >= end_time:
+            return default
 
 
 def requires_promotion(move: chess.Move, brd: chess.Board) -> bool:
@@ -485,7 +521,7 @@ def play_game(ser: serial.Serial, mode: str) -> None:
             if label == "from":
                 send_to_screen("Enter from:\n" + text, size="auto")
             elif label == "to":
-                send_to_screen("Enter from:\n" + text, size="auto")
+                send_to_screen("Enter to:\n" + text, size="auto")
             continue
 
 
