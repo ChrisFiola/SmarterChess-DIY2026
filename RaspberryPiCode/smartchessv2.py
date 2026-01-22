@@ -443,14 +443,20 @@ def setup_local(ser: serial.Serial) -> None:
     send_to_screen("Local 2-Player\nHints enabled", size="auto")
     time.sleep(3)
 
+    send_to_screen("Choose computer\ndifficulty (0-20)", size="auto")
     sendtoboard(ser, "EngineStrength")
-    send_to_screen("Hint strength\n"+f"0-20 (now {skill_level})", size="auto")
     sendtoboard(ser, f"default_strength_{skill_level}")
+    
+    val = getboard(ser)
+    skill_level = max(min(int(val), 20), 0)
 
 
+    send_to_screen("Choose move time\n" + f"(ms, now {move_time_ms})", size="auto")
     sendtoboard(ser, "TimeControl")
     sendtoboard(ser, f"default_time_{move_time_ms}")
-    send_to_screen("Hint think time\n" + f"ms (now {move_time_ms})", size="auto")
+    
+    val = getboard(ser)  # Pico returns final value
+    move_time_ms = max(int(val), 10)
 
 
 
