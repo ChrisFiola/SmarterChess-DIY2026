@@ -393,7 +393,7 @@ def select_mode(ser: serial.Serial) -> str:
 def setup_stockfish(ser: serial.Serial) -> None:
     global skill_level, move_time_ms, human_is_white
 
-    send_to_screen("Choose computer", "difficulty (0-20)")
+    send_to_screen("Choose computer very long text to test text wrapping to see if it works", "difficulty (0-20)")
     sendtoboard(ser, "EngineStrength")
 
     while True:
