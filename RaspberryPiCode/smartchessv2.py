@@ -409,37 +409,59 @@ def setup_stockfish(ser: serial.Serial) -> None:
     sendtoboard(ser, "EngineStrength")
     sendtoboard(ser, f"default_strength_{skill_level}")
     
-    # WAIT for Pico final value (ignore typing previews)
+
+    last_strength_text = str(skill_level)
+
     while True:
         msg = getboard(ser)
         if msg is None:
             continue
 
-        # typing message: typing_strength_5
+        # Live preview: typing_strength_###
         if msg.startswith("typing_"):
+            try:
+                _, label, text = msg.split("_", 2)
+                if label.lower() == "strength":
+                    last_strength_text = text
+                    send_to_screen(f"Select Strength:\n{last_strength_text}", size="auto")
+            except:
+                pass
             continue
 
-        # final value
+        # Final OK / timeout value
         if msg.isdigit():
             skill_level = max(0, min(int(msg), 20))
             break
+
 
 
     send_to_screen("Choose move time\n" + f"(ms, now {move_time_ms})", size="auto")
     sendtoboard(ser, "TimeControl")
     sendtoboard(ser, f"default_time_{move_time_ms}")
     
+
+    last_time_text = str(move_time_ms)
+
     while True:
         msg = getboard(ser)
         if msg is None:
             continue
 
+        # Live preview: typing_time_####
         if msg.startswith("typing_"):
+            try:
+                _, label, text = msg.split("_", 2)
+                if label.lower() == "time":
+                    last_time_text = text
+                    send_to_screen(f"Select Time:\n{last_time_text} ms", size="auto")
+            except:
+                pass
             continue
 
         if msg.isdigit():
             move_time_ms = max(10, int(msg))
             break
+
 
 
 
@@ -469,37 +491,56 @@ def setup_local(ser: serial.Serial) -> None:
     sendtoboard(ser, "EngineStrength")
     sendtoboard(ser, f"default_strength_{skill_level}")
     
-    # WAIT for Pico final value (ignore typing previews)
+
+    last_strength_text = str(skill_level)
+
     while True:
         msg = getboard(ser)
         if msg is None:
             continue
 
-        # typing message: typing_strength_5
         if msg.startswith("typing_"):
+            try:
+                _, label, text = msg.split("_", 2)
+                if label.lower() == "strength":
+                    last_strength_text = text
+                    send_to_screen(f"Select Strength:\n{last_strength_text}", size="auto")
+            except:
+                pass
             continue
 
-        # final value
         if msg.isdigit():
             skill_level = max(0, min(int(msg), 20))
             break
+
 
 
     send_to_screen("Choose move time\n" + f"(ms, now {move_time_ms})", size="auto")
     sendtoboard(ser, "TimeControl")
     sendtoboard(ser, f"default_time_{move_time_ms}")
     
+
+    last_time_text = str(move_time_ms)
+
     while True:
         msg = getboard(ser)
         if msg is None:
             continue
 
         if msg.startswith("typing_"):
+            try:
+                _, label, text = msg.split("_", 2)
+                if label.lower() == "time":
+                    last_time_text = text
+                    send_to_screen(f"Select Time:\n{last_time_text} ms", size="auto")
+            except:
+                pass
             continue
 
         if msg.isdigit():
             move_time_ms = max(10, int(msg))
             break
+
 
 
 
