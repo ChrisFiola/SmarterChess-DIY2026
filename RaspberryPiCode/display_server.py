@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 import os, sys, time
-from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageColor
+from PIL import Image, ImageDraw, ImageFont
 
-# Waveshare driver import
+# Import Waveshare driver
 sys.path.append("/home/king/LCD_Module_RPI_code/RaspberryPi/python")
 from lib.LCD_1inch14 import LCD_1inch14
 
 PIPE = "/tmp/lcdpipe"
 READY_FLAG = "/tmp/display_server_ready"
 
-# Remove stale ready file
+# Remove stale ready flag if exists
 if os.path.exists(READY_FLAG):
     os.remove(READY_FLAG)
 
@@ -19,129 +19,131 @@ disp.Init()
 disp.bl_DutyCycle(80)
 disp.clear()
 
-# Signal ready
-with open(READY_FLAG, "w") as f:
-    f.write("ready\n")
-
-# Screen parameters
+# Screen constants
 W, H = disp.width, disp.height
 FONT_PATH = "/home/king/LCD_Module_RPI_code/RaspberryPi/python/Font/Font00.ttf"
 
+# Cache
 FONTS = {}
 BLACK_BG = Image.new("RGB", (W, H), "BLACK")
 
-# ---------------------------
-#  FONT CACHE
-# ---------------------------
-def get_font(size: int):
+def get_font(size):
+    """Cached font loader."""
     if size not in FONTS:
         FONTS[size] = ImageFont.truetype(FONT_PATH, size)
     return FONTS[size]
 
-# ---------------------------
-#  TEXT WRAPPING
-# ---------------------------
+# -------------------------------------------------------------------
+# WRAPPING TEXT TO WIDTH
+# -------------------------------------------------------------------
 def wrap_text(text, font, max_width):
     """
-    Wrap text to fit into pixel width.
-    Returns a list of wrapped lines.
+    Break text into multiple lines so each fits within max_width pixels.
     """
     words = text.split(" ")
     lines = []
-    current = ""
+    cur = ""
 
-    for word in words:
-        test = (current + " " + word).strip()
-        w = font.getlength(test)
-        if w <= max_width:
-            current = test
+    for w in words:
+        test = (cur + " " + w).strip()
+        if font.getlength(test) <= max_width:
+            cur = test
         else:
-            if current:
-                lines.append(current)
-            # If a single word is too long, break it char-by-char
-            while font.getlength(word) > max_width:
-                for i in range(1, len(word)+1):
-                    if font.getlength(word[:i]) > max_width:
-                        lines.append(word[:i-1])
-                        word = word[i-1:]
+            if cur:
+                lines.append(cur)
+            # Break too-long words by characters
+            while font.getlength(w) > max_width:
+                for i in range(1, len(w) + 1):
+                    if font.getlength(w[:i]) > max_width:
+                        lines.append(w[:i - 1])
+                        w = w[i - 1:]
                         break
-            current = word
+            cur = w
 
-    if current:
-        lines.append(current)
+    if cur:
+        lines.append(cur)
 
     return lines
 
-# ---------------------------
-#  PARTIAL REDRAW ENGINE
-# ---------------------------
-def draw_text(lines, size):
+# -------------------------------------------------------------------
+# PERFECTLY CENTERED TEXT
+# -------------------------------------------------------------------
+def draw_centered_text(lines, size):
     """
-    Only redraw changed lines, keeping background persistent.
+    Render wrapped + centered text fully centered both vertically
+    and horizontally. Redraw entire screen each time.
     """
-    font = get_font(size)
     img = BLACK_BG.copy()
     draw = ImageDraw.Draw(img)
+    font = get_font(size)
 
-    # Wrap long lines
+    # Expand wrapped text
     wrapped = []
     for ln in lines:
         if ln.strip():
-            wrapped.extend(wrap_text(ln, font, W - 10))
+            wrapped.extend(wrap_text(ln, font, W - 12))
         else:
             wrapped.append("")
 
-    # Position lines vertically
-    y = 5
+    # Compute total height
+    total_height = 0
+    line_heights = []
     for ln in wrapped:
-        if ln == "":
-            y += size + 4
-            continue
+        if not ln:
+            h = size
+        else:
+            bbox = draw.textbbox((0, 0), ln, font=font)
+            h = bbox[3] - bbox[1]
+        line_heights.append(h)
+        total_height += h + 8  # spacing
 
-        bbox = draw.textbbox((0, 0), ln, font=font)
-        tw = bbox[2] - bbox[0]
-        th = bbox[3] - bbox[1]
-        draw.text(((W - tw) // 2, y), ln, font=font, fill="WHITE")
-        y += th + 6
+    total_height -= 8  # remove extra spacing after last line
+
+    # Vertical center
+    y = (H - total_height) // 2
+
+    # Draw lines
+    for ln, lh in zip(wrapped, line_heights):
+        if ln:
+            bbox = draw.textbbox((0, 0), ln, font=font)
+            tw = bbox[2] - bbox[0]
+            draw.text(((W - tw) // 2, y), ln, font=font, fill="WHITE")
+        y += lh + 8
 
     disp.ShowImage(img)
 
-# ---------------------------
-#  SPLASH SCREEN
-# ---------------------------
+# -------------------------------------------------------------------
+# SPLASH SCREEN (shown before first message)
+# -------------------------------------------------------------------
 def draw_splash():
     img = BLACK_BG.copy()
     draw = ImageDraw.Draw(img)
 
-    # Title
-    title_font = get_font(28)
-    msg = "SMARTCHESS"
-    bbox = draw.textbbox((0, 0), msg, font=title_font)
+    title_font = get_font(32)
+    title = "SMARTCHESS"
+    bbox = draw.textbbox((0, 0), title, font=title_font)
     draw.text(((W - (bbox[2]-bbox[0])) // 2, 20),
-              msg, font=title_font, fill="WHITE")
+              title, font=title_font, fill="WHITE")
 
-    # Simple ASCII-style chess icon
-    logo = [
-        "  ♜ ♞ ♝ ♛ ♚ ♝ ♞ ♜  ",
-        "  ♟ ♟ ♟ ♟ ♟ ♟ ♟ ♟  ",
-    ]
-    piece_font = get_font(22)
-
-    y = 70
-    for row in logo:
-        bbox = draw.textbbox((0, 0), row, font=piece_font)
-        draw.text(((W - (bbox[2]-bbox[0])) // 2, y),
-                  row, font=piece_font, fill="WHITE")
-        y += (bbox[3]-bbox[1]) + 2
+    logo = ["♜ ♞ ♝ ♛ ♚ ♝ ♞ ♜"]
+    logo_font = get_font(28)
+    for i, row in enumerate(logo):
+        bbox = draw.textbbox((0, 0), row, font=logo_font)
+        draw.text(((W - (bbox[2]-bbox[0])) // 2, 70 + i*32),
+                   row, font=logo_font, fill="WHITE")
 
     disp.ShowImage(img)
 
-# Show splash until first pipe message
+# Show splash immediately
 draw_splash()
 
-# ---------------------------
-#  PIPE LOOP
-# ---------------------------
+# Signal ready
+with open(READY_FLAG, "w") as f:
+    f.write("ready\n")
+
+# -------------------------------------------------------------------
+# MAIN LOOP
+# -------------------------------------------------------------------
 pipe = open(PIPE, "r")
 last_msg = None
 
@@ -154,11 +156,10 @@ while True:
 
     if line == last_msg:
         continue
-
     last_msg = line
 
     parts = line.strip().split("|")
     size = int(parts[-1])
     lines = parts[:-1]
 
-    draw_text(lines, size)
+    draw_centered_text(lines, size)
