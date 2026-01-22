@@ -394,10 +394,9 @@ def select_mode(ser: serial.Serial) -> str:
 def setup_stockfish(ser: serial.Serial) -> None:
     global skill_level, move_time_ms, human_is_white
 
-    sendtoboard(ser, "ReadyStockfish")
-
     # Computer skill level selection
     send_to_screen("Choose computer", "difficulty (0-20)")
+    sendtoboard(ser, "EngineStrength")
     while True:
         msg = getboard(ser)
         if msg is None:
@@ -413,6 +412,7 @@ def setup_stockfish(ser: serial.Serial) -> None:
 
     # Move time selection
     send_to_screen("Choose move time", f"(ms, now {move_time_ms})")
+    sendtoboard(ser, "TimeControl")
     val = timed_input_with_oled(
         ser,
         "Choose move time",
@@ -425,6 +425,7 @@ def setup_stockfish(ser: serial.Serial) -> None:
 
     # Side selection
     send_to_screen("Choose side", "1 = White, 2 = Black", "3 = Random")
+    sendtoboard(ser, "PlayerColor")
     while True:
         msg = getboard(ser)
         if msg is None:
@@ -451,7 +452,7 @@ def setup_local(ser: serial.Serial) -> None:
 
     # Hint skill level selection
     send_to_screen("Hint strength", f"0-20 (now {skill_level})")
-    sendtoboard(ser, "HintStrength")
+    sendtoboard(ser, "EngineStrength")
     while True:
         msg = getboard(ser)
         if msg is None:
@@ -469,6 +470,7 @@ def setup_local(ser: serial.Serial) -> None:
 
     # Hint move time selection
     send_to_screen("Hint think time", f"ms (now {move_time_ms})")
+    sendtoboard(ser, "TimeControl")
     val = timed_input_with_oled(
         ser,
         "Hint think time",
