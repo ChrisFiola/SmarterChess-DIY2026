@@ -206,8 +206,8 @@ def select_time_with_buttons(default_value, min_val=100, max_val=20000, timeout_
 
 
 def reset_buttons():
-    for i in range(len(_last_btn_state)):
-        _last_btn_state[i] = 1
+    for i, btn in enumerate(buttons):
+        _last_btn_state[i] = btn.value()
 
 
 # -----------------------------
