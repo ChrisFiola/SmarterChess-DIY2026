@@ -55,7 +55,7 @@ def send_typing_preview(label: str, text: str):
       heyArduinotyping_FROM_e2
       heyArduinotyping_TO_e2 → e4
     """
-    uart.write(f"heyArduinotyping_{label}_{text}\n".encode())
+    uart.write(f"heypityping_{label}_{text}\n".encode())
 
 
 # -----------------------------
