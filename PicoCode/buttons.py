@@ -149,9 +149,9 @@ def select_engine_strength():
 
 def select_time_control():
     print("[Info] Pi requests time control")  
-    start = time.time()
 
-    while time.time() - start < 1:
+    while True:
+
         btn, longp = detect_button_with_longpress()
         if longp:
             send_to_pi("n")
@@ -160,7 +160,7 @@ def select_time_control():
             send_to_pi("1")
             return
         if btn == 2:
-            send_to_pi("2")
+            send_to_pi("2000")
             return
         if btn == 3:
             send_to_pi("3")
@@ -180,6 +180,7 @@ def select_time_control():
         if btn == 8:
             send_to_pi("8")
             return
+    # Timeout reached
 
 def select_color_choice():
     print("[Info] Pi requests player color")
@@ -232,6 +233,9 @@ def wait_for_setup():
         elif msg.startswith("heyArduinoPlayerColor"):
             game_state = GAME_SETUP
             select_color_choice()
+            return
+        elif msg.startswith("heyArduinoSetupComplete"):
+            game_state = GAME_RUNNING
             return
 
 def main_loop():

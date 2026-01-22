@@ -481,7 +481,7 @@ def setup_local(ser: serial.Serial) -> None:
         )
         move_time_ms = max(10, val)
         break
-    
+
     print(f"[Local] HintSkill={skill_level} | HintTime={move_time_ms}ms")
 
 # -----------------------------
@@ -500,6 +500,7 @@ def play_game(ser: serial.Serial, mode: str) -> None:
     """
     reset_game_state()
     global game_started
+    sendtoboard(ser, "GameStart")
     gameover_reported = False
 
     # Opening display hints
@@ -622,11 +623,11 @@ def mode_dispatch(ser: serial.Serial, mode: str) -> None:
     """
     if mode == "stockfish":
         setup_stockfish(ser)
-        sendtoboard(ser, "GameStart")
+        sendtoboard(ser, "SetupComplete")
         play_game(ser, "stockfish")
     elif mode == "local":
         setup_local(ser)
-        sendtoboard(ser, "GameStart")
+        sendtoboard(ser, "SetupComplete")
         play_game(ser, "local")
     else:
         run_online_mode(ser)
