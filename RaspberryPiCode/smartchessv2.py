@@ -496,10 +496,10 @@ def play_game(ser: serial.Serial, mode: str) -> None:
         
         if msg.startswith("typing_"):
             _, label, text = msg.split("_", 2)
-            if label == "FROM":
-                send_to_screen("Enter FROM:\n" + text)
-            elif label == "TO":
-                send_to_screen("Enter TO:\n" + text)
+            if label == "from":
+                send_to_screen("Enter from:\n" + text)
+            elif label == "from":
+                send_to_screen("Enter from:\n" + text)
             continue
 
 
