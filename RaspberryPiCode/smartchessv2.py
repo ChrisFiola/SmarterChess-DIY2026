@@ -405,7 +405,6 @@ def select_mode(ser: serial.Serial) -> str:
 def setup_stockfish(ser: serial.Serial) -> None:
     global skill_level, move_time_ms, human_is_white
 
-    send_to_screen("Choose computer\ndifficulty (0-20)\nButton 1 = + 1 \nButton 2 = - 1\nButton 3 = OK", size="auto")
     sendtoboard(ser, "EngineStrength")
     sendtoboard(ser, f"default_strength_{skill_level}")
     
@@ -423,7 +422,7 @@ def setup_stockfish(ser: serial.Serial) -> None:
                 _, label, text = msg.split("_", 2)
                 if label.lower() == "strength":
                     last_strength_text = text
-                    send_to_screen(f"Select Strength:\n{last_strength_text}", size="auto")
+                    send_to_screen(f"Select computer difficulty:\n{last_strength_text} \nButton 1: +1 \nButton 2: -1\nButton 3: OK", size="auto")
             except:
                 pass
             continue
@@ -434,8 +433,6 @@ def setup_stockfish(ser: serial.Serial) -> None:
             break
 
 
-
-    send_to_screen("Choose thinking time\n" + f"(ms, now {move_time_ms})" + "\nButton 1 = + 100ms \nButton 2 = - 100ms\nButton 3 = OK", size="auto")
     sendtoboard(ser, "TimeControl")
     sendtoboard(ser, f"default_time_{move_time_ms}")
     
@@ -453,7 +450,7 @@ def setup_stockfish(ser: serial.Serial) -> None:
                 _, label, text = msg.split("_", 2)
                 if label.lower() == "time":
                     last_time_text = text
-                    send_to_screen(f"Select Time:\n{last_time_text} ms", size="auto")
+                    send_to_screen(f"Select thinking Time:\n{last_time_text} ms\nButton 1: +100ms\nButton 2: -100ms\nButton 3: OK", size="auto")
             except:
                 pass
             continue
@@ -504,7 +501,7 @@ def setup_local(ser: serial.Serial) -> None:
                 _, label, text = msg.split("_", 2)
                 if label.lower() == "strength":
                     last_strength_text = text
-                    send_to_screen(f"Select Strength:\n{last_strength_text}", size="auto")
+                    send_to_screen(f"Select hint strength:\n{last_strength_text} \nButton 1: +1 \nButton 2: -1\nButton 3: OK", size="auto")
             except:
                 pass
             continue
@@ -532,7 +529,7 @@ def setup_local(ser: serial.Serial) -> None:
                 _, label, text = msg.split("_", 2)
                 if label.lower() == "time":
                     last_time_text = text
-                    send_to_screen(f"Select Time:\n{last_time_text} ms", size="auto")
+                    send_to_screen(f"Select Hint Time:\n{last_time_text} ms\nButton 1: +100ms\nButton 2: -100ms\nButton 3: OK", size="auto")
             except:
                 pass
             continue
@@ -607,9 +604,9 @@ def play_game(ser: serial.Serial, mode: str) -> None:
                 send_to_screen("Enter to:\n" + text, size="auto")
 
             elif label == "strength":
-                    send_to_screen("Select Strength:\n" + text, size="auto")
+                    send_to_screen(f"Select strength:\n{text} \nButton 1: +1 \nButton 2: -1\nButton 3: OK", size="auto")
             elif label == "time":
-                send_to_screen("Select Time:\n" + text + " ms", size="auto")
+                send_to_screen(f"Select thinking time:\n{text} ms\nButton 1: +100ms\nButton 2: -100ms\nButton 3: OK", size="auto")
             continue
 
 
