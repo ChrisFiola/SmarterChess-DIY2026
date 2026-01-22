@@ -170,9 +170,9 @@ def select_strength_with_buttons(default_value, min_val=0, max_val=20, timeout_s
             send_typing_preview("strength", str(value))
 
         # TIMEOUT CHECK
-        elapsed = time.ticks_diff(time.ticks_ms(), start)
-        if elapsed >= timeout_ms:
-            return value
+        #elapsed = time.ticks_diff(time.ticks_ms(), start)
+        #if elapsed >= timeout_ms:
+            #return value
 
         time.sleep_ms(10)
 
@@ -198,9 +198,9 @@ def select_time_with_buttons(default_value, min_val=100, max_val=20000, timeout_
 
             send_typing_preview("time", str(value))
 
-        elapsed = time.ticks_diff(time.ticks_ms(), start)
-        if elapsed >= timeout_ms:
-            return value
+        #elapsed = time.ticks_diff(time.ticks_ms(), start)
+        #if elapsed >= timeout_ms:
+            #return value
 
         time.sleep_ms(10)
 

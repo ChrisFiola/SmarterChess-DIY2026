@@ -484,7 +484,6 @@ def setup_local(ser: serial.Serial) -> None:
     send_to_screen("Local 2-Player\nHints enabled", size="auto")
     time.sleep(3)
 
-    send_to_screen("Choose hint\nstrength (0-20)\nButton 1 = + 1 \nButton 2 = - 1\nButton 3 = OK", size="auto")
     sendtoboard(ser, "EngineStrength")
     sendtoboard(ser, f"default_strength_{skill_level}")
     
@@ -510,9 +509,6 @@ def setup_local(ser: serial.Serial) -> None:
             skill_level = max(0, min(int(msg), 20))
             break
 
-
-
-    send_to_screen("Choose hint time\n" + f"(ms, now {move_time_ms})" + "\nButton 1 = + 100ms \nButton 2 = - 100ms\nButton 3 = OK", size="auto")
     sendtoboard(ser, "TimeControl")
     sendtoboard(ser, f"default_time_{move_time_ms}")
     
