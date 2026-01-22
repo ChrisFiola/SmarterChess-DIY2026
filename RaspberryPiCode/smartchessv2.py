@@ -405,7 +405,7 @@ def select_mode(ser: serial.Serial) -> str:
 def setup_stockfish(ser: serial.Serial) -> None:
     global skill_level, move_time_ms, human_is_white
 
-    send_to_screen("Choose computer\ndifficulty (0-20)", size="auto")
+    send_to_screen("Choose computer\ndifficulty (0-20)\nButton 1 = + 1 \nButton 2 = - 1\nButton 3 = OK", size="auto")
     sendtoboard(ser, "EngineStrength")
     sendtoboard(ser, f"default_strength_{skill_level}")
     
@@ -435,7 +435,7 @@ def setup_stockfish(ser: serial.Serial) -> None:
 
 
 
-    send_to_screen("Choose move time\n" + f"(ms, now {move_time_ms})", size="auto")
+    send_to_screen("Choose thinking time\n" + f"(ms, now {move_time_ms})" + "\nButton 1 = + 100ms \nButton 2 = - 100ms\nButton 3 = OK", size="auto")
     sendtoboard(ser, "TimeControl")
     sendtoboard(ser, f"default_time_{move_time_ms}")
     
@@ -487,7 +487,7 @@ def setup_local(ser: serial.Serial) -> None:
     send_to_screen("Local 2-Player\nHints enabled", size="auto")
     time.sleep(3)
 
-    send_to_screen("Choose computer\ndifficulty (0-20)", size="auto")
+    send_to_screen("Choose hint\nstrength (0-20)\nButton 1 = + 1 \nButton 2 = - 1\nButton 3 = OK", size="auto")
     sendtoboard(ser, "EngineStrength")
     sendtoboard(ser, f"default_strength_{skill_level}")
     
@@ -515,7 +515,7 @@ def setup_local(ser: serial.Serial) -> None:
 
 
 
-    send_to_screen("Choose move time\n" + f"(ms, now {move_time_ms})", size="auto")
+    send_to_screen("Choose hint time\n" + f"(ms, now {move_time_ms})" + "\nButton 1 = + 100ms \nButton 2 = - 100ms\nButton 3 = OK", size="auto")
     sendtoboard(ser, "TimeControl")
     sendtoboard(ser, f"default_time_{move_time_ms}")
     
