@@ -89,8 +89,9 @@ def wait_for_mode_request():
             continue
         if msg.startswith("heyArduinopromotion_choice_needed"):
             game_state = GAME_PROMOTION
-            continue
+            break
         elif msg.startswith("heyArduinoChooseMode"):
+            game_state = GAME_SETUP
             return
 
 def select_game_mode():
@@ -113,6 +114,91 @@ def select_game_mode():
             send_to_pi("btn_mode_local")
             return
 
+def select_engine_strength():
+    print("[Info] Pi requests engine strength")
+
+    while True:
+        btn, longp = detect_button_with_longpress()
+        if longp:
+            send_to_pi("n")
+            return
+        if btn == 1:
+            send_to_pi("1")
+            return
+        if btn == 2:
+            send_to_pi("2")
+            return
+        if btn == 3:
+            send_to_pi("3")
+            return
+        if btn == 4:
+            send_to_pi("4")
+            return
+        if btn == 5:
+            send_to_pi("5")
+            return
+        if btn == 6:
+            send_to_pi("6")
+            return
+        if btn == 7:
+            send_to_pi("7")
+            return
+        if btn == 8:
+            send_to_pi("8")
+            return
+
+def select_time_control():
+    print("[Info] Pi requests time control")  
+    start = time.time()
+
+    while time.time() - start < 1:
+        btn, longp = detect_button_with_longpress()
+        if longp:
+            send_to_pi("n")
+            return
+        if btn == 1:
+            send_to_pi("1")
+            return
+        if btn == 2:
+            send_to_pi("2")
+            return
+        if btn == 3:
+            send_to_pi("3")
+            return
+        if btn == 4:
+            send_to_pi("4")
+            return
+        if btn == 5:
+            send_to_pi("5")
+            return
+        if btn == 6:
+            send_to_pi("6")
+            return
+        if btn == 7:
+            send_to_pi("7")
+            return
+        if btn == 8:
+            send_to_pi("8")
+            return
+
+def select_color_choice():
+    print("[Info] Pi requests player color")
+
+    while True:
+        btn, longp = detect_button_with_longpress()
+        if longp:
+            send_to_pi("n")
+            return
+        if btn == 1:
+            send_to_pi("1")
+            return
+        if btn == 2:
+            send_to_pi("2")
+            return
+        if btn == 3:
+            send_to_pi("3")
+            return
+
 def wait_for_setup():
     """
     Handles all setup prompts (hint strength, color, time, etc.)
@@ -131,93 +217,22 @@ def wait_for_setup():
         if msg.startswith("heyArduinopromotion_choice_needed"):
             game_state = GAME_PROMOTION
             print("[Info] Promotion requested during setup")
-            continue
+            break
 
         elif msg.startswith("heyArduinoEngineStrength"):
             game_state = GAME_SETUP
-            print("[Info] Pi requests engine strength")
-            while True:
-                btn, longp = detect_button_with_longpress()
-                if longp:
-                    send_to_pi("n")
-                    return
-                if btn == 1:
-                    send_to_pi("1")
-                    continue
-                if btn == 2:
-                    send_to_pi("2")
-                    continue
-                if btn == 3:
-                    send_to_pi("3")
-                    continue
-                if btn == 4:
-                    send_to_pi("4")
-                    continue
-                if btn == 5:
-                    send_to_pi("5")
-                    continue
-                if btn == 6:
-                    send_to_pi("6")
-                    continue
-                if btn == 7:
-                    send_to_pi("7")
-                    continue
-                if btn == 8:
-                    send_to_pi("8")
-                    continue
-            continue
+            select_engine_strength()
+            return    
 
         elif msg.startswith("heyArduinoTimeControl"):
             game_state = GAME_SETUP
-            print("[Info] Pi requests time control")
-            
-            start = time.time()
-            while time.time() - start < 1:
-                if longp:
-                    send_to_pi("n")
-                    return
-                if btn == 1:
-                    send_to_pi("1")
-                    continue
-                if btn == 2:
-                    send_to_pi("2")
-                    continue
-                if btn == 3:
-                    send_to_pi("3")
-                    continue
-                if btn == 4:
-                    send_to_pi("4")
-                    continue
-                if btn == 5:
-                    send_to_pi("5")
-                    continue
-                if btn == 6:
-                    send_to_pi("6")
-                    continue
-                if btn == 7:
-                    send_to_pi("7")
-                    continue
-                if btn == 8:
-                    send_to_pi("8")
-                    continue
-            continue
+            select_time_control()
+            return
 
         elif msg.startswith("heyArduinoPlayerColor"):
             game_state = GAME_SETUP
-            print("[Info] Pi requests player color")
-            if longp:
-                send_to_pi("n")
-                return
-            if btn == 1:
-                send_to_pi("1")
-                continue
-            if btn == 2:
-                send_to_pi("2")
-                continue
-            if btn == 3:
-                send_to_pi("3")
-                continue
-            continue
+            select_color_choice()
+            return
 
 def main_loop():
     global game_state
@@ -268,8 +283,9 @@ def main_loop():
             continue
         # 4️⃣ Handle normal human move
         if msg.startswith("heyArduinoGameStart"):
-            game_state == GAME_RUNNING
+            game_state = GAME_RUNNING
             print("[Info] Game starting")
+
             print("[Prompt] Enter move FROM (column+row)")
             move_from = get_coordinate()
             print("[Prompt] Enter move TO (column+row)")
@@ -299,7 +315,8 @@ print("Pico Chess Controller Starting")
 
 wait_for_mode_request()
 select_game_mode()
-wait_for_setup()
+while game_state == GAME_SETUP:
+    wait_for_setup()
 main_loop()
 
 
