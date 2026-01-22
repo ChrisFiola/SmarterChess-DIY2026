@@ -27,7 +27,7 @@ BLACK_BG = Image.new("RGB", (W, H), "BLACK")
 
 # Font cache
 FONTS = {}
-def get_font(size):
+def get_font(size: int):
     if size not in FONTS:
         FONTS[size] = ImageFont.truetype(FONT_PATH, size)
     return FONTS[size]
@@ -35,8 +35,13 @@ def get_font(size):
 # ------------------------------------------------------
 # AUTO FONT SCALING
 # ------------------------------------------------------
-def find_best_font_size(lines):
-    for size in range(32, 14, -1):  # Try sizes 32 → 15
+def find_best_font_size(lines, min_size=14, max_size=28, vpad=4, spacing=6):
+    """
+    Choose the largest font size that fits both width and height with given padding & spacing.
+    Returns: (size, spacing)
+    """
+    # Try from biggest → smallest
+    for size in range(max_size, min_size - 1, -1):
         font = get_font(size)
         draw = ImageDraw.Draw(BLACK_BG)
 
@@ -45,57 +50,65 @@ def find_best_font_size(lines):
 
         for ln in lines:
             if not ln:
-                h = size
+                h = size  # blank line spacing approximated to size
                 w = 0
             else:
-                bbox = draw.textbbox((0,0), ln, font=font)
+                bbox = draw.textbbox((0, 0), ln, font=font)
                 w = bbox[2] - bbox[0]
                 h = bbox[3] - bbox[1]
-
-            total_h += h + 6
+            total_h += h + spacing
             max_w = max(max_w, w)
 
-        total_h -= 6  # Remove extra spacing
+        total_h -= spacing  # remove extra spacing after last line
 
-        if total_h <= H - 5 and max_w <= W - 5:
-            return size
+        if total_h <= (H - 2 * vpad) and max_w <= (W - 2 * vpad):
+            return size, spacing
 
-    return 16  # fallback
-
+    return min_size, spacing  # fallback
 
 # ------------------------------------------------------
-# Draw perfectly centered text
+# Draw centered text with explicit size/spacing
 # ------------------------------------------------------
-def draw_centered_text(lines):
-    size = find_best_font_size(lines)
-    font = get_font(size)
+def draw_centered_text_with_size(lines, size: int, spacing: int = 6, vpad: int = 0):
+    """
+    Draw 'lines' using font 'size' and 'spacing', centered on screen.
+    """
     img = BLACK_BG.copy()
     draw = ImageDraw.Draw(img)
+    font = get_font(size)
 
+    # Measure
     heights = []
     total_h = 0
-
     for ln in lines:
         if not ln:
-            h = size
+            h = size  # blank line spacing approximated to font size
         else:
-            bbox = draw.textbbox((0,0), ln, font=font)
+            bbox = draw.textbbox((0, 0), ln, font=font)
             h = bbox[3] - bbox[1]
         heights.append(h)
-        total_h += h + 6
+        total_h += h + spacing
+    total_h -= spacing
 
-    total_h -= 6  
-    y = (H - total_h) // 2
+    # Vertical center
+    y = max(0, (H - total_h) // 2)
 
+    # Draw each line centered horizontally
     for ln, h in zip(lines, heights):
         if ln:
-            bbox = draw.textbbox((0,0), ln, font=font)
+            bbox = draw.textbbox((0, 0), ln, font=font)
             w = bbox[2] - bbox[0]
-            draw.text(((W - w)//2, y), ln, font=font, fill="WHITE")
-        y += h + 6
+            draw.text(((W - w) // 2, y), ln, font=font, fill="WHITE")
+        y += h + spacing
 
     disp.ShowImage(img)
 
+def draw_centered_text_auto(lines, min_size=14, max_size=28, vpad=4, spacing=6):
+    """
+    Autosize to fit, then render centered.
+    """
+    size, sp = find_best_font_size(lines, min_size=min_size, max_size=max_size, vpad=vpad, spacing=spacing)
+    draw_centered_text_with_size(lines, size=size, spacing=sp, vpad=vpad)
 
 # ------------------------------------------------------
 # Splash screen
@@ -103,18 +116,19 @@ def draw_centered_text(lines):
 def draw_splash():
     img = BLACK_BG.copy()
     draw = ImageDraw.Draw(img)
-    font = get_font(28)
+    # pick a size that looks good on 1.14"
+    size = 28
+    font = get_font(size)
 
     txt = "SMARTCHESS"
-    bbox = draw.textbbox((0,0), txt, font=font)
+    bbox = draw.textbbox((0, 0), txt, font=font)
     w = bbox[2] - bbox[0]
     h = bbox[3] - bbox[1]
 
-    draw.text(((W-w)//2, (H-h)//2 - 10),
+    draw.text(((W - w) // 2, (H - h) // 2 - 10),
               txt, font=font, fill="WHITE")
 
     disp.ShowImage(img)
-
 
 # Draw splash on start
 draw_splash()
@@ -122,7 +136,6 @@ draw_splash()
 # Signal ready to Pi
 with open(READY_FLAG, "w") as f:
     f.write("ready\n")
-
 
 # ------------------------------------------------------
 # Main loop
@@ -137,11 +150,31 @@ while True:
         time.sleep(0.003)
         continue
 
+    # Skip exact duplicate frames
     if line == last_msg:
         continue
-
     last_msg = line
-    parts = line.strip().split("|")
-    lines = parts[:-1]
 
-    draw_centered_text(lines)
+    # Parse message: "L1|L2|L3|L4|size"
+    parts = line.strip().split("|")
+    if not parts:
+        continue
+
+    raw_size = parts[-1].strip() if parts[-1] else "auto"
+    # Support up to 4 lines; ignore extras gracefully
+    lines = [p for p in parts[:-1]]
+
+    # Normalize trailing empty lines (optional)
+    # while lines and lines[-1] == "":
+    #     lines.pop()
+
+    # Decide between fixed size or auto
+    try:
+        if raw_size.lower() == "auto":
+            draw_centered_text_auto(lines)
+        else:
+            size = int(raw_size)
+            draw_centered_text_with_size(lines, size=size, spacing=6)
+    except Exception:
+        # Fallback to safe auto on any parse/draw error
+        draw_centered_text_auto(lines)
