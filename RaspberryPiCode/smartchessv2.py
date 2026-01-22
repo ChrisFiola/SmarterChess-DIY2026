@@ -209,18 +209,32 @@ def timed_input_with_oled(ser, prompt1, prompt2, timeout_sec=5, default=None):
     return default
 
 
+
 def requires_promotion(move: chess.Move, brd: chess.Board) -> bool:
+    # 1. Move must be legal
+    if move not in brd.legal_moves:
+        return False
+
+    # 2. The piece must exist
     piece = brd.piece_at(move.from_square)
     if piece is None:
-        return False   # definitely not a promotion
-    
-    if brd.piece_at(move.from_square).piece_type != chess.PAWN:
         return False
-    if brd.turn == chess.WHITE and chess.square_rank(move.to_square) == 7:
+
+    # 3. Piece must be a pawn
+    if piece.piece_type != chess.PAWN:
+        return False
+
+    # 4. Must reach last rank
+    to_rank = chess.square_rank(move.to_square)
+
+    if brd.turn == chess.WHITE and to_rank == 7:
         return move.promotion is None
-    if brd.turn == chess.BLACK and chess.square_rank(move.to_square) == 0:
+
+    if brd.turn == chess.BLACK and to_rank == 0:
         return move.promotion is None
+
     return False
+
 
 
 def ask_promotion_piece(ser) -> str:

@@ -15,9 +15,8 @@ GAME_PROMOTION = 3
 
 
 # ---- Non-blocking button state (for countdown screens) ----
-_last_state = [1] * len(BUTTON_PINS)        # 1 = not pressed (pull-up)
-_press_start_ms = [None] * len(BUTTON_PINS) # None or start time in ms
-_longpress_fired = [False] * len(BUTTON_PINS)
+_last_btn_state = [1] * len(BUTTON_PINS)        # 1 = not pressed (pull-up)
+_press_detected = [False] * len(BUTTON_PINS) # None or start time in ms
 
 
 game_state = GAME_IDLE
@@ -56,21 +55,52 @@ def read_from_pi():
 # Button handling
 # -----------------------------
 def detect_button():
-    while True:
-        for idx, btn in enumerate(buttons):
-            if btn.value() == 0:
-                time.sleep_ms(DEBOUNCE_MS)
-                while btn.value() == 0:
-                    pass
-                return idx + 1
-        time.sleep_ms(10)
+    """
+    Non-blocking short press detector.
+    Returns:
+        button_number (1–8) when a short press is completed (pressed → released)
+        None if no complete press event yet.
+    """
+    for idx, btn in enumerate(buttons):
+        cur = btn.value()   # 0 = pressed, 1 = released
+        prev = _last_btn_state[idx]
+
+        # --- EDGE: PRESSED ---
+        if prev == 1 and cur == 0:
+            _press_detected[idx] = True
+            _press_start = time.ticks_ms()
+
+        # --- EDGE: RELEASED AFTER PRESS ---
+        if prev == 0 and cur == 1 and _press_detected[idx]:
+            _press_detected[idx] = False
+            _last_btn_state[idx] = cur
+            return idx + 1
+
+        _last_btn_state[idx] = cur
+
+    return None
+
 
 def get_coordinate():
-    col_btn = detect_button()
-    col = chr(ord('a') + col_btn - 1)
-    row_btn = detect_button()
-    row = str(row_btn)
+    col = None
+    row = None
+
+    # --- GET COLUMN ---
+    while col is None:
+        btn = detect_button()
+        if btn is not None and 1 <= btn <= 8:
+            col = chr(ord('a') + btn - 1)
+        time.sleep_ms(5)
+
+    # --- GET ROW ---
+    while row is None:
+        btn = detect_button()
+        if btn is not None and 1 <= btn <= 8:
+            row = str(btn)
+        time.sleep_ms(5)
+
     return col + row
+
 
 # -----------------------------
 # Main logic
@@ -199,22 +229,7 @@ def wait_for_setup():
 
         print("Setup message:", msg)
 
-        # --- Promotion ---
-        if msg.startswith("heyArduinopromotion_choice_needed"):
-            print("[Info] Promotion requested by Pi")
-            game_state = GAME_PROMOTION
-
-            print("[Prompt] Choose promotion (1=Q,2=R,3=B,4=N)")
-            btn = detect_button()          # short press only!
-            if btn == 1: send_to_pi("btn_q")
-            if btn == 2: send_to_pi("btn_r")
-            if btn == 3: send_to_pi("btn_b")
-            if btn == 4: send_to_pi("btn_n")
-
-            game_state = GAME_RUNNING
-            break
-
-        elif msg.startswith("heyArduinoEngineStrength"):
+        if msg.startswith("heyArduinoEngineStrength"):
             game_state = GAME_SETUP
             select_engine_strength()
             return    
@@ -250,19 +265,29 @@ def main_loop():
             time.sleep_ms(10)
             continue
 
-        # --- Promotion ---
-        if msg.startswith("heyArduinopromotion_choice_needed"):
+        
+        elif msg.startswith("heyArduinopromotion_choice_needed"):
             print("[Info] Promotion requested by Pi")
-            game_state = GAME_PROMOTION
-
             print("[Prompt] Choose promotion (1=Q,2=R,3=B,4=N)")
-            if btn == 1: send_to_pi("btn_q")
-            if btn == 2: send_to_pi("btn_r")
-            if btn == 3: send_to_pi("btn_b")
-            if btn == 4: send_to_pi("btn_n")
 
-            game_state = GAME_RUNNING
-            break  
+            while True:
+                btn = detect_button()
+                if btn == 1:
+                    send_to_pi("btn_q")
+                    break
+                elif btn == 2:
+                    send_to_pi("btn_r")
+                    break
+                elif btn == 3:
+                    send_to_pi("btn_b")
+                    break
+                elif btn == 4:
+                    send_to_pi("btn_n")
+                    break
+                time.sleep_ms(5)
+
+            continue  # back to main loop
+
 
         elif msg.startswith("heyArduinoturn_") or msg.startswith("heyArduinoerror"):
             game_state = GAME_RUNNING
