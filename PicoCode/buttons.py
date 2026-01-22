@@ -160,9 +160,9 @@ def select_strength_with_buttons(default_value, min_val=0, max_val=20, timeout_s
         if btn:
             start = time.ticks_ms()  # reset timer
 
-            if btn == 1:         # increment
+            if btn == 2:         # increment
                 value = min(max_val, value + 1)
-            elif btn == 2:       # decrement
+            elif btn == 1:       # decrement
                 value = max(min_val, value - 1)
             elif btn == 3:       # OK
                 return value
@@ -189,9 +189,9 @@ def select_time_with_buttons(default_value, min_val=100, max_val=20000, timeout_
         if btn:
             start = time.ticks_ms()  # reset timer
 
-            if btn == 1:               # +100
+            if btn == 2:               # +100
                 value = min(max_val, value + 100)
-            elif btn == 2:             # -100
+            elif btn == 1:             # -100
                 value = max(min_val, value - 100)
             elif btn == 3:             # OK
                 return value
