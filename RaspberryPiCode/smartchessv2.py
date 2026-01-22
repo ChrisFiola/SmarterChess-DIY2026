@@ -489,7 +489,13 @@ def play_game(ser: serial.Serial, mode: str) -> None:
                 continue
 
         msg = getboard(ser)
+
         if msg is None:
+            continue
+
+        if msg.startswith("typing_"):
+            txt = msg[8:]
+            send_to_screen("Enter move:\n" + txt)
             continue
 
         if not game_started:

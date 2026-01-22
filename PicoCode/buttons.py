@@ -51,6 +51,11 @@ def read_from_pi():
                 return None
     return None
 
+
+def send_typing_preview(text: str):
+    uart.write(f"heyArduinotyping_{text}\n".encode())
+
+
 # -----------------------------
 # Button handling
 # -----------------------------
@@ -80,26 +85,28 @@ def detect_button():
 
     return None
 
-
 def get_coordinate():
     col = None
     row = None
 
-    # --- GET COLUMN ---
+    # Wait for column
     while col is None:
         btn = detect_button()
-        if btn is not None and 1 <= btn <= 8:
+        if btn:
             col = chr(ord('a') + btn - 1)
+            send_typing_preview(col)  # <‑‑ LIVE UPDATE
         time.sleep_ms(5)
 
-    # --- GET ROW ---
+    # Wait for row
     while row is None:
         btn = detect_button()
-        if btn is not None and 1 <= btn <= 8:
+        if btn:
             row = str(btn)
+            send_typing_preview(col + row)  # <‑‑ LIVE UPDATE
         time.sleep_ms(5)
 
     return col + row
+
 
 
 # -----------------------------
