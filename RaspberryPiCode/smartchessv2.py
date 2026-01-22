@@ -409,18 +409,17 @@ def setup_stockfish(ser: serial.Serial) -> None:
     sendtoboard(ser, "EngineStrength")
     sendtoboard(ser, f"default_strength_{skill_level}")
     
-    val = timed_input_with_oled(
-            ser, "Hint strength", f"(now {skill_level})", timeout_sec=5, default=skill_level
-    )
-    skill_level = max(0, min(val, 20))
+    val = getboard(ser)
+    skill_level = max(min(int(val), 20), 0)
+
 
     send_to_screen("Choose move time\n" + f"(ms, now {move_time_ms})", size="auto")
     sendtoboard(ser, "TimeControl")
     sendtoboard(ser, f"default_time_{move_time_ms}")
-    val = timed_input_with_oled(
-        ser, "Choose move time", f"(now {move_time_ms})", timeout_sec=5, default=move_time_ms
-    )
-    move_time_ms = max(10, val)
+    
+    val = getboard(ser)  # Pico returns final value
+    move_time_ms = max(int(val), 10)
+
 
     send_to_screen("Choose side\n1 = White\n2 = Black\n3 = Random", size="auto")
     sendtoboard(ser, "PlayerColor")
@@ -448,19 +447,11 @@ def setup_local(ser: serial.Serial) -> None:
     send_to_screen("Hint strength\n"+f"0-20 (now {skill_level})", size="auto")
     sendtoboard(ser, f"default_strength_{skill_level}")
 
-    val = timed_input_with_oled(
-        ser, "Hint strength", f"(now {skill_level})", timeout_sec=5, default=skill_level
-    )
-    skill_level = max(0, min(val, 20))
 
     sendtoboard(ser, "TimeControl")
     sendtoboard(ser, f"default_time_{move_time_ms}")
     send_to_screen("Hint think time\n" + f"ms (now {move_time_ms})", size="auto")
 
-    val = timed_input_with_oled(
-        ser, "Hint think time", f"(now {move_time_ms})", timeout_sec=5, default=move_time_ms
-    )
-    move_time_ms = max(10, val)
 
 
 # -----------------------------

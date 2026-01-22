@@ -152,7 +152,7 @@ def select_strength_with_buttons(default_value, min_val=0, max_val=20, timeout_s
     last_sent = None
 
     # Send initial value
-    send_typing_preview("STRENGTH", str(value))
+    send_typing_preview("strength", str(value))
 
     while True:
         # BUTTON HANDLING
@@ -167,7 +167,7 @@ def select_strength_with_buttons(default_value, min_val=0, max_val=20, timeout_s
             elif btn == 3:       # OK
                 return value
 
-            send_typing_preview("STRENGTH", str(value))
+            send_typing_preview("strength", str(value))
 
         # TIMEOUT CHECK
         elapsed = time.ticks_diff(time.ticks_ms(), start)
@@ -182,7 +182,7 @@ def select_time_with_buttons(default_value, min_val=100, max_val=20000, timeout_
     start = time.ticks_ms()
     timeout_ms = timeout_sec * 1000
 
-    send_typing_preview("TIME", str(value))
+    send_typing_preview("time", str(value))
 
     while True:
         btn = detect_button()
@@ -196,13 +196,18 @@ def select_time_with_buttons(default_value, min_val=100, max_val=20000, timeout_
             elif btn == 3:             # OK
                 return value
 
-            send_typing_preview("TIME", str(value))
+            send_typing_preview("time", str(value))
 
         elapsed = time.ticks_diff(time.ticks_ms(), start)
         if elapsed >= timeout_ms:
             return value
 
         time.sleep_ms(10)
+
+
+def reset_buttons():
+    for i in range(len(_last_btn_state)):
+        _last_btn_state[i] = 1
 
 
 # -----------------------------
@@ -234,37 +239,6 @@ def select_game_mode():
             return
 
 
-def select_engine_strength():
-    global default_strength
-    print("[Info] Selecting strength (with timeout)")
-
-    # Button press OR timeout
-    btn = timed_button_choice(5, default_value=None)
-
-    if btn is None:
-        # timeout → use the Pi default
-        send_to_pi(str(default_strength))
-        return
-    else:
-        send_to_pi(str(btn))
-
-
-def select_time_control():
-    global default_move_time
-
-    print("[Info] Select time control (5s timeout)")
-
-    # button pressed? or timeout?
-    btn = timed_button_choice(5, default_value=None)
-
-    if btn is None:
-        # timeout → use the Pi default
-        send_to_pi(str(default_move_time))
-        return
-    else:
-        send_to_pi(str(btn))
-
-
 
 def select_color_choice():
     while True:
@@ -281,7 +255,7 @@ def select_color_choice():
 
 
 def wait_for_setup():
-    global game_state
+    global game_state, default_strength, default_move_time
 
     while True:
         msg = read_from_pi()
@@ -296,10 +270,13 @@ def wait_for_setup():
             except:
                 pass
 
+        
         elif msg.startswith("heyArduinoEngineStrength"):
+            reset_buttons()
             sel = select_strength_with_buttons(default_strength)
             send_to_pi(str(sel))
             return
+
         
         elif msg.startswith("heyArduinodefault_time_"):
             try:
@@ -308,10 +285,13 @@ def wait_for_setup():
             except:
                 pass
 
+        
         elif msg.startswith("heyArduinoTimeControl"):
+            reset_buttons()
             sel = select_time_with_buttons(default_move_time)
             send_to_pi(str(sel))
             return
+
 
         elif msg.startswith("heyArduinoPlayerColor"):
             select_color_choice()
