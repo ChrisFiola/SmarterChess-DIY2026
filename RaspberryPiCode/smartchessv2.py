@@ -79,11 +79,13 @@ def restart_display_server():
     )
 
 def send_to_screen(message):
-    lines = message.split("\n")
-    while len(lines) < 4:
-        lines.append("")
-    
-    os.system(f"printToOLED -a \"{lines[0]}\" -b \"{lines[1]}\" -c \"{lines[2]}\" -d \"{lines[3]}\"")
+    parts = message.split("\n")
+    while len(parts) < 4:
+        parts.append("")
+
+    payload = "|".join(parts) + "|25\n"
+    with open("/tmp/lcdpipe", "w") as pipe:
+        pipe.write(payload)
 
 # -----------------------------
 # Serial Helpers
