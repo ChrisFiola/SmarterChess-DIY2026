@@ -210,10 +210,13 @@ def timed_input_with_oled(ser, prompt1, prompt2, timeout_sec=5, default=None):
 
 
 def requires_promotion(move: chess.Move, brd: chess.Board) -> bool:
+<<<<<<< HEAD
     piece = brd.piece_at(move.from_square)
     if piece is None:
         return False   # definitely not a promotion
 
+=======
+>>>>>>> 1017d86eef2011fc19355b8113fd44c352475737
     if brd.piece_at(move.from_square).piece_type != chess.PAWN:
         return False
     if brd.turn == chess.WHITE and chess.square_rank(move.to_square) == 7:
