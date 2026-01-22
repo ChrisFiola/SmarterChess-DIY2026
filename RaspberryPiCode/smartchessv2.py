@@ -409,16 +409,38 @@ def setup_stockfish(ser: serial.Serial) -> None:
     sendtoboard(ser, "EngineStrength")
     sendtoboard(ser, f"default_strength_{skill_level}")
     
-    val = getboard(ser)
-    skill_level = max(min(int(val), 20), 0)
+    # WAIT for Pico final value (ignore typing previews)
+    while True:
+        msg = getboard(ser)
+        if msg is None:
+            continue
+
+        # typing message: typing_strength_5
+        if msg.startswith("typing_"):
+            continue
+
+        # final value
+        if msg.isdigit():
+            skill_level = max(0, min(int(msg), 20))
+            break
 
 
     send_to_screen("Choose move time\n" + f"(ms, now {move_time_ms})", size="auto")
     sendtoboard(ser, "TimeControl")
     sendtoboard(ser, f"default_time_{move_time_ms}")
     
-    val = getboard(ser)  # Pico returns final value
-    move_time_ms = max(int(val), 10)
+    while True:
+        msg = getboard(ser)
+        if msg is None:
+            continue
+
+        if msg.startswith("typing_"):
+            continue
+
+        if msg.isdigit():
+            move_time_ms = max(10, int(msg))
+            break
+
 
 
     send_to_screen("Choose side\n1 = White\n2 = Black\n3 = Random", size="auto")
@@ -447,16 +469,37 @@ def setup_local(ser: serial.Serial) -> None:
     sendtoboard(ser, "EngineStrength")
     sendtoboard(ser, f"default_strength_{skill_level}")
     
-    val = getboard(ser)
-    skill_level = max(min(int(val), 20), 0)
+    # WAIT for Pico final value (ignore typing previews)
+    while True:
+        msg = getboard(ser)
+        if msg is None:
+            continue
+
+        # typing message: typing_strength_5
+        if msg.startswith("typing_"):
+            continue
+
+        # final value
+        if msg.isdigit():
+            skill_level = max(0, min(int(msg), 20))
+            break
 
 
     send_to_screen("Choose move time\n" + f"(ms, now {move_time_ms})", size="auto")
     sendtoboard(ser, "TimeControl")
     sendtoboard(ser, f"default_time_{move_time_ms}")
     
-    val = getboard(ser)  # Pico returns final value
-    move_time_ms = max(int(val), 10)
+    while True:
+        msg = getboard(ser)
+        if msg is None:
+            continue
+
+        if msg.startswith("typing_"):
+            continue
+
+        if msg.isdigit():
+            move_time_ms = max(10, int(msg))
+            break
 
 
 
