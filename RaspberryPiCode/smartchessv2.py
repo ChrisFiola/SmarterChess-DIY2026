@@ -55,7 +55,7 @@ game_started = False
 def wait_for_display_server_ready():
     READY_FLAG = "/tmp/display_server_ready"
     print("[Init] Waiting for display server to become ready...")
-    while not os.path.exists(READY_FLAG):
+    while not os.path.exists(READY_FLAG): # pyright: ignore[reportAttributeAccessIssue]
         time.sleep(0.05)
     print("[Init] Display server is ready.")
 
@@ -70,8 +70,8 @@ def restart_display_server():
     )
     time.sleep(0.2)
 
-    if not os.path.exists(PIPE):
-        os.mkfifo(PIPE)
+    if not os.path.exists(PIPE): # type: ignore
+        os.mkfifo(PIPE) # type: ignore
 
     subprocess.Popen(
         [
@@ -312,7 +312,7 @@ def set_engine_skill(eng: chess.engine.SimpleEngine, level: int) -> int:
 
 
 def engine_bestmove(brd: chess.Board, ms: int) -> Optional[str]:
-    if brd.is_game_over():
+    if not brd.is_game_over():
         return None
     limit = chess.engine.Limit(time=max(0.01, ms / 1000.0))
     result = engine.play(brd, limit)
@@ -462,24 +462,24 @@ def setup_local(ser: serial.Serial) -> None:
         val = extract_digits(msg)
         if val is not None:
             skill_level = set_engine_skill(engine, val)
-            break
+            continue
         # also accept plain 'ok' to skip
         if msg in ("ok", "skip"):
-            break
+            continue
         print(f"[Parse] Invalid skill payload '{msg}', waiting...")
 
-    # Hint move time selection
-    send_to_screen("Hint think time", f"ms (now {move_time_ms})")
-    sendtoboard(ser, "TimeControl")
-    val = timed_input_with_oled(
-        ser,
-        "Hint think time",
-        f"(now {move_time_ms})",
-        timeout_sec=5,
-        default=move_time_ms
-    )
-    move_time_ms = max(10, val)
-    print(f"[Local] HintSkill={skill_level} | HintTime={move_time_ms}ms")
+        # Hint move time selection
+        send_to_screen("Hint think time", f"ms (now {move_time_ms})")
+        sendtoboard(ser, "TimeControl")
+        val = timed_input_with_oled(
+            ser,
+            "Hint think time",
+            f"(now {move_time_ms})",
+            timeout_sec=5,
+            default=move_time_ms
+        )
+        move_time_ms = max(10, val)
+        print(f"[Local] HintSkill={skill_level} | HintTime={move_time_ms}ms")
 
 # -----------------------------
 # Core gameplay loop

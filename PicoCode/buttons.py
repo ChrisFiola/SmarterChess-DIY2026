@@ -143,60 +143,63 @@ def wait_for_setup():
                     return
                 if btn == 1:
                     send_to_pi("1")
-                    return
+                    continue
                 if btn == 2:
                     send_to_pi("2")
-                    return
+                    continue
                 if btn == 3:
                     send_to_pi("3")
-                    return
+                    continue
                 if btn == 4:
                     send_to_pi("4")
-                    return
+                    continue
                 if btn == 5:
                     send_to_pi("5")
-                    return
+                    continue
                 if btn == 6:
                     send_to_pi("6")
-                    return
+                    continue
                 if btn == 7:
                     send_to_pi("7")
-                    return
+                    continue
                 if btn == 8:
                     send_to_pi("8")
-                    return
+                    continue
             continue
 
         elif msg.startswith("heyArduinoTimeControl"):
             game_state = GAME_SETUP
             print("[Info] Pi requests time control")
-            if longp:
-                send_to_pi("n")
-                return
-            if btn == 1:
-                send_to_pi("1")
-                return
-            if btn == 2:
-                send_to_pi("2")
-                return
-            if btn == 3:
-                send_to_pi("3")
-                return
-            if btn == 4:
-                send_to_pi("4")
-                return
-            if btn == 5:
-                send_to_pi("5")
-                return
-            if btn == 6:
-                send_to_pi("6")
-                return
-            if btn == 7:
-                send_to_pi("7")
-                return
-            if btn == 8:
-                send_to_pi("8")
-                return
+            
+            start = time.time()
+            while time.time() - start < 1:
+                if longp:
+                    send_to_pi("n")
+                    return
+                if btn == 1:
+                    send_to_pi("1")
+                    continue
+                if btn == 2:
+                    send_to_pi("2")
+                    continue
+                if btn == 3:
+                    send_to_pi("3")
+                    continue
+                if btn == 4:
+                    send_to_pi("4")
+                    continue
+                if btn == 5:
+                    send_to_pi("5")
+                    continue
+                if btn == 6:
+                    send_to_pi("6")
+                    continue
+                if btn == 7:
+                    send_to_pi("7")
+                    continue
+                if btn == 8:
+                    send_to_pi("8")
+                    continue
             continue
 
         elif msg.startswith("heyArduinoPlayerColor"):
@@ -204,22 +207,17 @@ def wait_for_setup():
             print("[Info] Pi requests player color")
             if longp:
                 send_to_pi("n")
-                continue
+                return
             if btn == 1:
                 send_to_pi("1")
-                return
+                continue
             if btn == 2:
                 send_to_pi("2")
-                return
+                continue
             if btn == 3:
                 send_to_pi("3")
-                return
+                continue
             continue
-
-        elif msg.startswith("heyArduinoGameStart"):
-            game_state = GAME_RUNNING
-            print("[Info] Game starting")
-            return
 
 def main_loop():
     global game_state
@@ -228,6 +226,9 @@ def main_loop():
     while True:
         # 1️⃣ Check serial messages first
         msg = read_from_pi()
+        if not msg:
+            time.sleep_ms(10)
+            continue
         if msg:
             if msg.startswith("heyArduinopromotion_choice_needed"):
                 print("[Info] Promotion requested by Pi")
@@ -265,9 +266,10 @@ def main_loop():
             game_state = GAME_RUNNING
             print("[Info] Promotion sent, resuming game")
             continue
-
         # 4️⃣ Handle normal human move
-        if game_state == GAME_RUNNING:
+        if msg.startswith("heyArduinoGameStart"):
+            game_state == GAME_RUNNING
+            print("[Info] Game starting")
             print("[Prompt] Enter move FROM (column+row)")
             move_from = get_coordinate()
             print("[Prompt] Enter move TO (column+row)")
@@ -299,4 +301,5 @@ wait_for_mode_request()
 select_game_mode()
 wait_for_setup()
 main_loop()
+
 
