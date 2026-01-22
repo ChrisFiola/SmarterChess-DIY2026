@@ -462,15 +462,16 @@ def setup_local(ser: serial.Serial) -> None:
         val = extract_digits(msg)
         if val is not None:
             skill_level = set_engine_skill(engine, val)
-            continue
+            break
         # also accept plain 'ok' to skip
         if msg in ("ok", "skip"):
-            continue
+            break
         print(f"[Parse] Invalid skill payload '{msg}', waiting...")
 
-        # Hint move time selection
-        send_to_screen("Hint think time", f"ms (now {move_time_ms})")
-        sendtoboard(ser, "TimeControl")
+    # Hint move time selection
+    send_to_screen("Hint think time", f"ms (now {move_time_ms})")
+    sendtoboard(ser, "TimeControl")
+    while True: 
         val = timed_input_with_oled(
             ser,
             "Hint think time",
