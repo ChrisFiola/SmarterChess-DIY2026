@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import os, sys
+import os, sys, time
 from PIL import Image, ImageDraw, ImageFont
 
 sys.path.append("/home/king/LCD_Module_RPI_code/RaspberryPi/python")
@@ -24,12 +24,21 @@ with open(READY_FLAG, "w") as f:
 W, H = disp.width, disp.height
 FONT = "/home/king/LCD_Module_RPI_code/RaspberryPi/python/Font/Font00.ttf"
 
+FONTS = {}
+
+BLACK_BG = Image.new("RGB", (W, H), "BLACK")
+
+def get_font(size):
+    if size not in FONTS:
+        FONTS[size] = ImageFont.truetype(FONT, size)
+    return FONTS[size]
+
 def draw_text(lines, size):
-    img = Image.new("RGB", (W, H), "BLACK")
+    img = BLACK_BG.copy()
     draw = ImageDraw.Draw(img)
 
     try:
-        font = ImageFont.truetype(FONT, size)
+        font = get_font(size)
     except:
         font = ImageFont.load_default()
 
@@ -46,10 +55,22 @@ def draw_text(lines, size):
 
     disp.ShowImage(img)
 
+
+pipe = open(PIPE, "r")
+last_msg = None
+
 while True:
-    with open(PIPE, "r") as pipe:
-        for line in pipe:
-            parts = line.strip().split("|")
-            size = int(parts[-1])
-            lines = parts[:-1]
-            draw_text(lines, size)
+    line = pipe.readline()
+    if not line:
+        continue
+    
+    if line == last_msg:
+        continue  # no need to redraw
+
+    last_msg = line
+
+    for line in pipe:
+        parts = line.strip().split("|")
+        size = int(parts[-1])
+        lines = parts[:-1]
+        draw_text(lines, size)
