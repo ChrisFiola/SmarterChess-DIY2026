@@ -65,49 +65,6 @@ def detect_button():
                 return idx + 1
         time.sleep_ms(10)
 
-def detect_button_with_longpress():
-
-    now = time.ticks_ms()
-
-    for idx, btn in enumerate(buttons):
-        cur = btn.value()  # 0 = pressed, 1 = released (PULL_UP)
-        prev = _last_state[idx]
-
-        # Edge: just pressed
-        if prev == 1 and cur == 0:
-            _press_start_ms[idx] = now
-            _longpress_fired[idx] = False
-
-        # Held
-        if cur == 0 and _press_start_ms[idx] is not None:
-            held_ms = time.ticks_diff(now, _press_start_ms[idx])
-            if (held_ms > LONG_PRESS_MS) and not _longpress_fired[idx]:
-                _longpress_fired[idx] = True
-                # Emit immediately on long hold (no wait for release)
-                _last_state[idx] = cur
-                return (idx + 1, True)
-
-        # Edge: just released
-        if prev == 0 and cur == 1:
-            if _press_start_ms[idx] is not None:
-                held_ms = time.ticks_diff(now, _press_start_ms[idx])
-                was_long = held_ms > LONG_PRESS_MS
-                # Only emit short press on release if not already emitted as long press
-                if not was_long and not _longpress_fired[idx]:
-                    # Debounce *after* emitting by ignoring future bounce naturally
-                    _press_start_ms[idx] = None
-                    _longpress_fired[idx] = False
-                    _last_state[idx] = cur
-                    return (idx + 1, False)
-                # reset after long or whatever
-                _press_start_ms[idx] = None
-                _longpress_fired[idx] = False
-
-        _last_state[idx] = cur
-
-    return (None, None)
-
-
 def get_coordinate():
     col_btn = detect_button()
     col = chr(ord('a') + col_btn - 1)
@@ -139,9 +96,7 @@ def select_game_mode():
     print("3 = Local")
 
     while True:
-        btn, longp = detect_button_with_longpress()
-        if longp:
-            continue
+        btn = detect_button()
         if btn == 1:
             send_to_pi("btn_mode_pc")
             return
@@ -156,10 +111,7 @@ def select_engine_strength():
     print("[Info] Pi requests engine strength")
 
     while True:
-        btn, longp = detect_button_with_longpress()
-        if longp:
-            send_to_pi("n")
-            return
+        btn = detect_button()
         if btn == 1:
             send_to_pi("1")
             return
@@ -190,10 +142,7 @@ def select_time_control():
 
     while True:
 
-        btn, longp = detect_button_with_longpress()
-        if longp:
-            send_to_pi("n")
-            return
+        btn = detect_button()
         if btn == 1:
             send_to_pi("1")
             return
@@ -224,10 +173,7 @@ def select_color_choice():
     print("[Info] Pi requests player color")
 
     while True:
-        btn, longp = detect_button_with_longpress()
-        if longp:
-            send_to_pi("n")
-            return
+        btn = detect_button()
         if btn == 1:
             send_to_pi("s1")
             return
@@ -292,22 +238,17 @@ def main_loop():
     global game_state
 
     print("Entering main loop")
+
     while True:
+
+        # --- GLOBAL ACTIONS ---
+        # Fully non-blocking button check (no longpress)
+        btn = detect_button()
+
         msg = read_from_pi()
         if not msg:
             time.sleep_ms(10)
             continue
-
-        # --- GLOBAL ACTIONS ---
-        # Fully non-blocking button check (no longpress)
-        btn, longp = detect_button_with_longpress()
-        if longp:
-            if btn == 1:
-                send_to_pi("btn_new")
-                return
-            if btn == 2:
-                send_to_pi("btn_hint")
-                continue
 
         # --- Promotion ---
         if msg.startswith("heyArduinopromotion_choice_needed"):
@@ -315,18 +256,13 @@ def main_loop():
             game_state = GAME_PROMOTION
 
             print("[Prompt] Choose promotion (1=Q,2=R,3=B,4=N)")
-            btn = detect_button()          # short press only!
             if btn == 1: send_to_pi("btn_q")
             if btn == 2: send_to_pi("btn_r")
             if btn == 3: send_to_pi("btn_b")
             if btn == 4: send_to_pi("btn_n")
 
             game_state = GAME_RUNNING
-            break
-
-        elif msg.startswith("heyArduinoGameStart"):
-            game_state = GAME_RUNNING
-            return    
+            break  
 
         elif msg.startswith("heyArduinoturn_") or msg.startswith("heyArduinoerror"):
             game_state = GAME_RUNNING
