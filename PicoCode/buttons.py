@@ -13,6 +13,8 @@ GAME_SETUP = 1
 GAME_RUNNING = 2
 GAME_PROMOTION = 3
 
+default_move_time = 2000
+
 # Button state tracking
 _last_btn_state = [1] * len(BUTTON_PINS)  # 1 = released
 _press_detected = [False] * len(BUTTON_PINS)
@@ -76,8 +78,25 @@ def detect_button():
         if prev == 1 and cur == 0:
             time.sleep_ms(DEBOUNCE_MS)
             return idx + 1
-
     return None
+
+
+def timed_button_choice(timeout_sec, default_value):
+    start = time.ticks_ms()
+    timeout_ms = timeout_sec * 1000
+
+    while True:
+        # 1. CHECK FOR BUTTON PRESS
+        btn = detect_button()
+        if btn:
+            return btn  # user selected a value
+
+        # 2. CHECK TIMEOUT
+        elapsed = time.ticks_diff(time.ticks_ms(), start)
+        if elapsed >= timeout_ms:
+            return default_value  # time expired, use default
+
+        time.sleep_ms(5)
 
 
 
@@ -155,23 +174,35 @@ def select_game_mode():
             return
 
 
+
 def select_engine_strength():
-    while True:
-        btn = detect_button()
-        if btn:
-            send_to_pi(str(btn))
-            return
+    print("[Info] Selecting engine strength with timeout")
+    btn = timed_button_choice(5, default_value=DEFAULT_STRENGTH)  # pick your default
+    
+    send_to_pi(str(btn))
+
+
 
 
 def select_time_control():
-    while True:
-        btn = detect_button()
-        if btn:
-            if btn == 2:
-                send_to_pi("2000")
-            else:
-                send_to_pi(str(btn))
-            return
+    global default_move_time
+
+    print("[Info] Select time control (5s timeout)")
+
+    # button pressed? or timeout?
+    btn = timed_button_choice(5, default_value=None)
+
+    if btn is None:
+        # timeout → use the Pi default
+        send_to_pi(str(default_move_time))
+        return
+
+    # button pressed:
+    if btn == 2:
+        send_to_pi("2000")
+    else:
+        send_to_pi(str(btn))
+
 
 
 def select_color_choice():
@@ -196,10 +227,17 @@ def wait_for_setup():
         if not msg:
             time.sleep_ms(10)
             continue
-
-        if msg.startswith("heyArduinoEngineStrength"):
+            
+        elif msg.startswith("heyArduinoEngineStrength"):
             select_engine_strength()
             return
+        
+        elif msg.startswith("heyArduinodefault_time_"):
+            try:
+                default_move_time = int(msg.split("_")[-1])
+                print("Default time from Pi:", default_move_time)
+            except:
+                pass
 
         elif msg.startswith("heyArduinoTimeControl"):
             select_time_control()

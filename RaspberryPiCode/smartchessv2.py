@@ -389,6 +389,7 @@ def setup_stockfish(ser: serial.Serial) -> None:
 
     send_to_screen("Choose move time\n" + f"(ms, now {move_time_ms})")
     sendtoboard(ser, "TimeControl")
+    sendtoboard(ser, f"default_time_{move_time_ms}")
     val = timed_input_with_oled(
         ser, "Choose move time", f"(now {move_time_ms})", timeout_sec=5, default=move_time_ms
     )
@@ -433,6 +434,7 @@ def setup_local(ser: serial.Serial) -> None:
             break
 
     sendtoboard(ser, "TimeControl")
+    sendtoboard(ser, f"default_time_{move_time_ms}")
     send_to_screen("Hint think time\n" + f"ms (now {move_time_ms})")
 
     val = timed_input_with_oled(
