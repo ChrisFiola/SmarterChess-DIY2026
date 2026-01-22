@@ -68,9 +68,8 @@ while True:
         continue  # no need to redraw
 
     last_msg = line
-
-    for line in pipe:
-        parts = line.strip().split("|")
-        size = int(parts[-1])
-        lines = parts[:-1]
-        draw_text(lines, size)
+    
+    parts = line.strip().split("|")
+    size = int(parts[-1])
+    lines = parts[:-1]
+    draw_text(lines, size)
