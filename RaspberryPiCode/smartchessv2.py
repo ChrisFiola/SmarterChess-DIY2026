@@ -480,7 +480,9 @@ def setup_local(ser: serial.Serial) -> None:
             default=move_time_ms
         )
         move_time_ms = max(10, val)
-        print(f"[Local] HintSkill={skill_level} | HintTime={move_time_ms}ms")
+        break
+    
+    print(f"[Local] HintSkill={skill_level} | HintTime={move_time_ms}ms")
 
 # -----------------------------
 # Core gameplay loop
