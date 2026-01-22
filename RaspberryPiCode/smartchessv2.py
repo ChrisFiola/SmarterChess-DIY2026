@@ -493,10 +493,15 @@ def play_game(ser: serial.Serial, mode: str) -> None:
         if msg is None:
             continue
 
+        
         if msg.startswith("typing_"):
-            txt = msg[8:]
-            send_to_screen("Enter move:\n" + txt)
+            _, label, text = msg.split("_", 2)
+            if label == "FROM":
+                send_to_screen("Enter FROM:\n" + text)
+            elif label == "TO":
+                send_to_screen("Enter TO:\n" + text)
             continue
+
 
         if not game_started:
             sendtoboard(ser, "error_game_not_started")
