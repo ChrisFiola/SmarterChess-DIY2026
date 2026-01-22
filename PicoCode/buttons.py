@@ -99,8 +99,6 @@ def timed_button_choice(timeout_sec, default_value):
 
         time.sleep_ms(5)
 
-
-
 def get_from_square():
     col = None
     row = None
@@ -145,6 +143,67 @@ def get_to_square(move_from):
         time.sleep_ms(5)
 
     return col + row
+
+
+def select_strength_with_buttons(default_value, min_val=0, max_val=20, timeout_sec=5):
+    value = default_value
+    start = time.ticks_ms()
+    timeout_ms = timeout_sec * 1000
+    last_sent = None
+
+    # Send initial value
+    send_typing_preview("STRENGTH", str(value))
+
+    while True:
+        # BUTTON HANDLING
+        btn = detect_button()
+        if btn:
+            start = time.ticks_ms()  # reset timer
+
+            if btn == 1:         # increment
+                value = min(max_val, value + 1)
+            elif btn == 2:       # decrement
+                value = max(min_val, value - 1)
+            elif btn == 3:       # OK
+                return value
+
+            send_typing_preview("STRENGTH", str(value))
+
+        # TIMEOUT CHECK
+        elapsed = time.ticks_diff(time.ticks_ms(), start)
+        if elapsed >= timeout_ms:
+            return value
+
+        time.sleep_ms(10)
+
+
+def select_time_with_buttons(default_value, min_val=100, max_val=20000, timeout_sec=5):
+    value = default_value
+    start = time.ticks_ms()
+    timeout_ms = timeout_sec * 1000
+
+    send_typing_preview("TIME", str(value))
+
+    while True:
+        btn = detect_button()
+        if btn:
+            start = time.ticks_ms()  # reset timer
+
+            if btn == 1:               # +100
+                value = min(max_val, value + 100)
+            elif btn == 2:             # -100
+                value = max(min_val, value - 100)
+            elif btn == 3:             # OK
+                return value
+
+            send_typing_preview("TIME", str(value))
+
+        elapsed = time.ticks_diff(time.ticks_ms(), start)
+        if elapsed >= timeout_ms:
+            return value
+
+        time.sleep_ms(10)
+
 
 # -----------------------------
 # Setup mode (unchanged)
@@ -238,7 +297,8 @@ def wait_for_setup():
                 pass
 
         elif msg.startswith("heyArduinoEngineStrength"):
-            select_engine_strength()
+            sel = select_strength_with_buttons(default_strength)
+            send_to_pi(str(sel))
             return
         
         elif msg.startswith("heyArduinodefault_time_"):
@@ -249,7 +309,8 @@ def wait_for_setup():
                 pass
 
         elif msg.startswith("heyArduinoTimeControl"):
-            select_time_control()
+            sel = select_time_with_buttons(default_move_time)
+            send_to_pi(str(sel))
             return
 
         elif msg.startswith("heyArduinoPlayerColor"):

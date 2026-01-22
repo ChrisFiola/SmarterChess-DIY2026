@@ -518,10 +518,17 @@ def play_game(ser: serial.Serial, mode: str) -> None:
         
         if msg.startswith("typing_"):
             _, label, text = msg.split("_", 2)
+            label = label.lower()
+
             if label == "from":
                 send_to_screen("Enter from:\n" + text, size="auto")
             elif label == "to":
                 send_to_screen("Enter to:\n" + text, size="auto")
+
+            elif label == "strength":
+                    send_to_screen("Select Strength:\n" + text, size="auto")
+            elif label == "time":
+                send_to_screen("Select Time:\n" + text + " ms", size="auto")
             continue
 
 
