@@ -498,7 +498,7 @@ def play_game(ser: serial.Serial, mode: str) -> None:
             _, label, text = msg.split("_", 2)
             if label == "from":
                 send_to_screen("Enter from:\n" + text)
-            elif label == "from":
+            elif label == "to":
                 send_to_screen("Enter from:\n" + text)
             continue
 

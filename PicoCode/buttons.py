@@ -90,7 +90,7 @@ def get_from_square():
         btn = detect_button()
         if btn:
             col = chr(ord('a') + btn - 1)
-            send_typing_preview("FROM", col)
+            send_typing_preview("from", col)
         time.sleep_ms(5)
 
     # Row
@@ -98,7 +98,7 @@ def get_from_square():
         btn = detect_button()
         if btn:
             row = str(btn)
-            send_typing_preview("FROM", col + row)
+            send_typing_preview("from", col + row)
         time.sleep_ms(5)
 
     return col + row
@@ -113,7 +113,7 @@ def get_to_square(move_from):
         btn = detect_button()
         if btn:
             col = chr(ord('a') + btn - 1)
-            send_typing_preview("TO", move_from + " → " + col)
+            send_typing_preview("to", move_from + " → " + col)
         time.sleep_ms(5)
 
     # Row
@@ -121,7 +121,7 @@ def get_to_square(move_from):
         btn = detect_button()
         if btn:
             row = str(btn)
-            send_typing_preview("TO", move_from + " → " + col + row)
+            send_typing_preview("to", move_from + " → " + col + row)
         time.sleep_ms(5)
 
     return col + row
