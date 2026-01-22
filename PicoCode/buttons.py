@@ -5,7 +5,7 @@ import time
 # Configuration
 # -----------------------------
 BUTTON_PINS = [2,3,4,5,6,7,8,9]   # 8 buttons only
-DEBOUNCE_MS = 300
+DEBOUNCE_MS = 30
 LONG_PRESS_MS = 1000
 
 GAME_IDLE = 0
