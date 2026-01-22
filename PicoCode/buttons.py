@@ -80,14 +80,12 @@ def detect_button():
     return None
 
 
-# -----------------------------
-# Coordinate entry with typing preview
-# -----------------------------
-def get_coordinate():
-    # ---------- FROM ----------
+
+def get_from_square():
     col = None
     row = None
 
+    # Column
     while col is None:
         btn = detect_button()
         if btn:
@@ -95,6 +93,7 @@ def get_coordinate():
             send_typing_preview("FROM", col)
         time.sleep_ms(5)
 
+    # Row
     while row is None:
         btn = detect_button()
         if btn:
@@ -102,12 +101,14 @@ def get_coordinate():
             send_typing_preview("FROM", col + row)
         time.sleep_ms(5)
 
-    move_from = col + row
+    return col + row
 
-    # ---------- TO ----------
+
+def get_to_square(move_from):
     col = None
     row = None
 
+    # Column
     while col is None:
         btn = detect_button()
         if btn:
@@ -115,6 +116,7 @@ def get_coordinate():
             send_typing_preview("TO", move_from + " → " + col)
         time.sleep_ms(5)
 
+    # Row
     while row is None:
         btn = detect_button()
         if btn:
@@ -122,10 +124,7 @@ def get_coordinate():
             send_typing_preview("TO", move_from + " → " + col + row)
         time.sleep_ms(5)
 
-    move_to = col + row
-
-    return move_from + move_to
-
+    return col + row
 
 # -----------------------------
 # Setup mode (unchanged)
@@ -250,10 +249,10 @@ def main_loop():
             print("[TURN] Your turn")
 
             print("Enter move FROM")
-            move_from = get_coordinate()
+            move_from = get_from_square()
 
             print("Enter move TO")
-            move_to = get_coordinate()
+            move_to = get_to_square(move_from)
 
             move = move_from + move_to
             send_to_pi(move)
