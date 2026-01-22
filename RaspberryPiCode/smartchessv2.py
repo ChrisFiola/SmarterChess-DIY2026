@@ -446,12 +446,12 @@ def setup_local(ser: serial.Serial) -> None:
     Local 1v1. Engine never moves; used only for hints. We still collect hint params.
     """
     global skill_level, move_time_ms
-    sendtoboard(ser, "ReadyLocal")
     send_to_screen("Local 2-Player", "Hints enabled")
     time.sleep(0.5)
 
     # Hint skill level selection
     send_to_screen("Hint strength", f"0-20 (now {skill_level})")
+    sendtoboard(ser, "HintStrength")
     while True:
         msg = getboard(ser)
         if msg is None:
