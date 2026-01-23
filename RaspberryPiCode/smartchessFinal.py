@@ -324,7 +324,7 @@ def play_game(ser: serial.Serial, mode: str) -> None:
         time.sleep(1)
 
     def ui_prompt_enter_move():
-        send_to_screen("You are {'white' if board.turn == chess.WHITE else 'black'} your go...")
+        send_to_screen(f"You are {'white' if board.turn == chess.WHITE else 'black'} your go...")
 
     def ui_engine_thinking():
         send_to_screen("Engine Thinking...")
