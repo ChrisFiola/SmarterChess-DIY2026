@@ -1,4 +1,3 @@
-
 # Pico Chess Controller — Refactored (behavior identical)
 # --------------------------------------------------------
 # - Preserves Arduino v27 semantics for buttons/IRQ (Hint/New-Game via ISR).
@@ -70,6 +69,7 @@ hint_irq_flag = False    # Raised by real interrupt
 hint_hold_mode = False   # When True, a hint is pinned on the board until OK (Button 7)
 hint_waiting = False
 showing_hint = False
+suppress_hints_until_ms = 0  # Suppress spurious hint IRQs after new game
 
 game_state = 0
 GAME_IDLE = 0
@@ -94,6 +94,7 @@ uart = UART(
 def send_to_pi(kind, payload=""):
     uart.write(f"heypi{kind}{payload}\n".encode())
 
+
 def read_from_pi():
     if uart.any():
         try:
@@ -101,9 +102,6 @@ def read_from_pi():
         except:
             return None
     return None
-
-def send_typing_preview(label, text):
-    uart.write(f"heypityping_{label}_{text}\n".encode())
 
 # ============================================================
 # LED WRAPPERS
@@ -346,6 +344,7 @@ BTN_HINT.irq(trigger=Pin.IRQ_FALLING, handler=hint_irq)
 def map_range(x, in_min, in_max, out_min, out_max):
     return int((x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min)
 
+
 def hard_reset_board():
     global in_input, in_setup, confirm_mode
     global hint_irq_flag, hint_hold_mode, showing_hint
@@ -430,6 +429,7 @@ def select_game_mode():
             return
         time.sleep_ms(5)
 
+
 def select_singlepress(label, default_value, out_min, out_max):
     """
     Arduino-style: one press (1..8) selects mapped value.
@@ -437,7 +437,6 @@ def select_singlepress(label, default_value, out_min, out_max):
     """
     buttons.reset()
     print(f"Select {label}: press 1..8 (maps to {out_min}..{out_max})")
-    send_typing_preview(label, str(default_value))
 
     while True:
         btn = buttons.detect_press()
@@ -446,14 +445,16 @@ def select_singlepress(label, default_value, out_min, out_max):
             continue
         if 1 <= btn <= 8:
             mapped = map_range(btn, 1, 8, out_min, out_max)
-            send_typing_preview(label, str(mapped))
             return mapped
+
 
 def select_strength_singlepress(default_value):
     return select_singlepress("strength", default_value, 1, 20)
 
+
 def select_time_singlepress(default_value):
     return select_singlepress("time", default_value, 3000, 12000)
+
 
 def select_color_choice():
     """
@@ -472,6 +473,7 @@ def select_color_choice():
         if btn == 3:
             send_to_pi("s3"); return
         time.sleep_ms(5)
+
 
 def wait_for_setup():
     """
@@ -527,11 +529,12 @@ def wait_for_setup():
 
             if msg.startswith("heyArduinoSetupComplete"):
                 game_state = GAME_RUNNING
+                in_setup = False
                 return
 
     finally:
         enable_hint_irq()
-        # in_setup flag remains True until runtime starts
+        # in_setup flag now set to False when runtime starts
 
 # ============================================================
 # TRUE Arduino v27 Hint/New‑Game handling (via IRQ on Btn 8)
@@ -543,22 +546,23 @@ def process_hint_irq():
       - Real IRQ on Button 8 sets hint_irq_flag.
       - Here we consume that flag and run the ISR logic:
            if A1 (Button 7) is LOW  -> NEW GAME
-           else                      -> HINT
-      - We DO NOT block this by context (works everywhere, like Arduino).
-      - We only suppress Hint during setup (Arduino would show "No hint yet").
+           else                      -> HINT (only during GAME_RUNNING)
+      - During setup we suppress Hint requests (do nothing), but still allow New Game.
     Returns:
       'new' if new game triggered
       'hint' if hint requested
       None if no-op
     """
-    global hint_irq_flag, hint_waiting
+    global hint_irq_flag, hint_waiting, suppress_hints_until_ms
 
-    # Ignore hint entirely if not in gameplay
-    if game_state != GAME_RUNNING:
-        hint_irq_flag = False
+    # Nothing queued
+    if not hint_irq_flag:
         return None
 
-    if not hint_irq_flag:
+    now = time.ticks_ms()
+    # Suppress window after New Game
+    if time.ticks_diff(suppress_hints_until_ms, now) > 0:
+        hint_irq_flag = False
         return None
 
     # consume the flag
@@ -580,24 +584,28 @@ def process_hint_irq():
             time.sleep_ms(25)
         time.sleep_ms(1000)
         board.show_markings()
+        # Suppress follow-on hint bounce
+        suppress_hints_until_ms = time.ticks_add(now, 800)
         return "new"
 
-    # Else: Hint
+    # Else: Hint path
+    if game_state == GAME_SETUP:
+        # Suppressed during setup (Arduino shows effectively no hint yet)
+        print("[IRQ] Hint ignored during setup")
+        return None
+
+    if game_state != GAME_RUNNING:
+        return None
+
     print("[IRQ] Hint request")
-    # Show "thinking" indication on screen
-    send_typing_preview("hint", "Hint requested… thinking")
+    # Flash hint pixel; Pi will drive OLED text
+    cp.hint(True, BLUE)
+    time.sleep_ms(100)
+    cp.hint(True, WHITE)
+    # Ask Pi for a hint
+    send_to_pi("btn_hint")
+    return "hint"
 
-    # During setup, Arduino would do nothing useful; we suppress to avoid noise
-    if not in_setup:
-        # flash hint pixel
-        cp.hint(True, BLUE)
-        time.sleep_ms(100)
-        cp.hint(True, WHITE)
-        # Ask Pi for a hint
-        send_to_pi("btn_hint")
-        return "hint"
-
-    return None
 
 def enter_hint_hold(best_uci: str):
     """
@@ -645,6 +653,7 @@ def _maybe_clear_hint_on_coord_press(btn):
         board.show_markings()
         cp.coord(True)
 
+
 def _read_coord_part(kind, label, prefix=""):
     """
     kind: "file" or "rank"
@@ -665,12 +674,11 @@ def _read_coord_part(kind, label, prefix=""):
 
         if kind == "file":
             col = chr(ord('a') + btn - 1)  # 1..6 -> a..f
-            send_typing_preview(label, prefix + col)
             return col
         else:
             row = str(btn)  # 1..6 -> '1'..'6'
-            send_typing_preview(label, prefix + row)
             return row
+
 
 def enter_from_square():
     """
@@ -700,7 +708,6 @@ def enter_from_square():
             continue
 
         col = chr(ord('a') + btn - 1)
-        send_typing_preview("from", col)
 
     # Row
     while row is None:
@@ -710,6 +717,7 @@ def enter_from_square():
         row = part
 
     return col + row
+
 
 def enter_to_square(move_from):
     """
@@ -738,7 +746,6 @@ def enter_to_square(move_from):
             continue
 
         col = chr(ord('a') + btn - 1)
-        send_typing_preview("to", move_from + " → " + col)
 
     # Row
     while row is None:
@@ -755,9 +762,9 @@ def enter_to_square(move_from):
             continue
 
         row = str(btn)
-        send_typing_preview("to", move_from + " → " + col + row)
 
     return col + row
+
 
 def confirm_move_or_reenter(move_str):
     """
@@ -838,6 +845,7 @@ def handle_promotion_choice():
             send_to_pi("btn_n"); return
         # ignore others
 
+
 def collect_and_send_move():
     """
     Collect a player's move (FROM/TO + OK) and send it to the Pi.
@@ -889,13 +897,14 @@ def collect_and_send_move():
     finally:
         in_input = False
 
+
 def main_loop():
     """
     Core runtime:
       - process asynchronous hint/newgame requests via IRQ flag
       - react to Pi messages:
           * heyArduinoGameStart         -> ignore (informational)
-          * heyArduinom<uci>            -> engine move lighting
+          * heyArduinm<uci>             -> engine move lighting
           * heyArduinoturn_*            -> collect human move with OK-confirm
           * heyArduinoerror_*           -> show error flash then re-enter move
           * heyArduinopromotion_choice_needed -> ask promotion
@@ -983,13 +992,12 @@ def main_loop():
             continue
 
         # -------------------------------------------
-        # Hint from Pi: heyArduinohint_<uci> (not typing echoes)
+        # Hint from Pi: heyArduinohint_<uci>
         # -------------------------------------------
-        if msg.startswith("heyArduinohint_") and not msg.startswith("heypityping_"):
+        if msg.startswith("heyArduinohint_"):
             best = msg[len("heyArduinohint_"):].strip()
             showing_hint = True
             board.light_up_move(best, 'H')
-            send_typing_preview("hint", f"Hint: {best} — enter move to continue")
             cp.hint(True, BLUE)
             continue
 
