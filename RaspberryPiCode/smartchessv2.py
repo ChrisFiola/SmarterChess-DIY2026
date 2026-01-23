@@ -325,7 +325,7 @@ def send_hint_to_board(ser: serial.Serial) -> None:
         return
 
     try:
-        info = engine.analyse(
+        info = engine.analyse( # type: ignore
             board,
             chess.engine.Limit(time=max(0.01, move_time_ms / 1000.0))
         )
