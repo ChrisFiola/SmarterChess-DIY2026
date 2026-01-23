@@ -186,15 +186,21 @@ def engine_bestmove(brd: chess.Board, ms: int) -> Optional[str]:
     result = engine.play(brd, limit)  # type: ignore
     return result.move.uci() if result.move else None
 
+
 def send_hint_to_board(ser: serial.Serial) -> None:
     if board.is_game_over():
         sendtoboard(ser, "hint_gameover")
         send_to_screen("Game Over\nNo hints\nPress n to start over")
         return
+
+    # NEW: show 'Thinking...' immediately
+    send_to_screen("Hint\nThinking...")
+
     best_move: Optional[str] = None
     try:
         info = engine.analyse(  # type: ignore
-            board, chess.engine.Limit(time=max(0.01, move_time_ms / 1000.0))
+            board,
+            chess.engine.Limit(time=max(0.01, move_time_ms / 1000.0))
         )
         pv = info.get("pv")
         if pv:
@@ -205,6 +211,12 @@ def send_hint_to_board(ser: serial.Serial) -> None:
     if not best_move:
         sendtoboard(ser, "hint_none")
         return
+
+    # Send to Pico and update OLED with arrow formatting
+    sendtoboard(ser, f"hint_{best_move}")
+    send_to_screen(f"Hint\n{best_move[:2]} → {best_move[2:4]}")
+    print(f"[Hint] {best_move}")
+
 
     # Send to Pico
     sendtoboard(ser, f"hint_{best_move}")

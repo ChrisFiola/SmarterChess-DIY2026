@@ -340,19 +340,29 @@ def _send_confirm_preview(move):
 # MOVE ENTRY (6‑button layout)
 # ============================================================
 
-def enter_from_square():
+
+def enter_from_square(seed_btn=None):
     col=None; row=None
     cp.coord(True); cp.ok(False); cp.hint(False)
     buttons.reset()
 
     # Column (a..f)
     while col is None:
-        irq = process_hint_irq()
-        if irq == "new": return None
-        b = buttons.detect_press()
-        if not b: time.sleep_ms(5); continue
-        if ButtonManager.is_non_coord_button(b): continue
-        col = chr(ord('a') + b - 1)   # 1..6 -> a..f
+        # If we have a seed button from a cancel, prefer it once
+        if seed_btn is not None:
+            b = seed_btn
+            seed_btn = None  # consume seed
+        else:
+            irq = process_hint_irq()
+            if irq == "new": return None
+            b = buttons.detect_press()
+            if not b:
+                time.sleep_ms(5)
+                continue
+
+        if ButtonManager.is_non_coord_button(b):
+            continue
+        col = chr(ord('a') + b - 1)
         _send_from_preview(col)
 
     # Row (1..6)
@@ -360,12 +370,16 @@ def enter_from_square():
         irq = process_hint_irq()
         if irq == "new": return None
         b = buttons.detect_press()
-        if not b: time.sleep_ms(5); continue
-        if ButtonManager.is_non_coord_button(b): continue
+        if not b:
+            time.sleep_ms(5)
+            continue
+        if ButtonManager.is_non_coord_button(b):
+            continue
         row = str(b)
         _send_from_preview(col + row)
 
     return col + row
+
 
 
 def enter_to_square(move_from):
@@ -396,6 +410,7 @@ def enter_to_square(move_from):
     return col + row
 
 
+
 def confirm_move(move):
     global confirm_mode
     confirm_mode = True
@@ -408,44 +423,63 @@ def confirm_move(move):
         while True:
             irq = process_hint_irq()
             if irq == "new": return None
+
             b = buttons.detect_press()
             if not b:
-                time.sleep_ms(5); continue
+                time.sleep_ms(5)
+                continue
+
             if b == 7:  # OK
                 cp.ok(False)
                 return "ok"
-            else:       # any other button -> redo
-                cp.ok(False); board.show_markings()
-                return "redo"
+            else:
+                # Return which button cancelled, so caller can reuse it
+                cp.ok(False)
+                board.show_markings()
+                return ("redo", b)
     finally:
         confirm_mode = False
+
+
 
 
 def collect_and_send_move():
     global in_input
     in_input = True
     try:
+        seed = None  # NEW: coordinate seed for FROM
+
         while True:
             cp.coord(True); cp.hint(False); cp.ok(False)
             buttons.reset()
 
-            move_from = enter_from_square()
+            move_from = enter_from_square(seed_btn=seed)
             if move_from is None: return
-            move_to   = enter_to_square(move_from)
+            seed = None  # consumed once
+
+            move_to = enter_to_square(move_from)
             if move_to is None: return
 
             move = move_from + move_to
             board.light_up_move(move, 'Y')
 
             res = confirm_move(move)
-            if res is None: return
-            if res == 'redo':
-                cp.coord(True); continue
+            if res is None:
+                return
+            if res == 'ok':
+                send_to_pi(move)
+                return
 
-            send_to_pi(move)
-            return
+            # res is ('redo', btn)
+            if isinstance(res, tuple) and res[0] == 'redo':
+                cancel_btn = res[1]
+                # If the cancel was a coord button, use it to seed FROM
+                seed = cancel_btn if (1 <= cancel_btn <= 6) else None
+                cp.coord(True)
+                continue
     finally:
         in_input = False
+
 
 # ============================================================
 # SETUP / MODE SELECTION
