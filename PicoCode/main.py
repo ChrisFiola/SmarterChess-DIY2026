@@ -60,6 +60,15 @@ def send_typing_preview(label: str, text: str):
     """
     uart.write(f"heypityping_{label}_{text}\n".encode())
 
+def try_send_hint(btn):
+    """If Button 8 is pressed, request a hint from the Pi and return True; else False."""
+    if btn == 8:
+        send_to_pi("btn_hint")
+        # Small debounce to avoid spamming if the button is held
+        time.sleep_ms(150)
+        return True
+    return False
+
 
 # -----------------------------
 # Non-blocking button detection (INSTANT PRESS)
@@ -99,6 +108,7 @@ def timed_button_choice(timeout_sec, default_value):
 
         time.sleep_ms(5)
 
+
 def get_from_square():
     col = None
     row = None
@@ -107,6 +117,10 @@ def get_from_square():
     while col is None:
         btn = detect_button()
         if btn:
+            # Allow hint during FROM entry
+            if try_send_hint(btn):
+                continue
+
             col = chr(ord('a') + btn - 1)
             send_typing_preview("from", col)
         time.sleep_ms(5)
@@ -115,11 +129,16 @@ def get_from_square():
     while row is None:
         btn = detect_button()
         if btn:
+            # Allow hint during FROM entry
+            if try_send_hint(btn):
+                continue
+
             row = str(btn)
             send_typing_preview("from", col + row)
         time.sleep_ms(5)
 
     return col + row
+
 
 
 def get_to_square(move_from):
@@ -130,6 +149,10 @@ def get_to_square(move_from):
     while col is None:
         btn = detect_button()
         if btn:
+            # Allow hint during TO entry
+            if try_send_hint(btn):
+                continue
+
             col = chr(ord('a') + btn - 1)
             send_typing_preview("to", move_from + " → " + col)
         time.sleep_ms(5)
@@ -138,9 +161,14 @@ def get_to_square(move_from):
     while row is None:
         btn = detect_button()
         if btn:
+            # Allow hint during TO entry
+            if try_send_hint(btn):
+                continue
+
             row = str(btn)
             send_typing_preview("to", move_from + " → " + col + row)
         time.sleep_ms(5)
+
 
     return col + row
 

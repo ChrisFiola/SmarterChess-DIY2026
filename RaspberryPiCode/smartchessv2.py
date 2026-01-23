@@ -314,7 +314,7 @@ def engine_bestmove(brd: chess.Board, ms: int) -> Optional[str]:
         return None
 
     limit = chess.engine.Limit(time=max(0.01, ms / 1000.0))
-    result = engine.play(brd, limit)
+    result = engine.play(brd, limit) # type: ignore
     return result.move.uci() if result.move else None
 
 
@@ -324,9 +324,21 @@ def send_hint_to_board(ser: serial.Serial) -> None:
         send_to_screen("Game Over\nNo hints", size="auto")
         return
 
-    info = engine.analyse(
-        board, chess.engine.Limit(time=max(0.01, move_time_ms / 1000.0))
-    )
+    try:
+        info = engine.analyse(
+            board,
+            chess.engine.Limit(time=max(0.01, move_time_ms / 1000.0))
+        )
+        pv = info.get("pv")
+        if not pv:
+            raise RuntimeError("No PV returned")
+        best_move = pv[0].uci()
+    except Exception:
+        best_move = engine_bestmove(board, move_time_ms)
+        if not best_move:
+            sendtoboard(ser, "hint_none")
+            return
+        
     best_move = info["pv"][0].uci()
     sendtoboard(ser, f"hint_{best_move}")
     send_to_screen("Hint\n"+best_move, size="auto")
