@@ -459,6 +459,7 @@ def play_game(ser: serial.Serial, mode: str) -> None:
         # Accept and show arrow + next turn
         board.push(move)
         ui_show_move_arrow(uci, suffix=f"{turn_name()} to move")
+        time.sleep(0.5)
         handoff_next_turn()
 
 
