@@ -378,8 +378,8 @@ def play_game(ser: serial.Serial, mode: str) -> None:
 
     if mode == "stockfish":
         if not human_is_white:
-            send_to_screen(f"White starts first.\nEngine thinking...")
-            time.sleep(1)
+            send_to_screen(f"Computer starts first.")
+            time.sleep(0.5)
             engine_move_and_send(ser)  # will show "You are {'white' if board.turn == chess.WHITE else 'black'} <move>\nYour go..."
             print(board)
         else:
