@@ -19,7 +19,7 @@ import neopixel
 
 # Buttons (active‑low)
 BUTTON_PINS = [2, 3, 4, 5, 6, 7, 8, 9]   # 1–6=coords, 7=A1(OK), 8=Hint IRQ
-DEBOUNCE_MS = 100
+DEBOUNCE_MS = 300
 
 # Special roles
 OK_BUTTON_INDEX   = 6   # GP8 (Button 7 / A1)
