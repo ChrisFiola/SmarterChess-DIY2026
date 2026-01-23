@@ -3,8 +3,8 @@
 """
 SmarterChess (refactored)
 - Unified game loop for Stockfish & Local modes
-- Cleaner parsing and fewer duplicates
-- "New Game" returns to mode selection every time
+- DIY Machines-style OLED wording
+- "Press n to start over" on game-over
 """
 
 import sys
@@ -79,8 +79,8 @@ def restart_display_server():
         stderr=subprocess.DEVNULL,
     )
 
-def send_to_screen(message, size="auto"):
-    parts = message.split("\n")
+def send_to_screen(line1, line2="", line3="", size="auto"):
+    parts = [line1, line2, line3]
     payload = "|".join(parts) + f"|{size}\n"
     with open("/tmp/lcdpipe", "w") as pipe:
         pipe.write(payload)
@@ -195,43 +195,6 @@ def parse_side_choice(s: str) -> Optional[bool]:
     return None
 
 
-def timed_input_with_oled(ser, prompt1, prompt2, timeout_sec=5, default=None):
-    """
-    Show a true 1 Hz countdown and accept digits until timeout.
-    Non-blocking serial so we don't miss ticks.
-    """
-    end_time = time.monotonic() + timeout_sec
-    last_shown = None
-
-    while True:
-        now = time.monotonic()
-        remaining = int(max(0, round(end_time - now)))  # whole seconds remaining
-
-        # Only refresh OLED when the remaining second actually changes
-        if remaining != last_shown:
-            send_to_screen(f"{prompt1}\n{prompt2}\n{remaining} sec...", size="auto")
-            last_shown = remaining
-
-        # Poll non-blocking for input ~10 times per second
-        deadline = now + 0.1
-        while time.monotonic() < deadline:
-            msg = getboard_nonblocking(ser)
-            if msg is None:
-                time.sleep(0.01)
-                continue
-
-            if msg.startswith("n"):
-                raise GoToModeSelect()
-
-            digits = extract_digits(msg)
-            if digits is not None:
-                return digits
-
-        # Timeout reached
-        if now >= end_time:
-            return default
-
-
 def requires_promotion(move: chess.Move, brd: chess.Board) -> bool:
     # 1. Move must be legal
     if move not in brd.legal_moves:
@@ -258,10 +221,8 @@ def requires_promotion(move: chess.Move, brd: chess.Board) -> bool:
     return False
 
 
-
 def ask_promotion_piece(ser) -> str:
-    send_to_screen(
-        "Promotion!\n1=Queen\n2=Rook\n3=Bishop\n4=Knight", size="auto")
+    send_to_screen('Promotion!', '1=Queen 2=Rook', '3=Bishop 4=Knight')
     sendtoboard(ser, "promotion_choice_needed")
 
     while True:
@@ -282,7 +243,7 @@ def ask_promotion_piece(ser) -> str:
         if choice in ("btn_n", "btn_knight"):
             return "n"
 
-        send_to_screen("Promotion!\n1=Q\n=R\n3=B\n4=N\n\nTry again", size="auto")
+        send_to_screen('Promotion!', '1=Queen 2=Rook', '3=Bishop 4=Knight')
 
 
 # -----------------------------
@@ -327,7 +288,7 @@ def engine_bestmove(brd: chess.Board, ms: int) -> Optional[str]:
 def send_hint_to_board(ser: serial.Serial) -> None:
     if board.is_game_over():
         sendtoboard(ser, "hint_gameover")
-        send_to_screen("Game Over\nNo hints", size="auto")
+        send_to_screen('Game Over', 'No hints', 'Press n to start over')
         return
 
     try:
@@ -346,7 +307,7 @@ def send_hint_to_board(ser: serial.Serial) -> None:
             return
 
     sendtoboard(ser, f"hint_{best_move}")
-    send_to_screen("Hint\n"+best_move, size="auto")
+    send_to_screen('Hint', best_move, '')
     print(f"[Hint] {best_move}")
 
 
@@ -370,7 +331,8 @@ def report_game_over(ser: serial.Serial) -> None:
         )
     )
     sendtoboard(ser, f"GameOver:{result}")
-    send_to_screen("Game Over\n"+f"Result {result}"+"\n"+reason.upper(), size="auto")
+    # DIY style: simple lines + prompt
+    send_to_screen('Game Over', f'Result {result}', 'Press n to start over')
 
 
 def engine_move_and_send(ser: serial.Serial) -> None:
@@ -390,10 +352,8 @@ def engine_move_and_send(ser: serial.Serial) -> None:
         f"turn_{'white' if board.turn == chess.WHITE else 'black'}"
     )
 
-    send_to_screen(
-        f"{reply[:2]} → {reply[2:4]}"+
-        "\nYour turn", size="auto"
-    )
+    # DIY style: show move then "Your go..."
+    send_to_screen(f'{reply[:2]} -> {reply[2:4]}', '', 'Your go...')
 
     print("[Engine]", reply)
     print(board)
@@ -405,7 +365,7 @@ def engine_move_and_send(ser: serial.Serial) -> None:
 
 def select_mode(ser: serial.Serial) -> str:
     sendtoboard(ser, "ChooseMode")
-    send_to_screen("Choose opponent: \n1) PC\n2) Remote\n3) Local", size="auto")
+    send_to_screen('Choose opponent:', '1) Against PC', '2) Remote human')
     while True:
         msg = getboard(ser)
         if msg is None:
@@ -416,14 +376,17 @@ def select_mode(ser: serial.Serial) -> str:
         if m in ("2", "onlinehuman", "remote", "online", "btn_mode_online"):
             return "online"
         if m in ("3", "local", "human", "btn_mode_local"):
+            # local remains supported; reuse Stockfish prompts for hints/time
             return "local"
         sendtoboard(ser, "error_unknown_mode")
-        send_to_screen("Unknown mode\n" + m + "\nSend again")
+        send_to_screen('Unknown mode', m, 'Send again')
 
 
 def setup_stockfish(ser: serial.Serial) -> None:
     global skill_level, move_time_ms, human_is_white
 
+    # DIY wording for difficulty selection
+    send_to_screen('Choose computer', 'difficulty level:', '(0 -> 8)')
     sendtoboard(ser, "EngineStrength")
     sendtoboard(ser, f"default_strength_{skill_level}")
 
@@ -435,6 +398,8 @@ def setup_stockfish(ser: serial.Serial) -> None:
             skill_level = max(0, min(int(msg), 20))
             break
 
+    # DIY wording for time control selection
+    send_to_screen('Choose computer', 'move time:', '(0 -> 8)')
     sendtoboard(ser, "TimeControl")
     sendtoboard(ser, f"default_time_{move_time_ms}")
 
@@ -446,7 +411,8 @@ def setup_stockfish(ser: serial.Serial) -> None:
             move_time_ms = max(10, int(msg))
             break
 
-    send_to_screen("Choose side\n1 = White\n2 = Black\n3 = Random", size="auto")
+    # DIY wording for color choice
+    send_to_screen('Select a colour:', '1 = White/First', '2 = Black/Second')
     sendtoboard(ser, "PlayerColor")
 
     while True:
@@ -465,9 +431,11 @@ def setup_stockfish(ser: serial.Serial) -> None:
 def setup_local(ser: serial.Serial) -> None:
     global skill_level, move_time_ms
 
-    send_to_screen("Local 2-Player\nHints enabled", size="auto")
-    time.sleep(3)
+    send_to_screen('Local 2-Player', 'Hints enabled', '')
+    time.sleep(2)
 
+    # DIY wording reused for hint strength and time (used for hint depth/time)
+    send_to_screen('Choose computer', 'difficulty level:', '(0 -> 8)')
     sendtoboard(ser, "EngineStrength")
     sendtoboard(ser, f"default_strength_{skill_level}")
 
@@ -479,6 +447,7 @@ def setup_local(ser: serial.Serial) -> None:
             skill_level = max(0, min(int(msg), 20))
             break
 
+    send_to_screen('Choose computer', 'move time:', '(0 -> 8)')
     sendtoboard(ser, "TimeControl")
     sendtoboard(ser, f"default_time_{move_time_ms}")
 
@@ -489,7 +458,6 @@ def setup_local(ser: serial.Serial) -> None:
         if msg.isdigit():
             move_time_ms = max(10, int(msg))
             break
-
 
 
 # -----------------------------
@@ -506,20 +474,20 @@ def play_game(ser: serial.Serial, mode: str) -> None:
     sendtoboard(ser, "GameStart")
     gameover_reported = False
 
-    # Opening behavior (match old version)
+    # Opening behavior (DIY style prompts)
     if mode == "stockfish":
         if not human_is_white:
-            send_to_screen("You are black\nEngine starts\nThinking…", size="auto")
+            send_to_screen('You are black', 'Engine starts', 'Thinking...')
             time.sleep(0.1)
             engine_move_and_send(ser)
             game_started = True
         else:
-            send_to_screen("You are white\nYour move…", size="auto")
+            send_to_screen('Please enter', 'your move:', '')
             sendtoboard(ser, "turn_white")
             game_started = True
     else:
         sendtoboard(ser, "turn_white")
-        send_to_screen("Local Play\nWhite to move", size="auto")
+        send_to_screen('Local Play', 'White to move', '')
         game_started = True
 
     while True:
@@ -527,7 +495,8 @@ def play_game(ser: serial.Serial, mode: str) -> None:
             if not gameover_reported:
                 report_game_over(ser)
                 gameover_reported = True
-                send_to_screen("Press n to start over", size="auto")
+                # Keep showing prompt to restart
+                send_to_screen('Game Over', 'Result ' + board.result(claim_draw=True), 'Press n to start over')
 
         if mode == "stockfish":
             engine_should_move = (
@@ -535,7 +504,7 @@ def play_game(ser: serial.Serial, mode: str) -> None:
                 or (board.turn == chess.BLACK and human_is_white)
             )
             if engine_should_move and not board.is_game_over():
-                send_to_screen("Engine Thinking…", size="auto")
+                send_to_screen('Engine Thinking...', '', '')
                 engine_move_and_send(ser)
                 continue
 
@@ -558,14 +527,14 @@ def play_game(ser: serial.Serial, mode: str) -> None:
         uci = parse_move_payload(msg)
         if not uci:
             sendtoboard(ser, f"error_invalid_{msg}")
-            send_to_screen("Invalid\n" + msg + "\nTry again", size="auto")
+            send_to_screen('Invalid', msg, 'Try again')
             continue
 
         try:
             move = chess.Move.from_uci(uci)
         except ValueError:
             sendtoboard(ser, f"error_invalid_{uci}")
-            send_to_screen("Invalid move\n" + uci + f"\n{turn_name()} again", size="auto")
+            send_to_screen('Invalid move', uci, f'{turn_name()} again')
             continue
 
         if requires_promotion(move, board):
@@ -575,21 +544,27 @@ def play_game(ser: serial.Serial, mode: str) -> None:
 
         if move not in board.legal_moves:
             sendtoboard(ser, f"error_illegal_{uci}")
-            send_to_screen("Illegal move!\n" + uci + f"\n{turn_name()} again", size="auto")
+            send_to_screen('Illegal move!', 'Enter new', 'move...')
             continue
 
         board.push(move)
         next_turn = turn_name()
 
-        send_to_screen(f"{uci[:2]} → {uci[2:4]}\n" + f"{next_turn} to move", size="auto")
+        # Show player's move like DIY (arrow and then next status)
+        send_to_screen(f'{uci[:2]} -> {uci[2:4]}', '', f'{next_turn} to move')
         print(board)
 
+        # Turn handoff to Pico
         sendtoboard(
             ser,
             f"turn_{'white' if board.turn == chess.WHITE else 'black'}"
         )
-        # Friendly prompt like DIY Machines
-        send_to_screen("Your move…\nPlease enter\nFROM then TO", size="auto")
+
+        # If it's human to move again (local mode), show DIY prompt
+        if (mode == 'local') or (mode == 'stockfish' and (
+            (board.turn == chess.WHITE and human_is_white) or (board.turn == chess.BLACK and not human_is_white)
+        )):
+            send_to_screen('Please enter', 'your move:', '')
 
 
 # -----------------------------
@@ -597,7 +572,7 @@ def play_game(ser: serial.Serial, mode: str) -> None:
 # -----------------------------
 
 def run_online_mode(ser: serial.Serial) -> None:
-    send_to_screen("Online mode not implemented\nUse Stockfish/Local", size="auto")
+    send_to_screen('Online mode not implemented', 'Use Stockfish/Local', '')
     sendtoboard(ser, "error_online_unimplemented")
 
 
@@ -606,7 +581,7 @@ def run_online_mode(ser: serial.Serial) -> None:
 # -----------------------------
 
 def shutdown_pi(ser: Optional[serial.Serial]) -> None:
-    send_to_screen("Shutting down…\nWait 20s then disconnect power", size="auto")
+    send_to_screen('Shutting down...', 'Wait 20s then', 'disconnect power.')
     time.sleep(2)
     try:
         subprocess.call("sudo nohup shutdown -h now", shell=True)
@@ -652,7 +627,7 @@ def main():
             mode_dispatch(ser, mode)
         except GoToModeSelect:
             reset_game_state()
-            send_to_screen("NEW GAME", size="auto")
+            send_to_screen('NEW', 'GAME', '')
             time.sleep(0.2)
             continue
         except KeyboardInterrupt:

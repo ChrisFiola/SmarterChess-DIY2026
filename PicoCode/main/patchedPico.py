@@ -1037,7 +1037,7 @@ def main_loop():
 def run():
     global game_state
 
-    print("Pico Chess Controller Starting (refractore.py)")
+    print("Pico Chess Controller Starting (patchedPico.py)")
 
     # Initial visuals like Arduino setup()
     cp.fill(BLACK)
