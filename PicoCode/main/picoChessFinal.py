@@ -19,7 +19,7 @@ import neopixel
 
 # Buttons (active‑low)
 BUTTON_PINS = [2, 3, 4, 5, 6, 7, 8, 9]   # 1–6=coords, 7=A1(OK), 8=Hint IRQ
-DEBOUNCE_MS = 20
+DEBOUNCE_MS = 100
 
 # Special roles
 OK_BUTTON_INDEX   = 6   # GP8 (Button 7 / A1)
@@ -92,6 +92,11 @@ def send_typing_preview(label, text):
     # heypityping_from_<text>
     # heypityping_to_<text>
     # heypityping_confirm_<uci or arrow move>
+    
+    if game_state != GAME_RUNNING:
+        # Suppress all typing echoes when not actually in gameplay.
+        return
+
     uart.write(f"heypityping_{label}_{text}\n".encode())
 
 # ============================================================
@@ -292,7 +297,7 @@ def hard_reset_board():
 # ============================================================
 
 def process_hint_irq():
-    global hint_irq_flag, suppress_hints_until_ms
+    global hint_irq_flag, suppress_hints_until_ms, game_state
     if not hint_irq_flag:
         return None
     hint_irq_flag = False
@@ -303,6 +308,8 @@ def process_hint_irq():
 
     # New Game if A1 held during hint
     if BTN_OK.value() == 0:
+        game_state = GAME_SETUP
+
         send_to_pi("n")
         cp.hint(False); cp.fill(WHITE, 0, 5)
         v = 0
@@ -342,12 +349,20 @@ def _send_confirm_preview(move):
 
 
 def enter_from_square(seed_btn=None):
+    
+    if game_state != GAME_RUNNING:
+        return None
+
     col=None; row=None
     cp.coord(True); cp.ok(False); cp.hint(False)
     buttons.reset()
 
     # Column (a..f)
     while col is None:
+        
+        if game_state != GAME_RUNNING:
+            return None
+
         # If we have a seed button from a cancel, prefer it once
         if seed_btn is not None:
             b = seed_btn
@@ -367,6 +382,10 @@ def enter_from_square(seed_btn=None):
 
     # Row (1..6)
     while row is None:
+        
+        if game_state != GAME_RUNNING:
+            return None
+
         irq = process_hint_irq()
         if irq == "new": return None
         b = buttons.detect_press()
@@ -383,12 +402,20 @@ def enter_from_square(seed_btn=None):
 
 
 def enter_to_square(move_from):
+    
+    if game_state != GAME_RUNNING:
+        return None
+
     col=None; row=None
     cp.coord(True); cp.ok(False)
     buttons.reset()
 
     # Column
     while col is None:
+        
+        if game_state != GAME_RUNNING:
+            return None
+
         irq = process_hint_irq()
         if irq == "new": return None
         b = buttons.detect_press()
@@ -399,6 +426,10 @@ def enter_to_square(move_from):
 
     # Row
     while row is None:
+        
+        if game_state != GAME_RUNNING:
+            return None
+
         irq = process_hint_irq()
         if irq == "new": return None
         b = buttons.detect_press()
@@ -412,6 +443,10 @@ def enter_to_square(move_from):
 
 
 def confirm_move(move):
+    
+    if game_state != GAME_RUNNING:
+        return None
+
     global confirm_mode
     confirm_mode = True
     cp.coord(False); cp.ok(True)
@@ -421,6 +456,10 @@ def confirm_move(move):
 
     try:
         while True:
+            
+            if game_state != GAME_RUNNING:
+                return None
+
             irq = process_hint_irq()
             if irq == "new": return None
 

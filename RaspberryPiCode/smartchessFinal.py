@@ -315,7 +315,7 @@ def play_game(ser: serial.Serial, mode: str) -> None:
     reset_game_state()
     sendtoboard(ser, "GameStart")
     send_to_screen("NEW GAME")
-    time.sleep(0.5)
+    time.sleep(3)
 
     if mode == "stockfish":
         if not human_is_white:
