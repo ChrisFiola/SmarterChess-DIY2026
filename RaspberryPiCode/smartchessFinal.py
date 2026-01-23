@@ -353,7 +353,7 @@ def play_game(ser: serial.Serial, mode: str) -> None:
             # swallow malformed previews quietly
             pass
 
-    def handoff_next_turn():
+    def handoff_next_turn(uci: str) -> None:
         """After pushing a valid move, notify Pico whose turn it is and prompt if human to move."""
         sendtoboard(ser, f"turn_{'white' if board.turn == chess.WHITE else 'black'}")
         # If it's human to move (local) or human side in stockfish -> prompt
@@ -366,7 +366,7 @@ def play_game(ser: serial.Serial, mode: str) -> None:
         )
         if human_to_move:
             #ui_prompt_enter_move()
-            ui_show_move_arrow("", suffix=f"{turn_name()} to move")
+            ui_show_move_arrow(uci, suffix=f"{turn_name()} to move")
 
     # ---------------------------
     # 2) Game start banners
@@ -461,7 +461,7 @@ def play_game(ser: serial.Serial, mode: str) -> None:
         board.push(move)
         #ui_show_move_arrow(uci, suffix=f"{turn_name()} to move")
         #time.sleep(0.5)
-        handoff_next_turn()
+        handoff_next_turn(uci)
 
 
 def run_online_mode(ser: serial.Serial) -> None:
