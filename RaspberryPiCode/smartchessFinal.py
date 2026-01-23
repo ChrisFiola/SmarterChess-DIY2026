@@ -365,7 +365,8 @@ def play_game(ser: serial.Serial, mode: str) -> None:
             ))
         )
         if human_to_move:
-            ui_prompt_enter_move()
+            #ui_prompt_enter_move()
+            ui_show_move_arrow("", suffix=f"{turn_name()} to move")
 
     # ---------------------------
     # 2) Game start banners
@@ -458,8 +459,8 @@ def play_game(ser: serial.Serial, mode: str) -> None:
 
         # Accept and show arrow + next turn
         board.push(move)
-        ui_show_move_arrow(uci, suffix=f"{turn_name()} to move")
-        time.sleep(0.5)
+        #ui_show_move_arrow(uci, suffix=f"{turn_name()} to move")
+        #time.sleep(0.5)
         handoff_next_turn()
 
 
