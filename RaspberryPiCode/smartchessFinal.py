@@ -257,6 +257,8 @@ def select_mode(ser: serial.Serial) -> str:
 
 def setup_stockfish(ser: serial.Serial) -> None:
     global skill_level, move_time_ms, human_is_white
+    send_to_screen("VS Computer\nHints enabled")
+    time.sleep(2)
     send_to_screen("Choose computer\ndifficulty level:\n(0 -> 8)")
     sendtoboard(ser, "EngineStrength")
     sendtoboard(ser, f"default_strength_{skill_level}")
@@ -320,7 +322,7 @@ def play_game(ser: serial.Serial, mode: str) -> None:
     if mode == "stockfish":
         if not human_is_white:
             send_to_screen("You are black\nEngine starts\nThinking...")
-            time.sleep(0.1)
+            time.sleep(2)
             engine_move_and_send(ser)
         else:
             send_to_screen("Please enter\nyour move:")
@@ -455,8 +457,8 @@ def main():
             mode_dispatch(ser, mode)
         except GoToModeSelect:
             reset_game_state()
-            send_to_screen("NEW GAME")
-            time.sleep(0.4)
+            send_to_screen("SmartChess")
+            time.sleep(3)
             continue
         except KeyboardInterrupt:
             break
