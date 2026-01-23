@@ -27,7 +27,7 @@ import chess.engine  # type: ignore
 # -----------------------------
 # Configuration
 # -----------------------------
-SERIAL_PORT = "/dev/serial0"   # Adjust if needed, e.g. /dev/ttyUSB0
+SERIAL_PORT = "/dev/serial0"  # Adjust if needed, e.g. /dev/ttyUSB0
 BAUD = 115200
 SERIAL_TIMEOUT = 2.0
 
@@ -51,16 +51,27 @@ game_started = False
 # OLED Support (Display Server)
 # -----------------------------
 
+
 def restart_display_server():
     PIPE = "/tmp/lcdpipe"
-    subprocess.Popen("pkill -f display_server.py", shell=True,
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.Popen(
+        "pkill -f display_server.py",
+        shell=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
     time.sleep(0.2)
     if not os.path.exists(PIPE):
         os.mkfifo(PIPE)
-    subprocess.Popen(["python3",
-                      "/home/king/SmarterChess-DIY2026/RaspberryPiCode/display_server.py"],
-                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.Popen(
+        [
+            "python3",
+            "/home/king/SmarterChess-DIY2026/RaspberryPiCode/display_server.py",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
 
 def wait_for_display_server_ready():
     READY_FLAG = "/tmp/display_server_ready"
@@ -70,16 +81,18 @@ def wait_for_display_server_ready():
 
 def send_to_screen(message: str, size: str = "auto") -> None:
     """Your server expects lines separated by '|' and a trailing size token.
-       We keep your exact behavior: we split on '\n' so you can author with line breaks.
+    We keep your exact behavior: we split on '\n' so you can author with line breaks.
     """
     parts = message.split("\n")
     payload = "|".join(parts) + f"|{size}\n"
     with open("/tmp/lcdpipe", "w") as pipe:
         pipe.write(payload)
 
+
 # -----------------------------
 # Serial Helpers (Board link)
 # -----------------------------
+
 
 def open_serial() -> serial.Serial:
     ser = serial.Serial(SERIAL_PORT, BAUD, timeout=SERIAL_TIMEOUT)
@@ -136,9 +149,11 @@ def getboard(ser: serial.Serial) -> Optional[str]:
             return payload
         # ignore other noise
 
+
 # -----------------------------
 # Chess helpers
 # -----------------------------
+
 
 def turn_name() -> str:
     return "WHITE" if board.turn == chess.WHITE else "BLACK"
@@ -185,9 +200,11 @@ def requires_promotion(move: chess.Move, brd: chess.Board) -> bool:
         return move.promotion is None
     return False
 
+
 # -----------------------------
 # Promotion
 # -----------------------------
+
 
 def ask_promotion_piece(ser: serial.Serial) -> str:
     send_to_screen("Promotion!\n1=Queen\n2=Rook\n3=Bishop\n4=Knight")
@@ -210,9 +227,11 @@ def ask_promotion_piece(ser: serial.Serial) -> str:
         # re-prompt
         send_to_screen("Promotion!\n1=Queen\n2=Rook\n3=Bishop\n4=Knight")
 
+
 # -----------------------------
 # Stockfish engine
 # -----------------------------
+
 
 def open_engine(path: str) -> chess.engine.SimpleEngine:
     while True:
@@ -242,8 +261,7 @@ def send_hint_to_board(ser: serial.Serial) -> None:
     best_move: Optional[str] = None
     try:
         info = engine.analyse(  # type: ignore
-            board,
-            chess.engine.Limit(time=max(0.01, move_time_ms / 1000.0))
+            board, chess.engine.Limit(time=max(0.01, move_time_ms / 1000.0))
         )
         pv = info.get("pv")
         if pv:
@@ -259,9 +277,11 @@ def send_hint_to_board(ser: serial.Serial) -> None:
     send_to_screen("Hint\n" + best_move)
     print(f"[Hint] {best_move}")
 
+
 # -----------------------------
 # Game flow utilities
 # -----------------------------
+
 
 def report_game_over(ser: serial.Serial) -> None:
     result = board.result(claim_draw=True)
@@ -281,13 +301,17 @@ def engine_move_and_send(ser: serial.Serial) -> None:
     print("[Engine]", reply)
     print(board)
 
+
 # -----------------------------
 # Mode setup
 # -----------------------------
 
+
 def select_mode(ser: serial.Serial) -> str:
     sendtoboard(ser, "ChooseMode")
-    send_to_screen("Choose opponent:\n1) Against PC\n2) Remote human\n3) Local 2-player")
+    send_to_screen(
+        "Choose opponent:\n1) Against PC\n2) Remote human\n3) Local 2-player"
+    )
     while True:
         msg = getboard(ser)
         if msg is None:
@@ -377,6 +401,7 @@ def setup_local(ser: serial.Serial) -> None:
             move_time_ms = max(10, int(msg))
             break
 
+
 # -----------------------------
 # Core gameplay loop
 # -----------------------------
@@ -430,13 +455,16 @@ def play_game(ser: serial.Serial, mode: str) -> None:
         # Game-over reporting
         if board.is_game_over():
             # Show only once then continue to allow 'n'
-            send_to_screen("Game Over\nResult " + board.result(claim_draw=True) + "\nPress n to start over")
+            send_to_screen(
+                "Game Over\nResult "
+                + board.result(claim_draw=True)
+                + "\nPress n to start over"
+            )
 
         # Engine move when needed (stockfish mode only)
         if mode == "stockfish":
-            engine_should_move = (
-                (board.turn == chess.WHITE and not human_is_white) or
-                (board.turn == chess.BLACK and human_is_white)
+            engine_should_move = (board.turn == chess.WHITE and not human_is_white) or (
+                board.turn == chess.BLACK and human_is_white
             )
             if engine_should_move and not board.is_game_over():
                 send_to_screen("Engine Thinking...")
@@ -495,22 +523,30 @@ def play_game(ser: serial.Serial, mode: str) -> None:
         sendtoboard(ser, f"turn_{'white' if board.turn == chess.WHITE else 'black'}")
 
         # If it's human to move (local or human side in stockfish), show DIY prompt
-        if (mode == 'local') or (mode == 'stockfish' and
-           ((board.turn == chess.WHITE and human_is_white) or
-            (board.turn == chess.BLACK and not human_is_white))):
+        if (mode == "local") or (
+            mode == "stockfish"
+            and (
+                (board.turn == chess.WHITE and human_is_white)
+                or (board.turn == chess.BLACK and not human_is_white)
+            )
+        ):
             send_to_screen("Please enter\nyour move:")
+
 
 # -----------------------------
 # Online placeholder
 # -----------------------------
 
+
 def run_online_mode(ser: serial.Serial) -> None:
     send_to_screen("Online mode not implemented\nUse Stockfish/Local")
     sendtoboard(ser, "error_online_unimplemented")
 
+
 # -----------------------------
 # Shutdown
 # -----------------------------
+
 
 def shutdown_pi(ser: Optional[serial.Serial]) -> None:
     send_to_screen("Shutting down...\nWait 20s then\ndisconnect power.")
@@ -520,9 +556,11 @@ def shutdown_pi(ser: Optional[serial.Serial]) -> None:
     except Exception as e:
         print(f"[Shutdown] {e}", file=sys.stderr)
 
+
 # -----------------------------
 # Main
 # -----------------------------
+
 
 def mode_dispatch(ser: serial.Serial, mode: str) -> None:
     if mode == "stockfish":
