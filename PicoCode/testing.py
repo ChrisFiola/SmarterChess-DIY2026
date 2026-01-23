@@ -176,6 +176,27 @@ def cp_hint_off():
     cp_set(CP_HINT_PIX, BLACK)
 
 # ---------------- Board (8x8) helpers ----------------
+def hard_reset_board():
+    global in_input, in_setup, confirm_mode
+    global hint_irq_flag, hint_hold_mode, showing_hint
+
+    print("[RESET] Hard board reset")
+
+    in_input = False
+    in_setup = False
+    confirm_mode = False
+
+    hint_irq_flag = False
+    hint_hold_mode = False
+    showing_hint = False
+
+    disable_hint_irq()
+    reset_buttons()
+
+    cp_fill(BLACK)
+    board_clear(BLACK)
+    show_chessboard_markings()
+
 
 def board_clear(color=BLACK):
     for i in range(BOARD_W * BOARD_H):
@@ -937,6 +958,10 @@ def main_loop():
         msg = read_from_pi()
         if not msg:
             time.sleep_ms(10)
+            continue
+        
+        if msg.startswith("heyArduinoResetBoard"):
+            hard_reset_board()
             continue
 
         
