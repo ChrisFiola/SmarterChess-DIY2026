@@ -317,18 +317,21 @@ def play_game(ser: serial.Serial, mode: str) -> None:
     reset_game_state()
     sendtoboard(ser, "GameStart")
     send_to_screen("NEW GAME")
-    time.sleep(3)
+    time.sleep(2)
 
     if mode == "stockfish":
         if not human_is_white:
-            send_to_screen("You are black\nEngine starts\nThinking...")
-            time.sleep(2)
+            send_to_screen("You are black\nEngine starts")
+            time.sleep(1)
             engine_move_and_send(ser)
+            print(board)
         else:
             send_to_screen("Please enter\nyour move:")
+            print(board)
             sendtoboard(ser, "turn_white")
     else:
         sendtoboard(ser, "turn_white")
+        print(board)
         send_to_screen("Please enter\nyour move:")
 
     while True:
@@ -355,6 +358,7 @@ def play_game(ser: serial.Serial, mode: str) -> None:
             )
             if engine_should_move:
                 send_to_screen("Engine Thinking...")
+                print(board)
                 engine_move_and_send(ser)
                 continue
 
@@ -413,6 +417,7 @@ def play_game(ser: serial.Serial, mode: str) -> None:
         next_turn = turn_name()
         send_to_screen(f"{uci[:2]} → {uci[2:4]}\n{next_turn} to move")
         sendtoboard(ser, f"turn_{'white' if board.turn == chess.WHITE else 'black'}")
+        print(board)
 
         if (mode == 'local') or (mode == 'stockfish' and (
             (board.turn == chess.WHITE and human_is_white) or
