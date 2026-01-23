@@ -1,6 +1,6 @@
-
 from util.constants import WHITE
 from util.common import map_range
+import time
 
 def wait_for_mode_request(state, board, cp, link):
     """

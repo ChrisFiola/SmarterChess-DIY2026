@@ -1,3 +1,4 @@
+import time
 
 def handle_promotion_choice(state, buttons, link, process_hint_irq):
     """

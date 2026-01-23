@@ -1,4 +1,3 @@
-
 from machine import Pin
 import neopixel
 import time

@@ -1,6 +1,6 @@
-
 from hardware.buttons import ButtonManager
 from util.constants import WHITE
+import time
 
 def _maybe_clear_hint_on_coord_press(state, board, cp, btn):
     if state.showing_hint and btn and not ButtonManager.is_non_coord_button(btn):

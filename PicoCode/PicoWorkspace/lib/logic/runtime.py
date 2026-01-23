@@ -1,4 +1,4 @@
-
+import time
 from logic.turn_logic import handle_promotion_choice, collect_and_send_move
 
 def _hard_reset_board(state, cp, board, buttons, disable_hint_irq):
