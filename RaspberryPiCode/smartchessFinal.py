@@ -236,7 +236,7 @@ def engine_move_and_send(ser: serial.Serial) -> None:
     board.push_uci(reply)
     sendtoboard(ser, f"m{reply}")
     sendtoboard(ser, f"turn_{'white' if board.turn == chess.WHITE else 'black'}")
-    send_to_screen(f"{reply[:2]} → {reply[2:4]}\nYou are {'white' if board.turn == chess.WHITE else 'black'} your go...")
+    send_to_screen(f"{reply[:2]} → {reply[2:4]}\nYou are {'white' if board.turn == chess.WHITE else 'black'}\nEnter move:")
 
 class GoToModeSelect(Exception):
     pass
@@ -324,7 +324,7 @@ def play_game(ser: serial.Serial, mode: str) -> None:
         time.sleep(1)
 
     def ui_prompt_enter_move():
-        send_to_screen(f"You are {'white' if board.turn == chess.WHITE else 'black'} your go...")
+        send_to_screen(f"You are {'white' if board.turn == chess.WHITE else 'black'}\nEnter move:")
 
     def ui_engine_thinking():
         send_to_screen("Engine Thinking...")
@@ -377,6 +377,8 @@ def play_game(ser: serial.Serial, mode: str) -> None:
 
     if mode == "stockfish":
         if not human_is_white:
+            send_to_screen(f"White starts first.\nEngine thinking...")
+            time.sleep(1)
             engine_move_and_send(ser)  # will show "You are {'white' if board.turn == chess.WHITE else 'black'} <move>\nYour go..."
             print(board)
         else:
