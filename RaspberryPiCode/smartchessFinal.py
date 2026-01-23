@@ -313,83 +313,122 @@ def setup_local(ser: serial.Serial) -> None:
             move_time_ms = max(10, int(msg))
             break
 
+
 def play_game(ser: serial.Serial, mode: str) -> None:
+    """Consistent, centralized UI flow with reduced redundancy."""
+    # ---------------------------
+    # 1) Small local UI helpers
+    # ---------------------------
+    def ui_new_game_banner():
+        send_to_screen("NEW GAME")
+
+    def ui_prompt_enter_move():
+        send_to_screen("Please enter\nyour move:")
+
+    def ui_engine_thinking():
+        send_to_screen("Engine Thinking...")
+
+    def ui_show_move_arrow(uci: str, suffix: str = ""):
+        # e2e4 -> "e2 → e4"
+        arrow = f"{uci[:2]} → {uci[2:4]}"
+        if suffix:
+            send_to_screen(f"{arrow}\n{suffix}")
+        else:
+            send_to_screen(arrow)
+
+    def ui_typing_preview(payload: str):
+        # payload is the <text> part after typing_<label>_...
+        # Handled as: "Enter from:\n", "Enter to:\n", "Confirm move:\n..."
+        try:
+            _, label, text = payload.split("_", 2)
+            label = label.lower()
+            if label == "from":
+                send_to_screen("Enter from:\n" + text)
+            elif label == "to":
+                send_to_screen("Enter to:\n" + text)
+            elif label == "confirm":
+                send_to_screen("Confirm move:\n" + text + "\nPress OK or re-enter")
+        except Exception:
+            # swallow malformed previews quietly
+            pass
+
+    def handoff_next_turn():
+        """After pushing a valid move, notify Pico whose turn it is and prompt if human to move."""
+        sendtoboard(ser, f"turn_{'white' if board.turn == chess.WHITE else 'black'}")
+        # If it's human to move (local) or human side in stockfish -> prompt
+        human_to_move = (
+            mode == "local" or
+            (mode == "stockfish" and (
+                (board.turn == chess.WHITE and human_is_white) or
+                (board.turn == chess.BLACK and not human_is_white)
+            ))
+        )
+        if human_to_move:
+            ui_prompt_enter_move()
+
+    # ---------------------------
+    # 2) Game start banners
+    # ---------------------------
     reset_game_state()
     sendtoboard(ser, "GameStart")
-    send_to_screen("NEW GAME")
-    time.sleep(2)
+    ui_new_game_banner()
+    time.sleep(0.5)  # small delay for the banner to show consistently
 
     if mode == "stockfish":
         if not human_is_white:
-            send_to_screen("You are black\nEngine starts")
-            time.sleep(1)
-            engine_move_and_send(ser)
-            print(board)
+            send_to_screen("You are black\nEngine starts\nThinking...")
+            time.sleep(0.1)
+            engine_move_and_send(ser)  # will show "<move>\nYour go..."
         else:
-            send_to_screen("Please enter\nyour move:")
-            print(board)
+            ui_prompt_enter_move()
             sendtoboard(ser, "turn_white")
     else:
+        # Local 2-player
         sendtoboard(ser, "turn_white")
-        print(board)
-        send_to_screen("Please enter\nyour move:")
+        ui_prompt_enter_move()
 
+    # ---------------------------
+    # 3) Main loop
+    # ---------------------------
     while True:
-        # Nonblocking typing preview
+        # Live typing preview (non-blocking)
         peek = getboard_nonblocking(ser)
         if peek is not None and peek.startswith("typing_"):
-            try:
-                _, label, text = peek.split("_", 2)
-                label = label.lower()
-                if label == "from":
-                    send_to_screen("Enter from:\n" + text)
-                elif label == "to":
-                    send_to_screen("Enter to:\n" + text)
-                elif label == "confirm":
-                    send_to_screen("Confirm move:\n" + text + "\nPress OK or re-enter")
-            except Exception:
-                pass
+            ui_typing_preview(peek)
+            # don't 'continue'—still allow engine turn check same cycle
 
-        # Engine turn for stockfish mode
+        # Engine move when it's engine's turn (Stockfish only)
         if mode == "stockfish" and not board.is_game_over():
             engine_should_move = (
                 (board.turn == chess.WHITE and not human_is_white) or
                 (board.turn == chess.BLACK and human_is_white)
             )
             if engine_should_move:
-                send_to_screen("Engine Thinking...")
-                print(board)
+                ui_engine_thinking()
                 engine_move_and_send(ser)
+                # engine_move_and_send already shows "<uci> -> <uci>\nYour go..."
                 continue
 
-        # Blocking wait for next message
+        # Blocking read for the next board message
         msg = getboard(ser)
         if msg is None:
             continue
 
-        # --- Handle typing previews also here (so we never miss them) ---
+        # Also handle typing previews that arrive via blocking read (consistent behavior)
         if msg.startswith("typing_"):
-            try:
-                _, label, text = msg.split("_", 2)
-                label = label.lower()
-                if label == "from":
-                    send_to_screen("Enter from:\n" + text)
-                elif label == "to":
-                    send_to_screen("Enter to:\n" + text)
-                elif label == "confirm":
-                    send_to_screen("Confirm move:\n" + text + "\nPress OK or re-enter")
-            except Exception:
-                pass
+            ui_typing_preview(msg)
             continue
-        # ---------------------------------------------------------------
 
+        # New game request -> return to mode select
         if msg in ("n", "new", "in", "newgame", "btn_new"):
             raise GoToModeSelect()
 
+        # Hint request: show "Thinking..." first, then result with arrow (handled in helper)
         if msg in ("hint", "btn_hint"):
             send_hint_to_board(ser)
             continue
 
+        # Parse a move
         uci = parse_move_payload(msg)
         if not uci:
             sendtoboard(ser, f"error_invalid_{msg}")
@@ -403,27 +442,23 @@ def play_game(ser: serial.Serial, mode: str) -> None:
             send_to_screen("Invalid move\n" + uci + f"\n{turn_name()} again")
             continue
 
+        # Promotion handling if needed
         if requires_promotion(move, board):
             promo = ask_promotion_piece(ser)
             uci = uci + promo
             move = chess.Move.from_uci(uci)
 
+        # Check legality
         if move not in board.legal_moves:
             sendtoboard(ser, f"error_illegal_{uci}")
             send_to_screen("Illegal move!\nEnter new\nmove...")
             continue
 
+        # Accept and show arrow + next turn
         board.push(move)
-        next_turn = turn_name()
-        send_to_screen(f"{uci[:2]} → {uci[2:4]}\n{next_turn} to move")
-        sendtoboard(ser, f"turn_{'white' if board.turn == chess.WHITE else 'black'}")
-        print(board)
+        ui_show_move_arrow(uci, suffix=f"{turn_name()} to move")
+        handoff_next_turn()
 
-        if (mode == 'local') or (mode == 'stockfish' and (
-            (board.turn == chess.WHITE and human_is_white) or
-            (board.turn == chess.BLACK and not human_is_white)
-        )):
-            send_to_screen("Please enter\nyour move:")
 
 def run_online_mode(ser: serial.Serial) -> None:
     send_to_screen("Online mode not implemented\nUse Stockfish/Local")
