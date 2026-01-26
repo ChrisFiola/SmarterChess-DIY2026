@@ -217,13 +217,6 @@ def send_hint_to_board(ser: serial.Serial) -> None:
     send_to_screen(f"Hint\n{best_move[:2]} → {best_move[2:4]}")
     print(f"[Hint] {best_move}")
 
-
-    # Send to Pico
-    sendtoboard(ser, f"hint_{best_move}")
-    # Show with arrow (requested update)
-    send_to_screen(f"Hint\n{best_move[:2]} → {best_move[2:4]}")
-    print(f"[Hint] {best_move}")
-
 def report_game_over(ser: serial.Serial) -> None:
     result = board.result(claim_draw=True)
     sendtoboard(ser, f"GameOver:{result}")

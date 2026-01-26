@@ -22,8 +22,8 @@ BUTTON_PINS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11]   # 1–8=coords, 9=A1(OK), 10=Hi
 DEBOUNCE_MS = 300
 
 # Special roles
-OK_BUTTON_INDEX   = 8   # GP10 (Button 8 / A1)
-HINT_BUTTON_INDEX = 9   # GP11 (Button 9)
+OK_BUTTON_INDEX   = 8   # GP10 (Button 9 / A1)
+HINT_BUTTON_INDEX = 9   # GP11 (Button 10)
 
 # NeoPixels
 CONTROL_PANEL_LED_PIN   = 12
@@ -250,7 +250,7 @@ class ButtonManager:
 
     @staticmethod
     def is_non_coord_button(b):
-        return b in (8,9)
+        return b in (9,10)
 
 # Instantiate
 cp = ControlPanel(CONTROL_PANEL_LED_PIN, CONTROL_PANEL_LED_COUNT)
@@ -468,7 +468,7 @@ def confirm_move(move):
                 time.sleep_ms(5)
                 continue
 
-            if b == 8:  # OK
+            if b == (OK_BUTTON_INDEX+1):  # OK
                 cp.ok(False)
                 return "ok"
             else:
@@ -554,8 +554,8 @@ def select_singlepress(label, default_value, out_min, out_max):
     buttons.reset()
     while True:
         b = buttons.detect_press()
-        if b and 1 <= b <= 10:
-            return map_range(b, 1, 10, out_min, out_max)
+        if b and 1 <= b <= 8:
+            return map_range(b, 1, 8, out_min, out_max)
         time.sleep_ms(5)
 
 def select_strength_singlepress(default_value):
