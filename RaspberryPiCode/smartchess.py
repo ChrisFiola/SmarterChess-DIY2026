@@ -212,9 +212,16 @@ def send_hint_to_board(ser: serial.Serial) -> None:
         sendtoboard(ser, "hint_none")
         return
 
-    # Send to Pico and update OLED with arrow formatting
-    sendtoboard(ser, f"hint_{best_move}")
-    send_to_screen(f"Hint\n{best_move[:2]} → {best_move[2:4]}")
+
+    # Send to Pico with capture flag if applicable
+    try:
+        mv = chess.Move.from_uci(best_move)
+        is_cap = board.is_capture(mv)
+    except Exception:
+        is_cap = False
+    cap_suffix = "_cap" if is_cap else ""
+    sendtoboard(ser, f"hint_{best_move}{cap_suffix}")
+
     print(f"[Hint] {best_move}")
 
 def report_game_over(ser: serial.Serial) -> None:
@@ -226,8 +233,13 @@ def engine_move_and_send(ser: serial.Serial) -> None:
     reply = engine_bestmove(board, move_time_ms)
     if reply is None:
         return
-    board.push_uci(reply)
-    sendtoboard(ser, f"m{reply}")
+
+    mv = chess.Move.from_uci(reply)
+    is_cap = board.is_capture(mv)
+    board.push(mv)
+    cap_suffix = "_cap" if is_cap else ""
+    sendtoboard(ser, f"m{reply}{cap_suffix}")
+
     sendtoboard(ser, f"turn_{'white' if board.turn == chess.WHITE else 'black'}")
     send_to_screen(f"{reply[:2]} → {reply[2:4]}\nYou are {'white' if board.turn == chess.WHITE else 'black'}\nEnter move:")
 
@@ -350,7 +362,19 @@ def play_game(ser: serial.Serial, mode: str) -> None:
 
     def handoff_next_turn(uci: str) -> None:
         """After pushing a valid move, notify Pico whose turn it is and prompt if human to move."""
+        
+        # Optional echo with capture flag
+        try:
+            mv = chess.Move.from_uci(uci)
+            was_cap = board.is_capture(mv)
+        except Exception:
+            was_cap = False
+        cap_suffix = "_cap" if was_cap else ""
+        # Note: This would be 'm<uci>...' but since the move already happened,
+        # you might prefer a different tag. Keeping protocol simple, we skip this by default.
+        # sendtoboard(ser, f"m{uci}{cap_suffix}")
         sendtoboard(ser, f"turn_{'white' if board.turn == chess.WHITE else 'black'}")
+
         # If it's human to move (local) or human side in stockfish -> prompt
         human_to_move = (
             mode == "local" or
@@ -410,6 +434,24 @@ def play_game(ser: serial.Serial, mode: str) -> None:
         # Blocking read for the next board message
         msg = getboard(ser)
         if msg is None:
+            continue
+
+        # ===== Pre-OK legality/capture check from Pico =====
+        # heypichk_<uci>  -> payload 'chk_<uci>'
+        if msg.startswith("chk_"):
+            uci = msg[4:].strip().lower()
+            try:
+                move = chess.Move.from_uci(uci)
+            except ValueError:
+                sendtoboard(ser, f"check_illegal_{uci}")
+                continue
+            if move not in board.legal_moves:
+                sendtoboard(ser, f"check_illegal_{uci}")
+                continue
+            # Legal: report capture vs non-capture (without pushing)
+            is_cap = board.is_capture(move)
+            flag = "cap" if is_cap else "nocap"
+            sendtoboard(ser, f"check_ok_{uci}_{flag}")
             continue
 
         # Also handle typing previews that arrive via blocking read (consistent behavior)

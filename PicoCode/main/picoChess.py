@@ -18,7 +18,7 @@ import neopixel
 # ============================================================
 
 # Buttons (active‑low)
-BUTTON_PINS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11]   # 1–8=coords, 9=A1(OK), 10=Hint IRQ
+BUTTON_PINS = [2, 3, 4, 6, 7, 8, 9, 10, 12, 13]   # 1–8=coords, 9=A1(OK), 10=Hint IRQ
 DEBOUNCE_MS = 300
 
 # Special roles
@@ -26,9 +26,9 @@ OK_BUTTON_INDEX   = 8   # GP10 (Button 9 / A1)
 HINT_BUTTON_INDEX = 9   # GP11 (Button 10)
 
 # NeoPixels
-CONTROL_PANEL_LED_PIN   = 12
+CONTROL_PANEL_LED_PIN   = 14
 CONTROL_PANEL_LED_COUNT = 22
-CHESSBOARD_LED_PIN = 28
+CHESSBOARD_LED_PIN = 22
 BOARD_W, BOARD_H   = 8, 8
 
 # Matrix orientation (match Arduino NeoMatrix: BOTTOM+RIGHT+ROWS+ZIGZAG)
@@ -175,9 +175,12 @@ class Chessboard:
         return (ord(f)-97, int(r)-1)
 
     def show_markings(self):
+        self.clear()
+        LIGHT = (80,80,80)
+        DARK  = (2,2,2)
         for y in range(self.h):
             for x in range(self.w):
-                col = (80,80,80) if ((x+y) % 2 == 0) else (160,160,160)
+                col = DARK if ((x+y) % 2 == 0) else LIGHT
                 self.set_square(x, y, col)
         self.write()
 
@@ -500,6 +503,7 @@ def collect_and_send_move():
             if move_to is None: return
 
             move = move_from + move_to
+            board.clear()
             board.light_up_move(move, 'Y')
 
             res = confirm_move(move)
@@ -664,6 +668,7 @@ def main_loop():
 
         if msg.startswith("heyArduinom"):
             mv = msg[11:].strip()
+            board.clear()
             board.light_up_move(mv,'N')
             cp.hint(True,WHITE)
             time.sleep_ms(250)
@@ -676,6 +681,7 @@ def main_loop():
         if msg.startswith("heyArduinohint_"):
             best = msg[len("heyArduinohint_"):].strip()
             showing_hint = True
+            board.clear()
             board.light_up_move(best,'H')
             cp.hint(True,BLUE)
             continue
@@ -711,3 +717,5 @@ def run():
 
 # Start
 run()
+#board.clear(BLACK)
+#board.show_markings()
