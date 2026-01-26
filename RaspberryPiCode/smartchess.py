@@ -317,6 +317,7 @@ def play_game(ser: serial.Serial, mode: str) -> None:
         time.sleep(1)
 
     def ui_prompt_enter_move():
+        print(board)
         send_to_screen(f"You are {'white' if board.turn == chess.WHITE else 'black'}\nEnter move:")
 
     def ui_engine_thinking():
@@ -325,6 +326,7 @@ def play_game(ser: serial.Serial, mode: str) -> None:
     def ui_show_move_arrow(uci: str, suffix: str = ""):
         # e2e4 -> "e2 → e4"
         arrow = f"{uci[:2]} → {uci[2:4]}"
+        print(board)
         if suffix:
             send_to_screen(f"{arrow}\n{suffix}")
         else:
@@ -494,7 +496,7 @@ def main():
             mode_dispatch(ser, mode)
         except GoToModeSelect:
             reset_game_state()
-            send_to_screen("SmartChess")
+            send_to_screen("SMARTCHESS")
             time.sleep(3)
             continue
         except KeyboardInterrupt:
