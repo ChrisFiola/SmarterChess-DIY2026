@@ -431,6 +431,27 @@ def hard_reset_board():
     cp.fill(BLACK); board.clear(BLACK); board.show_markings()
 
 
+def query_move_verdict(uci, timeout_ms=600):
+    """
+    Ask Pi about legality and capture:
+      Pico -> Pi:  heypichk_<uci>
+      Pi   -> Pico: heyArduinocheck_illegal_<uci>
+                   heyArduinocheck_ok_<uci>_cap | _nocap
+    Returns: ('illegal', False) or ('legal', True/False)
+    """
+    send_to_pi("chk_", uci)
+    t0 = time.ticks_ms()
+    while time.ticks_diff(time.ticks_ms(), t0) < timeout_ms:
+        msg = read_from_pi()
+        if not msg:
+            time.sleep_ms(5); continue
+        if msg.startswith("heyArduinocheck_illegal_"):
+            return ('illegal', False)
+        if msg.startswith("heyArduinocheck_ok_"):
+            return ('legal', msg.endswith("_cap"))
+    # Failsafe: assume legal non-capture if no response
+    return ('legal', False)
+
 
 # ============================================================
 # PERSISTENT TRAIL HELPERS
@@ -686,44 +707,30 @@ def enter_to_square(move_from):
     to = col + row
 
     # ===== Pre-OK legality & capture check with Pi =====
-    move = move_from + to
-    send_to_pi("chk_", move)  # -> heypichk_<uci>
-    # wait up to ~600ms for response
-    t0 = time.ticks_ms(); verdict = None
-    while time.ticks_diff(time.ticks_ms(), t0) < 600:
-        msg = read_from_pi()
-        if not msg:
-            time.sleep_ms(5); continue
-        if msg.startswith("heyArduinocheck_illegal_"):
-            verdict = "illegal"; break
-        if msg.startswith("heyArduinocheck_ok_"):
-            verdict = msg  # contains _cap or _nocap
-            break
 
-    # Default if no reply: treat as legal non-capture (failsafe)
-    if verdict is None:
-        board.show_markings()
-        board.draw_trail(move, GREEN)
-        return to
+    to = col + row
 
-    # Illegal preview BEFORE OK: draw red and restart
-    if verdict == "illegal" or verdict.startswith("heyArduinocheck_illegal_"):
-        board.show_markings()
-        board.draw_trail(move, RED)
-        time.sleep_ms(650)
-        board.show_markings()
-        return None  # restart fresh
-
-    # Legal path: capture vs non-capture
-    is_cap = verdict.endswith("_cap")
+    # Pre-OK check
+    verdict, is_cap = query_move_verdict(move_from + to, timeout_ms=600)
     global last_preview_capture
     last_preview_capture = is_cap
+
+    if verdict == 'illegal':
+        # Show illegal in RED immediately (no OK), then restart
+        board.show_markings()
+        board.draw_trail(move_from + to, RED)
+        time.sleep_ms(650)
+        board.show_markings()
+        return None
+
+    # Legal: show preview trail with possible CYAN destination (capture)
     board.show_markings()
     if is_cap:
-        board.draw_trail(move, GREEN, end_color=CYAN)
+        board.draw_trail(move_from + to, GREEN, end_color=CYAN)
     else:
-        board.draw_trail(move, GREEN)
+        board.draw_trail(move_from + to, GREEN)
     return to
+
 
 
 def _color_for_user_confirm():
