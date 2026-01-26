@@ -384,6 +384,7 @@ def hard_reset_board():
 
 def query_move_verdict(uci, timeout_ms=600):
     send_to_pi("chk_", uci)
+    time.sleep(2)
     t0 = time.ticks_ms()
     while time.ticks_diff(time.ticks_ms(), t0) < timeout_ms:
         msg = read_from_pi()
@@ -496,11 +497,11 @@ def enter_from_square(seed_btn=None):
             if msg:
                 if msg.startswith("heyArduinohint_"):
                     best = msg[15:].strip()
-                    verdict, is_cap = query_move_verdict(best, 450)
+                    verdict, is_cap = query_move_verdict(best, 1500)
                     show_persistent_trail(best, YELLOW, 'hint', end_color=(CYAN if (verdict=='legal' and is_cap) else None)); continue
                 if msg.startswith("heyArduinom"):
                     mv = msg[11:].strip()
-                    verdict, is_cap = query_move_verdict(mv, 450)
+                    verdict, is_cap = query_move_verdict(mv, 1500)
                     show_persistent_trail(mv, ENGINE_COLOR, 'engine', end_color=(CYAN if (verdict=='legal' and is_cap) else None)); continue
             b = buttons.detect_press()
             if not b:
@@ -527,12 +528,12 @@ def enter_from_square(seed_btn=None):
             if msg:
                 if msg.startswith("heyArduinohint_"):
                     best = msg[15:].strip()
-                    verdict, is_cap = query_move_verdict(best, 450)
+                    verdict, is_cap = query_move_verdict(best, 1500)
                     show_persistent_trail(best, YELLOW, 'hint', end_color=(CYAN if (verdict=='legal' and is_cap) else None))
                     cancel_user_input_and_restart(); return None
                 if msg.startswith("heyArduinom"):
                     mv = msg[11:].strip()
-                    verdict, is_cap = query_move_verdict(mv, 450)
+                    verdict, is_cap = query_move_verdict(mv, 1500)
                     show_persistent_trail(mv, ENGINE_COLOR, 'engine', end_color=(CYAN if (verdict=='legal' and is_cap) else None))
                     cancel_user_input_and_restart(); return None
             b = buttons.detect_press()
@@ -554,12 +555,12 @@ def enter_from_square(seed_btn=None):
         if msg:
             if msg.startswith("heyArduinohint_"):
                 best = msg[15:].strip()
-                verdict, is_cap = query_move_verdict(best, 450)
+                verdict, is_cap = query_move_verdict(best, 1500)
                 show_persistent_trail(best, YELLOW, 'hint', end_color=(CYAN if (verdict=='legal' and is_cap) else None))
                 cancel_user_input_and_restart(); return None
             if msg.startswith("heyArduinom"):
                 mv = msg[11:].strip()
-                verdict, is_cap = query_move_verdict(mv, 450)
+                verdict, is_cap = query_move_verdict(mv, 1500)
                 show_persistent_trail(mv, ENGINE_COLOR, 'engine', end_color=(CYAN if (verdict=='legal' and is_cap) else None))
                 cancel_user_input_and_restart(); return None
         b = buttons.detect_press()
@@ -592,11 +593,11 @@ def enter_to_square(move_from):
             if msg:
                 if msg.startswith("heyArduinohint_"):
                     best = msg[15:].strip()
-                    verdict, is_cap = query_move_verdict(best, 450)
+                    verdict, is_cap = query_move_verdict(best, 1500)
                     show_persistent_trail(best, YELLOW, 'hint', end_color=(CYAN if (verdict=='legal' and is_cap) else None)); continue
                 if msg.startswith("heyArduinom"):
                     mv = msg[11:].strip()
-                    verdict, is_cap = query_move_verdict(mv, 450)
+                    verdict, is_cap = query_move_verdict(mv, 1500)
                     show_persistent_trail(mv, ENGINE_COLOR, 'engine', end_color=(CYAN if (verdict=='legal' and is_cap) else None)); continue
             b = buttons.detect_press()
             if not b:
@@ -616,12 +617,12 @@ def enter_to_square(move_from):
         if msg:
             if msg.startswith("heyArduinohint_"):
                 best = msg[15:].strip()
-                verdict, is_cap = query_move_verdict(best, 450)
+                verdict, is_cap = query_move_verdict(best, 1500)
                 show_persistent_trail(best, YELLOW, 'hint', end_color=(CYAN if (verdict=='legal' and is_cap) else None))
                 cancel_user_input_and_restart(); return None
             if msg.startswith("heyArduinom"):
                 mv = msg[11:].strip()
-                verdict, is_cap = query_move_verdict(mv, 450)
+                verdict, is_cap = query_move_verdict(mv, 1500)
                 show_persistent_trail(mv, ENGINE_COLOR, 'engine', end_color=(CYAN if (verdict=='legal' and is_cap) else None))
                 cancel_user_input_and_restart(); return None
         b = buttons.detect_press()
@@ -642,12 +643,12 @@ def enter_to_square(move_from):
         if msg:
             if msg.startswith("heyArduinohint_"):
                 best = msg[15:].strip()
-                verdict, is_cap = query_move_verdict(best, 450)
+                verdict, is_cap = query_move_verdict(best, 1500)
                 show_persistent_trail(best, YELLOW, 'hint', end_color=(CYAN if (verdict=='legal' and is_cap) else None))
                 cancel_user_input_and_restart(); return None
             if msg.startswith("heyArduinom"):
                 mv = msg[11:].strip()
-                verdict, is_cap = query_move_verdict(mv, 450)
+                verdict, is_cap = query_move_verdict(mv, 1500)
                 show_persistent_trail(mv, ENGINE_COLOR, 'engine', end_color=(CYAN if (verdict=='legal' and is_cap) else None))
                 cancel_user_input_and_restart(); return None
         b = buttons.detect_press()
@@ -661,7 +662,7 @@ def enter_to_square(move_from):
     to = col + row
 
     # Pre-OK legality/capture verdict
-    verdict, is_cap = query_move_verdict(move_from + to, timeout_ms=600)
+    verdict, is_cap = query_move_verdict(move_from + to, timeout_ms=1500)
     global last_preview_capture
     last_preview_capture = is_cap
 
@@ -707,12 +708,12 @@ def confirm_move(move):
             if msg:
                 if msg.startswith("heyArduinohint_"):
                     best = msg[15:].strip()
-                    verdict, is_cap = query_move_verdict(best, 450)
+                    verdict, is_cap = query_move_verdict(best, 1500)
                     show_persistent_trail(best, YELLOW, 'hint', end_color=(CYAN if (verdict=='legal' and is_cap) else None))
                     cancel_user_input_and_restart(); return None
                 if msg.startswith("heyArduinom"):
                     mv = msg[11:].strip()
-                    verdict, is_cap = query_move_verdict(mv, 450)
+                    verdict, is_cap = query_move_verdict(mv, 1500)
                     show_persistent_trail(mv, ENGINE_COLOR, 'engine', end_color=(CYAN if (verdict=='legal' and is_cap) else None))
                     cancel_user_input_and_restart(); return None
             b = buttons.detect_press()
@@ -934,7 +935,7 @@ def main_loop():
         # ENGINE move -> persistent deep blue; cyan end if capture
         if msg.startswith("heyArduinom"):
             mv = msg[11:].strip()
-            verdict, is_cap = query_move_verdict(mv, timeout_ms=450)
+            verdict, is_cap = query_move_verdict(mv, timeout_ms=1500)
             show_persistent_trail(mv, ENGINE_COLOR, 'engine', end_color=(CYAN if (verdict=='legal' and is_cap) else None))
             cancel_user_input_and_restart(); continue
 
@@ -945,7 +946,7 @@ def main_loop():
         # HINT -> persistent yellow; cyan end if capture
         if msg.startswith("heyArduinohint_"):
             best = msg[len("heyArduinohint_"):].strip()
-            verdict, is_cap = query_move_verdict(best, timeout_ms=450)
+            verdict, is_cap = query_move_verdict(best, timeout_ms=1500)
             show_persistent_trail(best, YELLOW, 'hint', end_color=(CYAN if (verdict=='legal' and is_cap) else None))
             cancel_user_input_and_restart(); continue
 

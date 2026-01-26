@@ -388,17 +388,17 @@ def play_game(ser: serial.Serial, mode: str) -> None:
             try:
                 mv = chess.Move.from_uci(uci)
             except ValueError:
-                sendtoboard(ser, f"check_illegal_{uci}");
+                sendtoboard(ser, f"check_illegal_{uci}")
                 continue
             if mv not in board.legal_moves:
-                sendtoboard(ser, f"check_illegal_{uci}");
+                sendtoboard(ser, f"check_illegal_{uci}")
                 continue
             is_cap = board.is_capture(mv)
             sendtoboard(ser, f"check_ok_{uci}_{'cap' if is_cap else 'nocap'}")
             continue
 
         if msg.startswith("typing_"):
-            ui_typing_preview(msg);
+            ui_typing_preview(msg)
             continue
 
         if msg in ("n", "new", "in", "newgame", "btn_new"):
