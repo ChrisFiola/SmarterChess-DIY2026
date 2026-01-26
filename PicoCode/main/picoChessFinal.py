@@ -1,7 +1,7 @@
 # ============================================================
 #  PICO FIRMWARE — FINAL VERSION (2026)
 #  Supports:
-#   - 6‑button coordinate entry (a–f, 1–6)
+#   - 8‑button coordinate entry (a–h, 1–8)
 #   - Live typing preview (heypityping_from_, heypityping_to_, heypityping_confirm_)
 #   - Arrow‑format confirmation
 #   - DIY Machines reset behavior
@@ -18,12 +18,12 @@ import neopixel
 # ============================================================
 
 # Buttons (active‑low)
-BUTTON_PINS = [2, 3, 4, 5, 6, 7, 8, 9]   # 1–6=coords, 7=A1(OK), 8=Hint IRQ
+BUTTON_PINS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11]   # 1–8=coords, 9=A1(OK), 10=Hint IRQ
 DEBOUNCE_MS = 300
 
 # Special roles
-OK_BUTTON_INDEX   = 6   # GP8 (Button 7 / A1)
-HINT_BUTTON_INDEX = 7   # GP9 (Button 8)
+OK_BUTTON_INDEX   = 8   # GP10 (Button 8 / A1)
+HINT_BUTTON_INDEX = 9   # GP11 (Button 9)
 
 # NeoPixels
 CONTROL_PANEL_LED_PIN   = 12
@@ -250,7 +250,7 @@ class ButtonManager:
 
     @staticmethod
     def is_non_coord_button(b):
-        return b in (7,8)
+        return b in (8,9)
 
 # Instantiate
 cp = ControlPanel(CONTROL_PANEL_LED_PIN, CONTROL_PANEL_LED_COUNT)
@@ -344,7 +344,7 @@ def _send_confirm_preview(move):
     send_typing_preview("confirm", f"{frm} → {to}")
 
 # ============================================================
-# MOVE ENTRY (6‑button layout)
+# MOVE ENTRY (8‑button layout)
 # ============================================================
 
 
@@ -357,7 +357,7 @@ def enter_from_square(seed_btn=None):
     cp.coord(True); cp.ok(False); cp.hint(False)
     buttons.reset()
 
-    # Column (a..f)
+    # Column (a..h)
     while col is None:
         
         if game_state != GAME_RUNNING:
@@ -380,7 +380,7 @@ def enter_from_square(seed_btn=None):
         col = chr(ord('a') + b - 1)
         _send_from_preview(col)
 
-    # Row (1..6)
+    # Row (1..8)
     while row is None:
         
         if game_state != GAME_RUNNING:
@@ -468,7 +468,7 @@ def confirm_move(move):
                 time.sleep_ms(5)
                 continue
 
-            if b == 7:  # OK
+            if b == 8:  # OK
                 cp.ok(False)
                 return "ok"
             else:
@@ -513,7 +513,7 @@ def collect_and_send_move():
             if isinstance(res, tuple) and res[0] == 'redo':
                 cancel_btn = res[1]
                 # If the cancel was a coord button, use it to seed FROM
-                seed = cancel_btn if (1 <= cancel_btn <= 6) else None
+                seed = cancel_btn if (1 <= cancel_btn <= 8) else None
                 cp.coord(True)
                 continue
     finally:
@@ -554,8 +554,8 @@ def select_singlepress(label, default_value, out_min, out_max):
     buttons.reset()
     while True:
         b = buttons.detect_press()
-        if b and 1 <= b <= 8:
-            return map_range(b, 1, 8, out_min, out_max)
+        if b and 1 <= b <= 10:
+            return map_range(b, 1, 10, out_min, out_max)
         time.sleep_ms(5)
 
 def select_strength_singlepress(default_value):
