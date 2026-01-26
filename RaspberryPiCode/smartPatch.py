@@ -4,7 +4,7 @@
 SmarterChess — FINAL (DIY-style + Local + Random + Live Preview)
 - Unified game loop for Stockfish & Local 2-player
 - Live input preview from Pico
-- NEW: Reply to Pico legality/capture queries (heypichk_<uci>)
+- Reply to Pico legality/capture queries (heypichk_<uci>)
 """
 
 import sys
@@ -382,7 +382,7 @@ def play_game(ser: serial.Serial, mode: str) -> None:
         if msg is None:
             continue
 
-        # ===== NEW: Reply to Pico legality/capture queries =====
+        # ===== Reply to Pico legality/capture queries (EARLY) =====
         if msg.startswith("chk_"):
             uci = msg[4:].strip().lower()
             try:
