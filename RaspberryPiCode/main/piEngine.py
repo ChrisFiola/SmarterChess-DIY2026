@@ -34,7 +34,7 @@ class EngineContext:
 def engine_bestmove(ctx: EngineContext, brd: chess.Board, ms: int) -> Optional[str]:
     if brd.is_game_over():
         return None
-    engine = ctx.ensure(STOCKFISH_PATH)
+    #engine = ctx.ensure(STOCKFISH_PATH)
     limit = chess.engine.Limit(time=max(0.01, ms / 1000.0))
     result = engine.play(brd, limit)  # type: ignore
     return result.move.uci() if result.move else None
