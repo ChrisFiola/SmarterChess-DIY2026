@@ -416,7 +416,10 @@ def play_game(link: BoardLink, display: Display, ctx: EngineContext, state: Runt
             link.sendtoboard(f"error_illegal_{uci}")
             display.show_illegal(uci, side_name_from_board(state.board))
             continue
-        
+
+        # 10) Accept and push
+        state.board.push(move)
+
         # 11) Game over?
         if state.board.is_game_over():
             _res = report_game_over(link, display, state.board)
@@ -430,11 +433,9 @@ def play_game(link: BoardLink, display: Display, ctx: EngineContext, state: Runt
                     raise GoToModeSelect()
                 # swallow typing/hint during game over
                 if msg2.startswith("typing_") or msg2 in ("hint", "btn_hint"):
-                    raise GoToModeSelect()
-
-        # 10) Accept and push
-        state.board.push(move)
-        handoff_next_turn(link, display, state.board, state.mode, cfg, uci)
+                    continue
+        else:
+            handoff_next_turn(link, display, state.board, state.mode, cfg, uci)
 
 
 # -------------------- Online placeholder --------------------
