@@ -230,6 +230,7 @@ def ui_engine_thinking(display: Display):
     display.send("Engine Thinking...")
 
 def handoff_next_turn(link: BoardLink, display: Display, brd: chess.Board, mode: str, cfg: GameConfig, last_uci: str):
+    print(brd)
     link.sendtoboard(f"turn_{'white' if brd.turn == chess.WHITE else 'black'}")
     display.show_arrow(last_uci, suffix=f"{'WHITE' if brd.turn == chess.WHITE else 'BLACK'} to move")
 

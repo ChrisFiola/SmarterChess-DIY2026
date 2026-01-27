@@ -851,6 +851,7 @@ def wait_for_mode_request():
         msg = read_from_pi()
         if not msg:
             continue
+        print(f"{msg}")
         if msg.startswith("heyArduinoChooseMode"):
             # Finish the loading fill quickly
             while lit < (board.w * board.h):
