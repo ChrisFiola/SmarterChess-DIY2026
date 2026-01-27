@@ -16,9 +16,9 @@ import sys
 
 import chess  # type: ignore
 
-from mc_display import Display
-from mc_serial import BoardLink
-from mc_engine import EngineContext, engine_bestmove, engine_hint
+from piDisplay import Display
+from piSerial import BoardLink
+from piEngine import EngineContext, engine_bestmove, engine_hint
 
 # -------------------- Data classes --------------------
 

@@ -17,10 +17,10 @@ Behavior parity with single-file version:
 import time
 import traceback
 
-from mc_display import Display
-from mc_serial import BoardLink
-from mc_engine import EngineContext
-from mc_game import GameConfig, RuntimeState, select_mode, mode_dispatch, GoToModeSelect
+from piDisplay import Display
+from piSerial import BoardLink
+from piEngine import EngineContext
+from piGame import GameConfig, RuntimeState, select_mode, mode_dispatch, GoToModeSelect
 import chess  # type: ignore
 
 
