@@ -347,6 +347,21 @@ def play_game(link: BoardLink, display: Display, ctx: EngineContext, state: Runt
         if msg is None:
             # serial timeout; loop to allow engine step or previews again
             continue
+
+        if state.board.is_game_over():
+            _res = report_game_over(link, display, state.board)
+            # Wait for Pico to acknowledge by sending 'n' (OK)
+            while True:
+                msg2 = link.getboard()
+                if msg2 is None:
+                    continue
+                if msg2 in ("n", "new", "in", "newgame", "btn_new"):
+                    # Return to mode select
+                    raise GoToModeSelect()
+                # swallow typing/hint during game over
+                if msg2.startswith("typing_") or msg2 in ("hint", "btn_hint"):
+                    continue
+                
         if msg == "shutdown":
             shutdown_pi(link, display)
             return

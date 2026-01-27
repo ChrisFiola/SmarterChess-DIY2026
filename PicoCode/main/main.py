@@ -1057,6 +1057,7 @@ def main_loop():
             continue
 
         msg = read_from_pi()
+        print(f"{msg}")
         if not msg:
             time.sleep_ms(10); continue
         
