@@ -5,7 +5,7 @@ Engine context and helpers (Stockfish) for SmarterChess (modular version).
 from typing import Optional
 import time
 import chess  # type: ignore
-import chess.engine  # type: ignore 
+import chess.engine  # type: ignore  
 
 STOCKFISH_PATH: str = "/usr/games/stockfish"
 

@@ -13,7 +13,7 @@ import traceback
 import subprocess
 import sys
 
-import chess  # type: ignore
+import chess  # type: ignore 
 
 from piDisplay import Display
 from piSerial import BoardLink
@@ -30,7 +30,7 @@ class GameConfig:
 @dataclass
 class RuntimeState:
     board: chess.Board
-    mode: str = "stockfish"  # "stockfish" | "local" | "online"
+    mode: str = "stockfish"  # "stockfish" | "local" | "online" 
 
 # -------------------- Parsing & helpers --------------------
 
