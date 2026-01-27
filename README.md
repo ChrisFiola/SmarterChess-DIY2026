@@ -7,13 +7,22 @@ I am starting from the original DIY Machines's project and will update the code 
 
 The original code is not compatible with the latest python updates and is hardly running on the latest Stockfish.
 
-This updated project will use:
+This updated project uses:
 - Raspberry Pi Zero W or Raspberry Pi 3B+
 - Raspberry Pi Pico
-- LED Strip
+- Amazon's BTF-Lighting WS2812E LED Strip 30Led/Meters
 - Smaller 3D Print parts that can print with a CR20 218x218 base plate maximum
-- Waveshare 1.44" LCD Hat to show the menu and navigate it using its joystick and buttons
-- More eventually but as is until I get a working solution
+- Waveshare 1.14" LCD screen
+
+## NEW FEATURES
+- Different colored captured square when inputing and confirming a move
+- Game Over changes the board color and animation as well as displaying it on the screen
+- Promotions changes the board color and animation as well as displaying a promotion menu on the screen
+- Hints display in yellow
+- IRL 1v1 implemented to play face to face with hints enabled. Both players have a green color trail.
+- VS Computer uses green color trail for the user and blue color trail for the computer
+- Invalid move lights the whole board red to indicate a wrong move
+- Updated to work on Python3. Not depending on old libraries like Python2 that caused a headache in setting up the original DIY Machines project
 
 ## Original README
 Play remotely over the internet, or locally against the inbuilt computer.
@@ -21,25 +30,3 @@ Play remotely over the internet, or locally against the inbuilt computer.
 Project video available at: https://youtu.be/Z92TdhsAWD4
 
 Find wiring diagrams, 3d printable parts and more here: https://www.diymachines.co.uk/smart-chess-board-with-remote-and-local-play
-
-==========
-
-Though this board has a great single player mode, If you build two, and bond them together digitally you then send one to a friend or loved one so you that you can play chess together over the internet with real chess pieces and only a few seconds of delay. It’s a great way to share some time and to connect with people who are physically distant.
-
-Here are a few more features:
-
-■ Check your moves are legal and warn you when you don't play by the rules
-
-■ Suggest what would be a good next move for you
-
-■ Entirely 3D printable including the chess pieces
-
-■ Very cool looking LED lighting to convey the game status and provide the lighting for evening games
-
-■ Smart control panel which guides you through how to use the board with intelligent backlighting
-
-■ Small and low cost OLED screen to help guide you through using it
-
-■ Powered by USB, so you can connect it to mains or run it from a common USB battery pack for untethered play
-
-The internet connectivity, computer opponent and rule checking are handled by a Raspberry Pi, whilst the lighting and buttons are taken care of by an Arduino Nano.
