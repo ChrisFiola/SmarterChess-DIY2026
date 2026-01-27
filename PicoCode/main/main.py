@@ -327,13 +327,13 @@ class Chessboard:
         for dy in range(length):
             self.set_square(x, y+dy, color)
 
-    def show_strength_prompt(self):
+    def show_time_prompt(self):
         self.clear(BLACK)
         T = [(2,6),(3,6),(4,6),(5,6), (4,5),(4,4),(4,3),(4,2)]
         for x,y in T: self.set_square(x,y,MAGENTA)
         self.write()
 
-    def show_time_prompt(self):
+    def show_strength_prompt(self):
         self.clear(BLACK)
         L = [(2,6),(2,5),(2,4),(2,3),(2,2), (3,2),(4,2),(5,2)]
         for x,y in L: self.set_square(x,y,MAGENTA)
