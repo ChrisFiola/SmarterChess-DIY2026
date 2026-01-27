@@ -1,12 +1,5 @@
 # ============================================================
-#  PICO FIRMWARE — CLEAN REWRITE (2026)
-#  Changes (per user, Jan 2026):
-#    - KEEP user preview trail before OK (GREEN), no cyan end, no pre-OK legality check
-#    - Illegal move validation ONLY after OK (red flash on illegal after OK)
-#    - Keep engine move trail BLUE (cyan end allowed for engine/hint if provided by Pi)
-#    - Remove unused flags & redundant logic; keep UART protocol identical
-#    - Keep display output visuals except removed pre-OK illegal/capture variations
-#    - Compact section headers, important comments only
+#  PICO FIRMWARE (2026)
 # ============================================================
 
 from machine import Pin, UART
@@ -1114,3 +1107,6 @@ def run():
 
 # Start firmware
 run()
+
+# Clear board
+#board.clear(BLACK)     # uncomment to reset the board
