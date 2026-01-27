@@ -1,3 +1,4 @@
+
 # ============================================================
 #  PICO FIRMWARE — FINAL VERSION (2026)
 #  - Persistent overlays (latest wins):
@@ -440,7 +441,7 @@ def enter_from_square(seed_btn=None):
                     show_persistent_trail(mv, ENGINE_COLOR, 'engine', end_color=(CAPTURE_END_COLOR if cap else None)); continue
             b = buttons.detect_press()
             if not b: time.sleep_ms(5); continue
-            clear_persistent_trail();
+            clear_persistent_trail()
             if 1 <= b <= 8: seed_btn = b
             break
     cp.coord(True); cp.ok(False); cp.hint(False); buttons.reset()
@@ -448,7 +449,7 @@ def enter_from_square(seed_btn=None):
         if game_state != GAME_RUNNING: return None
         if seed_btn is not None: b = seed_btn; seed_btn = None
         else:
-            irq = process_hint_irq();
+            irq = process_hint_irq()
             if irq == "new": return None
             msg = read_from_pi()
             if msg:
@@ -460,13 +461,13 @@ def enter_from_square(seed_btn=None):
                     if raw.endswith("_cap"): mv=raw[:-4]; cap=True
                     else: mv=raw
                     show_persistent_trail(mv, ENGINE_COLOR, 'engine', end_color=(CAPTURE_END_COLOR if cap else None)); cancel_user_input_and_restart(); return None
-            b = buttons.detect_press();
+            b = buttons.detect_press()
             if not b: time.sleep_ms(5); continue
         if ButtonManager.is_non_coord_button(b): continue
         col = chr(ord('a') + b - 1); _send_from_preview(col)
     while row is None:
         if game_state != GAME_RUNNING: return None
-        irq = process_hint_irq();
+        irq = process_hint_irq()
         if irq == "new": return None
         msg = read_from_pi()
         if msg:
@@ -478,12 +479,12 @@ def enter_from_square(seed_btn=None):
                 if raw.endswith("_cap"): mv=raw[:-4]; cap=True
                 else: mv=raw
                 show_persistent_trail(mv, ENGINE_COLOR, 'engine', end_color=(CAPTURE_END_COLOR if cap else None)); cancel_user_input_and_restart(); return None
-        b = buttons.detect_press();
+        b = buttons.detect_press()
         if not b: time.sleep_ms(5); continue
         if ButtonManager.is_non_coord_button(b): continue
         row = str(b); _send_from_preview(col + row)
     frm = col + row; fxy = board.algebraic_to_xy(frm)
-    board.show_markings();
+    board.show_markings()
     if fxy: board.set_square(fxy[0], fxy[1], GREEN); board.write()
     return frm
 
@@ -509,7 +510,7 @@ def enter_to_square(move_from):
     cp.coord(True); cp.ok(False); buttons.reset()
     while col is None:
         if game_state != GAME_RUNNING: return None
-        irq = process_hint_irq();
+        irq = process_hint_irq()
         if irq == "new": return None
         msg = read_from_pi()
         if msg:
@@ -521,13 +522,13 @@ def enter_to_square(move_from):
                 if raw.endswith("_cap"): mv=raw[:-4]; cap=True
                 else: mv=raw
                 show_persistent_trail(mv, ENGINE_COLOR, 'engine', end_color=(CAPTURE_END_COLOR if cap else None)); cancel_user_input_and_restart(); return None
-        b = buttons.detect_press();
+        b = buttons.detect_press()
         if not b: time.sleep_ms(5); continue
         if ButtonManager.is_non_coord_button(b): continue
         col = chr(ord('a') + b - 1); _send_to_preview(move_from, col)
     while row is None:
         if game_state != GAME_RUNNING: return None
-        irq = process_hint_irq();
+        irq = process_hint_irq()
         if irq == "new": return None
         msg = read_from_pi()
         if msg:
@@ -539,7 +540,7 @@ def enter_to_square(move_from):
                 if raw.endswith("_cap"): mv=raw[:-4]; cap=True
                 else: mv=raw
                 show_persistent_trail(mv, ENGINE_COLOR, 'engine', end_color=(CAPTURE_END_COLOR if cap else None)); cancel_user_input_and_restart(); return None
-        b = buttons.detect_press();
+        b = buttons.detect_press()
         if not b: time.sleep_ms(5); continue
         if ButtonManager.is_non_coord_button(b): continue
         row = str(b); _send_to_preview(move_from, col + row)
@@ -548,8 +549,15 @@ def enter_to_square(move_from):
     verdict, is_cap = query_move_verdict(move_from + to)
     global last_preview_capture; last_preview_capture = is_cap
     if verdict == 'illegal':
-        board.show_markings(); board.draw_trail(move_from + to, RED)
-        time.sleep_ms(650); board.show_markings(); return None
+        # Show RED trail then reset UI so we can immediately restart entry
+        board.show_markings()
+        board.draw_trail(move_from + to, RED)
+        time.sleep_ms(650)
+        board.show_markings()
+        # Fresh input posture
+        buttons.reset(); cp.coord(True); cp.ok(False)
+        return None
+
     board.show_markings()
     if is_cap: board.draw_trail(move_from + to, GREEN, end_color=CAPTURE_END_COLOR)
     else:      board.draw_trail(move_from + to, GREEN)
@@ -569,7 +577,7 @@ def confirm_move(move):
     try:
         while True:
             if game_state != GAME_RUNNING: return None
-            irq = process_hint_irq();
+            irq = process_hint_irq()
             if irq == "new": return None
             msg = read_from_pi()
             if msg:
@@ -599,17 +607,17 @@ def collect_and_send_move():
             move_from = enter_from_square(seed_btn=seed)
             if move_from is None:
                 if persistent_trail_active: seed=None; continue
-                return
+                seed=None; continue
             seed = None
             move_to = enter_to_square(move_from)
             if move_to is None:
                 if persistent_trail_active: seed=None; continue
-                return
+                seed=None; continue
             move = move_from + move_to
             res = confirm_move(move)
             if res is None:
                 if persistent_trail_active: seed=None; continue
-                return
+                seed=None; continue
             if res == 'ok':
                 trail_color = _color_for_user_confirm()
                 board.clear(BLACK)
@@ -632,7 +640,7 @@ def wait_for_mode_request():
     board.opening_markings(); lit = 0
     while True:
         lit = board.loading_status(lit); time.sleep_ms(1000)
-        msg = read_from_pi();
+        msg = read_from_pi()
         if not msg: continue
         if msg.startswith("heyArduinoChooseMode"):
             while lit < (board.w * board.h): lit = board.loading_status(lit); time.sleep_ms(15)
