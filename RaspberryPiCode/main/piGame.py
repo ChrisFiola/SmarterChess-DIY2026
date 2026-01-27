@@ -110,7 +110,7 @@ def send_hint_to_board(link: BoardLink, display: Display, ctx: EngineContext, st
 def side_name_from_board(brd: chess.Board) -> str:
     return "WHITE" if brd.turn == chess.WHITE else "BLACK"
 
-def report_game_over(link: BoardLink, display: Display, brd: chess.Board) -> None:
+def report_game_over(link: BoardLink, display: Display, brd: chess.Board) -> str:
     result = brd.result(claim_draw=True)
     winner = winner_text_from_result(result)
     link.sendtoboard(f"GameOver:{result}")
@@ -199,7 +199,7 @@ def setup_local(link: BoardLink, display: Display, cfg: GameConfig) -> None:
     display.send("Local 2-Player\nHints enabled")
     time.sleep(2)
     cfg.skill_level = 20  # max hint skill for local
-    cfg.move_time_ms = 0  # no fastest think time for local
+    cfg.move_time_ms = 1  # fastest think time for local
 
     """
     display.send("Choose computer\ndifficulty level:\n(0 -> 8)")

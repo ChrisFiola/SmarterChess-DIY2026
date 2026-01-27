@@ -341,7 +341,7 @@ class Chessboard:
         """
         # Full MAGENTA
         for i in range(self.w * self.h):
-            self.np[i] = MAGENTA
+            self.np[i] = GREEN
         self.np.write()
 
         # Draw '#' bars in WHITE
@@ -1142,9 +1142,23 @@ def main_loop():
                 current_turn = 'W'
             elif 'b' in turn_str:
                 current_turn = 'B'
-            # Prompt for local user move
-            collect_and_send_move()
+            # --- NEW: quick drain for an immediate GameOver with priority ---
+            t_start = time.ticks_ms()
+            while time.ticks_diff(time.ticks_ms(), t_start) < 80:   # ~80ms peek window
+                nxt = read_from_pi()
+                if not nxt:
+                    time.sleep_ms(5)
+                    continue
+                if nxt.startswith("heyArduinoGameOver"):
+                    res = nxt.split(":", 1)[1].strip() if ":" in nxt else ""
+                    game_over_wait_ok_and_ack(res)
+                    # Skip collecting input since game ended
+                    break
+            else:
+                # Only collect input if no GameOver was spotted during the drain
+                collect_and_send_move()
             continue
+
 
 # ============================================================
 # =============== ENTRY POINT ================================
