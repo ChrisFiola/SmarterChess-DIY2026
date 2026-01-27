@@ -74,3 +74,6 @@ class Display:
 
     def show_gameover(self, result: str) -> None:
         self.send(f"Game Over\nResult {result}\nPress n to start over")
+
+    def show_hint_thinking(self) -> None:
+        self.send("Hint\nThinking...")
