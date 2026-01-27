@@ -195,7 +195,10 @@ def setup_stockfish(link: BoardLink, display: Display, cfg: GameConfig) -> None:
 def setup_local(link: BoardLink, display: Display, cfg: GameConfig) -> None:
     display.send("Local 2-Player\nHints enabled")
     time.sleep(2)
+    cfg.skill_level = 20  # max hint skill for local
+    cfg.move_time_ms = 0  # no fastest think time for local
 
+    """
     display.send("Choose computer\ndifficulty level:\n(0 -> 8)")
     link.sendtoboard("EngineStrength")
     link.sendtoboard(f"default_strength_{cfg.skill_level}")
@@ -217,6 +220,7 @@ def setup_local(link: BoardLink, display: Display, cfg: GameConfig) -> None:
         if msg.isdigit():
             cfg.move_time_ms = max(10, int(msg))
             break
+    """
 # -------------------- UI helpers & engine handoff --------------------
 
 def ui_new_game_banner(display: Display):

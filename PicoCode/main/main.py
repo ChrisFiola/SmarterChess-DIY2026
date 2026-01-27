@@ -896,7 +896,7 @@ def select_strength_singlepress(default_value):
     return select_singlepress(default_value, 1, 20)
 
 def select_time_singlepress(default_value):
-    return select_singlepress(default_value, 3000, 12000)
+    return select_singlepress(default_value, 1000, 8000)
 
 def select_color_choice():
     """Color: 1=White(First), 2=Black(Second), 3=Random — forward to Pi."""
