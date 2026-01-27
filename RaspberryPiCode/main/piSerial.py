@@ -21,7 +21,7 @@ class BoardLink:
         except Exception:
             pass
 
-    # Writes
+    # Writes 
     def send_raw(self, text: str) -> None:
         self.ser.write(text.encode("utf-8") + b"\n")
 

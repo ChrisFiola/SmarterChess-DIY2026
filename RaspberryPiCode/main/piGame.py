@@ -224,7 +224,7 @@ def setup_local(link: BoardLink, display: Display, cfg: GameConfig) -> None:
             cfg.move_time_ms = max(10, int(msg))
             break
     """
-# -------------------- UI helpers & engine handoff --------------------
+# -------------------- UI helpers & engine handoff -------------------- 
 
 def ui_new_game_banner(display: Display):
     display.banner("NEW GAME", delay_s=1.0)

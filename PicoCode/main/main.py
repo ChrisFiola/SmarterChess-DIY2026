@@ -65,6 +65,13 @@ default_move_time  = 2000   # Pi maps 1..8 => 3000..12000
 in_setup = False
 in_input = False
 
+
+# --- Engine move acknowledgement state ---
+engine_ack_pending = False           # waiting for OK to acknowledge engine move?
+pending_gameover_result = None       # "1-0" | "0-1" | "1/2-1/2" if Pi already told us
+buffered_turn_msg = None             # store a turn_* that arrives before we ack the engine move
+
+
 # ============================================================
 # =============== PERSISTENT OVERLAYS ========================
 # ============================================================
@@ -465,6 +472,32 @@ def hard_reset_board():
     persistent_trail_active=False; persistent_trail_type=None; persistent_trail_move=None
     disable_hint_irq(); buttons.reset()
     cp.fill(BLACK); board.clear(BLACK); board.show_markings()
+
+    
+def wait_ok_fresh(blink_ok=True):
+    """
+    Wait for a fresh OK press:
+     - require release (active-low -> wait for HIGH)
+     - small guard
+     - then wait for a new press
+    """
+    # show OK pixel if asked
+    if blink_ok:
+        cp.ok(True)
+    # require release first
+    while BTN_OK.value() == 0:
+        time.sleep_ms(10)
+    time.sleep_ms(180)
+    buttons.reset()
+
+    # Wait for press
+    while True:
+        b = buttons.detect_press()
+        if b == (OK_BUTTON_INDEX + 1):
+            cp.ok(False)
+            return
+        time.sleep_ms(15)
+
 
 # ============================================================
 # =============== PERSISTENT TRAILS (HINT/ENGINE) ============
@@ -1051,19 +1084,140 @@ def handle_promotion_choice():
 
 def main_loop():
     """Central message loop: handles hints, engine moves, errors, turns, and setup requests."""
-    global current_turn
+    global current_turn, engine_ack_pending, pending_gameover_result, buffered_turn_msg
     while True:
         # Consume any hint/new-game IRQ
         irq = process_hint_irq()
         if irq == "new":
             disable_hint_irq(); cp.hint(False); cp.coord(False)
             board.opening_markings()
+            engine_ack_pending = False
+            pending_gameover_result = None
+            buffered_turn_msg = None
             continue
+
+        
+        # ---------- HANDLE ENGINE-ACK PENDING FIRST (even if no new msg) ----------
+        if engine_ack_pending:
+            # Try to read a message (non-blocking)
+            nxt = read_from_pi()
+
+            # Prioritize GameOver if it arrives while waiting for OK
+            if nxt and nxt.startswith("heyArduinoGameOver"):
+                pending_gameover_result = nxt.split(":", 1)[1].strip() if ":" in nxt else ""
+                # Require a fresh OK to acknowledge engine move before showing GameOver
+                # (rely on the helper you added earlier if you prefer; inline here for clarity)
+                while BTN_OK.value() == 0:
+                    time.sleep_ms(10)
+                time.sleep_ms(180)
+                buttons.reset()
+                # Now wait for a new OK press
+                while True:
+                    b = buttons.detect_press()
+                    if b == (OK_BUTTON_INDEX + 1):
+                        cp.ok(False)
+                        break
+                    time.sleep_ms(15)
+
+                engine_ack_pending = False
+                # Now show Game Over animation and wait for OK to send 'n'
+                game_over_wait_ok_and_ack(pending_gameover_result)
+                pending_gameover_result = None
+                buffered_turn_msg = None
+                continue
+
+            # If turn_* arrives while we are waiting, buffer it
+            if nxt and nxt.startswith("heyArduinoturn_"):
+                buffered_turn_msg = nxt
+                # keep waiting for OK; do not start input yet
+                # (intentionally no continue here; we still check OK below)
+
+            # Check OK press to acknowledge engine move
+            b = buttons.detect_press()
+            if b == (OK_BUTTON_INDEX + 1):
+                engine_ack_pending = False
+                cp.ok(False)
+                
+                # CLEAR the engine overlay so the next coordinate press isn't consumed
+                clear_persistent_trail()
+                board.show_markings()
+                cp.coord(True)
+
+                # If a turn_* was buffered (normal case when no GameOver), process it now
+                if buffered_turn_msg:
+                    turn_str = buffered_turn_msg.split("_", 1)[1].strip().lower()
+                    if 'w' in turn_str:
+                        current_turn = 'W'
+                    elif 'b' in turn_str:
+                        current_turn = 'B'
+                    buffered_turn_msg = None
+                    # Start collecting the human move
+                collect_and_send_move()
+                continue
+
+            # Still waiting; small sleep to avoid a hot loop
+            time.sleep_ms(10)
+            continue
+        # ---------- END ENGINE-ACK PENDING GATE ----------
+
 
         msg = read_from_pi()
         print(f"{msg}")
         if not msg:
             time.sleep_ms(10); continue
+        
+        # --- If we're waiting for engine-move acknowledgement, prioritize that flow --- 
+        if engine_ack_pending:
+            # 1) GameOver arrived -> acknowledge engine move (fresh OK), then show GameOver
+            if msg.startswith("heyArduinoGameOver"):
+                res = msg.split(":", 1)[1].strip() if ":" in msg else ""
+                pending_gameover_result = res
+                # Wait for user's OK to acknowledge engine move
+                wait_ok_fresh(blink_ok=True)
+                # Engine move is acknowledged; clear state
+                engine_ack_pending = False
+                cp.ok(False)
+
+                # Now show Game Over animation and wait for OK to send 'n'
+                game_over_wait_ok_and_ack(pending_gameover_result)
+                pending_gameover_result = None
+                buffered_turn_msg = None
+                continue
+
+            # 2) Turn notification arrived -> buffer it; we'll process after OK
+            if msg.startswith("heyArduinoturn_"):
+                buffered_turn_msg = msg
+                # Still waiting for OK; do not start input yet
+                continue
+
+            # 3) Other messages (hints, engine overlays, typing previews, etc.) can be ignored or handled;
+            #    safest is to ignore during this brief waiting period.
+            # Now check if the user pressed OK to acknowledge the engine move
+            btn = buttons.detect_press()
+            if btn == (OK_BUTTON_INDEX + 1):
+                # Engine move acknowledged
+                engine_ack_pending = False
+                cp.ok(False)
+                # If a turn_* was buffered (normal case when no GameOver), process it now
+                if buffered_turn_msg:
+                    turn_str = buffered_turn_msg.split("_", 1)[1].strip().lower()
+                    if 'w' in turn_str:
+                        current_turn = 'W'
+                    elif 'b' in turn_str:
+                        current_turn = 'B'
+                    buffered_turn_msg = None
+                    # Start collecting the human move
+                    collect_and_send_move()
+                    continue
+                else:
+                    # No turn_* (rare) – just go back to markings; next message will drive the flow
+                    board.show_markings()
+                    continue
+
+            # No OK yet; keep waiting
+            time.sleep_ms(10)
+            continue
+
         
         # GameOver from Pi: "heyArduinoGameOver:<result>"
         if msg.startswith("heyArduinoGameOver"):
@@ -1095,6 +1249,7 @@ def main_loop():
             continue
 
         # Computer/engine move (with optional _cap)
+
         if msg.startswith("heyArduinom"):
             raw = msg[11:].strip()
             cap = False
@@ -1109,25 +1264,14 @@ def main_loop():
             board.draw_trail(mv, ENGINE_COLOR, end_color=(CYAN if cap else None))
             show_persistent_trail(mv, ENGINE_COLOR, 'engine', end_color=(CYAN if cap else None))
 
-            cancel_user_input_and_restart()
-            
-            # --- NEW: Quick drain to prioritize immediate GameOver ---
-            t_start = time.ticks_ms()
-            while time.ticks_diff(time.ticks_ms(), t_start) < 120:  # ~120ms
-                nxt = read_from_pi()
-                if not nxt:
-                    time.sleep_ms(5)
-                    continue
-                if nxt.startswith("heyArduinoGameOver"):
-                    res = nxt.split(":", 1)[1].strip() if ":" in nxt else ""
-                    game_over_wait_ok_and_ack(res)
-                    break
-                else:
-                    # If it's something else (rare), re-queue behavior: you can
-                    # process or ignore; safest is to continue loop.
-                    pass
-
+            # --- NEW: require OK to acknowledge engine move before anything else ---
+            engine_ack_pending = True
+            pending_gameover_result = None
+            buffered_turn_msg = None
+            cp.ok(True)  # indicate "press OK to continue"
+            # Do NOT call collect_and_send_move() here; we wait for OK or GameOver.
             continue
+
 
         # Promotion request from Pi
         if msg.startswith("heyArduinopromotion_choice_needed"):
