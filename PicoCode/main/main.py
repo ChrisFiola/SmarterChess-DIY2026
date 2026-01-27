@@ -101,6 +101,39 @@ def send_typing_preview(label, text):
     # heypityping_<label>_<text>
     uart.write(f"heypityping_{label}_{text}\n".encode())
 
+
+def _handle_pi_overlay_or_gameover(msg):
+    """
+    Returns one of:
+      'gameover'  -> Game over handled (scene shown); caller must abort input
+      'hint'      -> Hint shown; caller should cancel and restart input
+      'engine'    -> Engine overlay shown; caller should cancel and restart input
+      None        -> Irrelevant message; caller can continue
+    """
+    if not msg:
+        return None
+
+    if msg.startswith("heyArduinoGameOver"):
+        res = msg.split(":", 1)[1].strip() if ":" in msg else ""
+        game_over_wait_ok_and_ack(res)
+        return "gameover"
+
+    if msg.startswith("heyArduinohint_"):
+        raw = msg[len("heyArduinohint_"):].strip()
+        cap = raw.endswith("_cap")
+        best = raw[:-4] if cap else raw
+        show_persistent_trail(best, YELLOW, 'hint', end_color=(CYAN if cap else None))
+        return "hint"
+
+    if msg.startswith("heyArduinom"):
+        raw = msg[11:].strip()
+        cap = raw.endswith("_cap")
+        mv  = raw[:-4] if cap else raw
+        show_persistent_trail(mv, ENGINE_COLOR, 'engine', end_color=(CYAN if cap else None))
+        return "engine"
+
+    return None
+
 # ============================================================
 # =============== LED PANELS (CONTROL + BOARD) ===============
 # ============================================================
@@ -542,25 +575,16 @@ def enter_from_square(seed_btn=None):
     # If overlay is active, clear it on first user press (OK or coord)
     if persistent_trail_active:
         while True:
-            # Newest Pi events override current overlay
             msg = read_from_pi()
             if msg:
-                if msg.startswith("heyArduinohint_"):
-                    raw = msg[15:].strip()
-                    cap = raw.endswith("_cap")
-                    mv  = raw[:-4] if cap else raw
-                    show_persistent_trail(mv, YELLOW, 'hint', end_color=(CYAN if cap else None))
-                    continue
-                if msg.startswith("heyArduinom"):
-                    raw = msg[11:].strip()
-                    cap = raw.endswith("_cap")
-                    mv  = raw[:-4] if cap else raw
-                    show_persistent_trail(mv, ENGINE_COLOR, 'engine', end_color=(CYAN if cap else None))
-                    continue
+                outcome = _handle_pi_overlay_or_gameover(msg)
+                if outcome == "gameover":
+                    return None
+                # For hint/engine keep showing the freshest overlay; wait for a button
+                # (same behavior you already had)
             b = buttons.detect_press()
             if not b:
                 time.sleep_ms(5); continue
-            # Any button clears overlay; coordinate press becomes seed for column
             clear_persistent_trail()
             if 1 <= b <= 8:
                 seed_btn = b
@@ -568,6 +592,7 @@ def enter_from_square(seed_btn=None):
 
         cp.coord(True); cp.ok(False); cp.hint(False)
         buttons.reset()
+
 
     # Column
     col=None; row=None
@@ -585,16 +610,12 @@ def enter_from_square(seed_btn=None):
             # Interrupts from Pi (overlay wins)
             msg = read_from_pi()
             if msg:
-                if msg.startswith("heyArduinohint_"):
-                    raw = msg[15:].strip()
-                    cap = raw.endswith("_cap"); mv = raw[:-4] if cap else raw
-                    show_persistent_trail(mv, YELLOW, 'hint', end_color=(CYAN if cap else None))
-                    cancel_user_input_and_restart(); return None
-                if msg.startswith("heyArduinom"):
-                    raw = msg[11:].strip()
-                    cap = raw.endswith("_cap"); mv = raw[:-4] if cap else raw
-                    show_persistent_trail(mv, ENGINE_COLOR, 'engine', end_color=(CYAN if cap else None))
-                    cancel_user_input_and_restart(); return None
+                outcome = _handle_pi_overlay_or_gameover(msg)
+                if outcome == "gameover":
+                    return None
+                if outcome in ("hint", "engine"):
+                    cancel_user_input_and_restart()
+                    return None
 
             b = buttons.detect_press()
             if not b:
@@ -615,16 +636,12 @@ def enter_from_square(seed_btn=None):
 
         msg = read_from_pi()
         if msg:
-            if msg.startswith("heyArduinohint_"):
-                raw = msg[15:].strip()
-                cap = raw.endswith("_cap"); mv = raw[:-4] if cap else raw
-                show_persistent_trail(mv, YELLOW, 'hint', end_color=(CYAN if cap else None))
-                cancel_user_input_and_restart(); return None
-            if msg.startswith("heyArduinom"):
-                raw = msg[11:].strip()
-                cap = raw.endswith("_cap"); mv = raw[:-4] if cap else raw
-                show_persistent_trail(mv, ENGINE_COLOR, 'engine', end_color=(CYAN if cap else None))
-                cancel_user_input_and_restart(); return None
+            outcome = _handle_pi_overlay_or_gameover(msg)
+            if outcome == "gameover":
+                return None
+            if outcome in ("hint", "engine"):
+                cancel_user_input_and_restart()
+                return None
 
         b = buttons.detect_press()
         if not b:
@@ -654,24 +671,22 @@ def enter_to_square(move_from):
         while True:
             msg = read_from_pi()
             if msg:
-                if msg.startswith("heyArduinohint_"):
-                    raw = msg[15:].strip()
-                    cap = raw.endswith("_cap"); mv = raw[:-4] if cap else raw
-                    show_persistent_trail(mv, YELLOW, 'hint', end_color=(CYAN if cap else None))
-                    continue
-                if msg.startswith("heyArduinom"):
-                    raw = msg[11:].strip()
-                    cap = raw.endswith("_cap"); mv = raw[:-4] if cap else raw
-                    show_persistent_trail(mv, ENGINE_COLOR, 'engine', end_color=(CYAN if cap else None))
-                    continue
+                outcome = _handle_pi_overlay_or_gameover(msg)
+                if outcome == "gameover":
+                    return None
+                # For hint/engine keep showing the freshest overlay; wait for a button
+                # (same behavior you already had)
             b = buttons.detect_press()
             if not b:
                 time.sleep_ms(5); continue
             clear_persistent_trail()
+            if 1 <= b <= 8:
+                seed_btn = b
             break
 
-    cp.coord(True); cp.ok(False)
-    buttons.reset()
+        cp.coord(True); cp.ok(False); cp.hint(False)
+        buttons.reset()
+
 
     col=None; row=None
 
@@ -685,16 +700,12 @@ def enter_to_square(move_from):
 
         msg = read_from_pi()
         if msg:
-            if msg.startswith("heyArduinohint_"):
-                raw = msg[15:].strip()
-                cap = raw.endswith("_cap"); mv = raw[:-4] if cap else raw
-                show_persistent_trail(mv, YELLOW, 'hint', end_color=(CYAN if cap else None))
-                cancel_user_input_and_restart(); return None
-            if msg.startswith("heyArduinom"):
-                raw = msg[11:].strip()
-                cap = raw.endswith("_cap"); mv = raw[:-4] if cap else raw
-                show_persistent_trail(mv, ENGINE_COLOR, 'engine', end_color=(CYAN if cap else None))
-                cancel_user_input_and_restart(); return None
+            outcome = _handle_pi_overlay_or_gameover(msg)
+            if outcome == "gameover":
+                return None
+            if outcome in ("hint", "engine"):
+                cancel_user_input_and_restart()
+                return None
 
         b = buttons.detect_press()
         if not b:
@@ -714,16 +725,12 @@ def enter_to_square(move_from):
 
         msg = read_from_pi()
         if msg:
-            if msg.startswith("heyArduinohint_"):
-                raw = msg[15:].strip()
-                cap = raw.endswith("_cap"); mv = raw[:-4] if cap else raw
-                show_persistent_trail(mv, YELLOW, 'hint', end_color=(CYAN if cap else None))
-                cancel_user_input_and_restart(); return None
-            if msg.startswith("heyArduinom"):
-                raw = msg[11:].strip()
-                cap = raw.endswith("_cap"); mv = raw[:-4] if cap else raw
-                show_persistent_trail(mv, ENGINE_COLOR, 'engine', end_color=(CYAN if cap else None))
-                cancel_user_input_and_restart(); return None
+            outcome = _handle_pi_overlay_or_gameover(msg)
+            if outcome == "gameover":
+                return None
+            if outcome in ("hint", "engine"):
+                cancel_user_input_and_restart()
+                return None
 
         b = buttons.detect_press()
         if not b:
@@ -776,19 +783,12 @@ def confirm_move(move):
         # New overlay cancels confirm
         msg = read_from_pi()
         if msg:
-            if msg.startswith("heyArduinohint_"):
-                raw = msg[15:].strip()
-                cap = raw.endswith("_cap"); mv = raw[:-4] if cap else raw
-                show_persistent_trail(mv, YELLOW, 'hint', end_color=(CYAN if cap else None))
-                cancel_user_input_and_restart()
+            outcome = _handle_pi_overlay_or_gameover(msg)
+            if outcome == "gameover":
                 cp.ok(False)
                 return None
-            if msg.startswith("heyArduinom"):
-                raw = msg[11:].strip()
-                cap = raw.endswith("_cap"); mv = raw[:-4] if cap else raw
-                show_persistent_trail(mv, ENGINE_COLOR, 'engine', end_color=(CYAN if cap else None))
+            if outcome in ("hint", "engine"):
                 cancel_user_input_and_restart()
-                cp.ok(False)
                 return None
 
         b = buttons.detect_press()
@@ -861,36 +861,40 @@ def collect_and_send_move():
     finally:
         in_input = False
 
+
 def game_over_wait_ok_and_ack(result_str):
-    """
-    Show MAGENTA '#' scene and wait until OK is pressed.
-    Then send 'n' to Pi (same message you use for New Game)
-    so the Pi can return to mode select.
-    """
-    buttons.reset()
-    cp.coord(False); cp.hint(True); cp.ok(True)
-    board.show_checkmate_scene_hash()
+    disable_hint_irq()
+    try:
+        buttons.reset()
+        cp.coord(False); cp.hint(True); cp.ok(True)
+        board.show_checkmate_scene_hash()
 
-    # Optional: blink OK pixel while waiting
-    blink = False
-    last = time.ticks_ms()
+        # Wait for OK to be released, then a small guard to avoid bounce
+        while BTN_OK.value() == 0:
+            time.sleep_ms(10)
+        time.sleep_ms(200)
+        buttons.reset()
 
-    while True:
-        now = time.ticks_ms()
-        if time.ticks_diff(now, last) > 400:
-            blink = not blink
-            cp.ok(blink)
-            last = now
+        blink = False
+        last = time.ticks_ms()
+        while True:
+            now = time.ticks_ms()
+            if time.ticks_diff(now, last) > 400:
+                blink = not blink
+                cp.ok(blink)
+                last = now
 
-        b = buttons.detect_press()
-        if b == (OK_BUTTON_INDEX + 1):
-            cp.ok(False)
-            send_to_pi("n")  # signal the Pi to return to mode select
-            break
-        time.sleep_ms(20)
+            b = buttons.detect_press()
+            if b == (OK_BUTTON_INDEX + 1):
+                cp.ok(False)
+                send_to_pi("n")  # back to mode select on Pi
+                break
+            time.sleep_ms(20)
 
-    # restore markings after acknowledgment
-    board.show_markings()
+        board.show_markings()
+    finally:
+        enable_hint_irq()
+
 
 # ============================================================
 # =============== SETUP / MODE SELECTION =====================
@@ -1106,6 +1110,23 @@ def main_loop():
             show_persistent_trail(mv, ENGINE_COLOR, 'engine', end_color=(CYAN if cap else None))
 
             cancel_user_input_and_restart()
+            
+            # --- NEW: Quick drain to prioritize immediate GameOver ---
+            t_start = time.ticks_ms()
+            while time.ticks_diff(time.ticks_ms(), t_start) < 120:  # ~120ms
+                nxt = read_from_pi()
+                if not nxt:
+                    time.sleep_ms(5)
+                    continue
+                if nxt.startswith("heyArduinoGameOver"):
+                    res = nxt.split(":", 1)[1].strip() if ":" in nxt else ""
+                    game_over_wait_ok_and_ack(res)
+                    break
+                else:
+                    # If it's something else (rare), re-queue behavior: you can
+                    # process or ignore; safest is to continue loop.
+                    pass
+
             continue
 
         # Promotion request from Pi

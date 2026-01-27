@@ -235,8 +235,13 @@ def ui_engine_thinking(display: Display):
 def handoff_next_turn(link: BoardLink, display: Display, brd: chess.Board, mode: str, cfg: GameConfig, last_uci: str):
     print(brd)
 
-    link.sendtoboard(f"turn_{'white' if brd.turn == chess.WHITE else 'black'}")
-    display.show_arrow(last_uci, suffix=f"{'WHITE' if brd.turn == chess.WHITE else 'BLACK'} to move")
+    human_to_move = (mode == "local" or (mode == "stockfish" and ( (brd.turn == chess.WHITE and cfg.human_is_white) or (brd.turn == chess.BLACK and not cfg.human_is_white))))
+    if human_to_move:
+        link.sendtoboard(f"turn_{'white' if brd.turn == chess.WHITE else 'black'}")
+        display.show_arrow(last_uci, suffix=f"{'WHITE' if brd.turn == chess.WHITE else 'BLACK'} to move")
+    else:
+        display.show_arrow(last_uci, suffix="ENGINE thinking")
+
 
 
 def engine_move_and_send(link: BoardLink, display: Display, ctx: EngineContext, state: RuntimeState, cfg: GameConfig):
