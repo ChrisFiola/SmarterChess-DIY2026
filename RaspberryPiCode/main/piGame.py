@@ -52,6 +52,33 @@ def parse_side_choice(s: str) -> Optional[bool]:
     if s.startswith("s3"): return bool(random.getrandbits(1))
     return None
 
+
+def compute_capture_preview(brd: chess.Board, uci: str) -> bool:
+    """
+    Return True if moving side would capture something on 'to' square
+    in current position, including en passant. Does not validate legality.
+    """
+    try:
+        from_sq = chess.parse_square(uci[:2])
+        to_sq   = chess.parse_square(uci[2:4])
+    except Exception:
+        return False
+
+    # If there's an opponent piece on 'to', that's a capture
+    target = brd.piece_at(to_sq)
+    if target and target.color != brd.turn:
+        return True
+
+    # En passant: pawn moves diagonally to ep square which is empty
+    mover = brd.piece_at(from_sq)
+    if mover and mover.piece_type == chess.PAWN and brd.ep_square == to_sq:
+        # ensure diagonal direction
+        if abs(chess.square_file(to_sq) - chess.square_file(from_sq)) == 1:
+            return True
+
+    return False
+
+
 # -------------------- Promotion --------------------
 
 def requires_promotion(move: chess.Move, brd: chess.Board) -> bool:
@@ -101,9 +128,16 @@ def send_hint_to_board(link: BoardLink, display: Display, ctx: EngineContext, st
     if not best:
         link.sendtoboard("hint_none")
         return
+    
+    # Mark capture for hint if applicable
+    try:
+        mv = chess.Move.from_uci(best)
+        is_cap = state.board.is_capture(mv)
+    except Exception:
+        is_cap = False
 
     # Send to Pico and update OLED with arrow format
-    link.sendtoboard(f"hint_{best}")
+    link.sendtoboard(f"hint_{best}{'_cap' if is_cap else ''}")
     display.show_hint_result(best)
     print(f"[Hint] {best}")
 
@@ -248,8 +282,14 @@ def engine_move_and_send(link: BoardLink, display: Display, ctx: EngineContext, 
     reply = engine_bestmove(ctx, state.board, cfg.move_time_ms)
     if reply is None:
         return
-    state.board.push_uci(reply)
-    link.sendtoboard(f"m{reply}")
+    
+    # Compute capture BEFORE pushing
+    mv = chess.Move.from_uci(reply)
+    is_cap = state.board.is_capture(mv)
+
+    # Send with _cap if capture, then push
+    link.sendtoboard(f"m{reply}{'_cap' if is_cap else ''}")
+    state.board.push(mv)
 
     if state.board.is_game_over():
         _res = report_game_over(link, display, state.board)
@@ -335,6 +375,16 @@ def play_game(link: BoardLink, display: Display, ctx: EngineContext, state: Runt
             if peek.startswith("typing_"):
                 handle_typing_preview(display, peek[len("typing_"):])
             # do not 'continue' to still allow engine turn same cycle
+            
+            # Pico asks: "capq_<uci>" -> answer quickly with "capr_0/1"
+            if peek.startswith("capq_"):
+                uci = peek[5:].strip()
+                try:
+                    cap = compute_capture_preview(state.board, uci)
+                except Exception:
+                    cap = False
+                link.sendtoboard(f"capr_{1 if cap else 0}")
+
 
         # 2) Engine turn (Stockfish mode)
         if state.mode == "stockfish" and not state.board.is_game_over():
