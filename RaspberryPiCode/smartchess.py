@@ -228,6 +228,7 @@ def engine_move_and_send(ser: serial.Serial) -> None:
         return
 
     board.push_uci(reply)
+    sendtoboard(ser, f"m{reply}")
 
     sendtoboard(ser, f"turn_{'white' if board.turn == chess.WHITE else 'black'}")
     send_to_screen(f"{reply[:2]} → {reply[2:4]}\nYou are {'white' if board.turn == chess.WHITE else 'black'}\nEnter move:")
@@ -411,24 +412,6 @@ def play_game(ser: serial.Serial, mode: str) -> None:
         # Blocking read for the next board message
         msg = getboard(ser)
         if msg is None:
-            continue
-
-        # ===== Pre-OK legality/capture check from Pico =====
-        # heypichk_<uci>  -> payload 'chk_<uci>'
-        if msg.startswith("chk_"):
-            uci = msg[4:].strip().lower()
-            try:
-                move = chess.Move.from_uci(uci)
-            except ValueError:
-                sendtoboard(ser, f"check_illegal_{uci}")
-                continue
-            if move not in board.legal_moves:
-                sendtoboard(ser, f"check_illegal_{uci}")
-                continue
-            # Legal: report capture vs non-capture (without pushing)
-            is_cap = board.is_capture(move)
-            flag = "cap" if is_cap else "nocap"
-            sendtoboard(ser, f"check_ok_{uci}_{flag}")
             continue
 
         # Also handle typing previews that arrive via blocking read (consistent behavior)
