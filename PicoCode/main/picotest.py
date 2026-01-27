@@ -96,7 +96,7 @@ def read_from_pi():
     """Non-blocking read if available; returns lower-level raw line w/o newline or None."""
     if uart.any():
         try:
-            return uart.readline().decode().strip()
+            return uart.readline().decode().strip() # type: ignore
         except:
             return None
     return None
