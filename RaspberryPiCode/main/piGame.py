@@ -240,10 +240,13 @@ def handoff_next_turn(link: BoardLink, display: Display, brd: chess.Board, mode:
 
 def engine_move_and_send(link: BoardLink, display: Display, ctx: EngineContext, state: RuntimeState, cfg: GameConfig):
     reply = engine_bestmove(ctx, state.board, cfg.move_time_ms)
+    
     if reply is None:
         return
-    state.board.push_uci(reply)
-    link.sendtoboard(f"m{reply}")
+    
+    if not state.board.is_game_over():
+        state.board.push_uci(reply)
+        link.sendtoboard(f"m{reply}")
 
     if state.board.is_game_over():
         _res = report_game_over(link, display, state.board)
