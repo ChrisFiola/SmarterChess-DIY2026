@@ -36,13 +36,13 @@ def engine_bestmove(ctx: EngineContext, brd: chess.Board, ms: int) -> Optional[s
         return None
     #engine = ctx.ensure(STOCKFISH_PATH)
     limit = chess.engine.Limit(time=max(0.01, ms / 1000.0))
-    result = engine.play(brd, limit)  # type: ignore
+    result = ctx.play(brd, limit)  # type: ignore
     return result.move.uci() if result.move else None
 
 def engine_hint(ctx: EngineContext, brd: chess.Board, ms: int) -> Optional[str]:
     try:
-        engine = ctx.ensure(STOCKFISH_PATH)
-        info = engine.analyse(brd, chess.engine.Limit(time=max(0.01, ms / 1000.0)))  # type: ignore
+        #engine = ctx.ensure(STOCKFISH_PATH)
+        info = ctx.analyse(brd, chess.engine.Limit(time=max(0.01, ms / 1000.0)))  # type: ignore
         pv = info.get("pv")
         if pv:
             return pv[0].uci()
