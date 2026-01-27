@@ -873,7 +873,7 @@ def confirm_move(move):
 
 def collect_and_send_move():
     """Full user move entry cycle. No pre-OK legality. Simple green preview."""
-    global in_input
+    global in_input, preview_cap_flag
     in_input = True
     try:
         seed = None  # optional seed coord if user cancels with a coord button

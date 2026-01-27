@@ -411,6 +411,16 @@ def play_game(link: BoardLink, display: Display, ctx: EngineContext, state: Runt
         if msg.startswith("typing_"):
             handle_typing_preview(display, msg[len("typing_"):])
             continue
+        
+        # --- NEW: capture preview probe (blocking path) ---
+        if msg.startswith("capq_"):
+            uci = msg[5:].strip()
+            try:
+                cap = compute_capture_preview(state.board, uci)
+            except Exception:
+                cap = False
+            link.sendtoboard(f"capr_{1 if cap else 0}")
+            continue
 
         # 5) New game request
         if msg in ("n", "new", "in", "newgame", "btn_new"):
