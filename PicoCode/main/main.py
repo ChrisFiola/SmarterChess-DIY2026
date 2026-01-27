@@ -48,7 +48,6 @@ CP_HINT_PIX    = 5
 GAME_IDLE    = 0
 GAME_SETUP   = 1
 GAME_RUNNING = 2
-GAME_OVER = 3
 game_state   = GAME_IDLE
 
 # Modes / turn tracking
@@ -452,8 +451,6 @@ def show_persistent_trail(move_uci, color, trail_type, end_color=None):
     Draw a persistent overlay (latest wins). For engine/hint we allow an end_color
     (e.g., cyan for capture) — this is *not* the pre-OK user preview.
     """
-    if game_state == GAME_OVER:
-        return
     global persistent_trail_active, persistent_trail_type, persistent_trail_move
     persistent_trail_active = True
     persistent_trail_type   = trail_type   # 'hint' or 'engine'
@@ -485,10 +482,6 @@ def process_hint_irq():
         return None
     hint_irq_flag = False
 
-    if game_state == GAME_OVER:
-        hint_irq_flag = False
-        return None
-    
     now = time.ticks_ms()
     if time.ticks_diff(suppress_hints_until_ms, now) > 0:
         return None
@@ -813,9 +806,6 @@ def confirm_move(move):
 
 def collect_and_send_move():
     """Full user move entry cycle. No pre-OK legality. Simple green preview."""
-    if game_state == GAME_OVER:
-        return
-    
     global in_input
     in_input = True
     try:
@@ -877,8 +867,6 @@ def game_over_wait_ok_and_ack(result_str):
     Then send 'n' to Pi (same message you use for New Game)
     so the Pi can return to mode select.
     """
-    global persistent_trail_active
-    persistent_trail_active = False
     buttons.reset()
     cp.coord(False); cp.hint(True); cp.ok(True)
     board.show_checkmate_scene_hash()
@@ -903,9 +891,6 @@ def game_over_wait_ok_and_ack(result_str):
 
     # restore markings after acknowledgment
     board.show_markings()
-
-def is_game_over():
-    return game_state == GAME_OVER
 
 # ============================================================
 # =============== SETUP / MODE SELECTION =====================
@@ -1064,11 +1049,6 @@ def main_loop():
     """Central message loop: handles hints, engine moves, errors, turns, and setup requests."""
     global current_turn
     while True:
-        # HARD BLOCK: ignore everything while GameOver is active
-        if game_state == GAME_OVER:
-            time.sleep_ms(20)
-            continue
-
         # Consume any hint/new-game IRQ
         irq = process_hint_irq()
         if irq == "new":
@@ -1083,17 +1063,10 @@ def main_loop():
         
         # GameOver from Pi: "heyArduinoGameOver:<result>"
         if msg.startswith("heyArduinoGameOver"):
-            global game_state
-            game_state = GAME_OVER   # <-- LATCH HARD STATE
-
             res = ""
             if ":" in msg:
                 res = msg.split(":", 1)[1].strip()
-
             game_over_wait_ok_and_ack(res)
-
-            # After OK, Pi will send ChooseMode / Setup again
-            game_state = GAME_SETUP
             continue
 
         # Hard reset from Pi
@@ -1169,7 +1142,6 @@ def main_loop():
                 current_turn = 'W'
             elif 'b' in turn_str:
                 current_turn = 'B'
-
             # --- NEW: quick drain for an immediate GameOver with priority ---
             t_start = time.ticks_ms()
             while time.ticks_diff(time.ticks_ms(), t_start) < 80:   # ~80ms peek window

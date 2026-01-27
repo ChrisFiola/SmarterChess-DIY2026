@@ -33,6 +33,7 @@ def main():
     link = BoardLink()
     cfg = GameConfig()
     state = RuntimeState(board=chess.Board(), mode="stockfish")
+    ctx.ensure("/usr/games/stockfish") # Starting engine early
 
     while True:
         try:

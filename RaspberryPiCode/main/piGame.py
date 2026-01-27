@@ -31,7 +31,6 @@ class GameConfig:
 class RuntimeState:
     board: chess.Board
     mode: str = "stockfish"  # "stockfish" | "local" | "online"
-    game_over:  bool = False
 
 # -------------------- Parsing & helpers --------------------
 
@@ -92,7 +91,7 @@ def ask_promotion_piece(link: BoardLink, display: Display) -> str:
 # -------------------- Hints & game-over --------------------
 
 def send_hint_to_board(link: BoardLink, display: Display, ctx: EngineContext, state: RuntimeState, cfg: GameConfig) -> None:
-    if state.game_over or state.board.is_game_over():
+    if state.board.is_game_over():
         link.sendtoboard("hint_gameover")
         display.send("Game Over\nNo hints\nPress n to start over")
         return
@@ -111,19 +110,10 @@ def send_hint_to_board(link: BoardLink, display: Display, ctx: EngineContext, st
 def side_name_from_board(brd: chess.Board) -> str:
     return "WHITE" if brd.turn == chess.WHITE else "BLACK"
 
-def report_game_over(link: BoardLink, display: Display, state: RuntimeState) -> str:
-    if state.game_over:
-        return state.board.result(claim_draw=True)
-
-    state.game_over = True
-
-    result = state.board.result(claim_draw=True)
+def report_game_over(link: BoardLink, display: Display, brd: chess.Board) -> str:
+    result = brd.result(claim_draw=True)
     winner = winner_text_from_result(result)
-
-    # Tell Pico to latch GAME_OVER LEDs
-    link.sendtoboard("LED_MODE_GAMEOVER")
     link.sendtoboard(f"GameOver:{result}")
-
     display.send(f"GAME OVER\n{winner}\nStart new game?")
     return result
 
@@ -243,33 +233,30 @@ def ui_engine_thinking(display: Display):
     display.send("Engine Thinking...")
 
 def handoff_next_turn(link: BoardLink, display: Display, brd: chess.Board, mode: str, cfg: GameConfig, last_uci: str):
-    if brd.is_game_over():
-        return
-    
     print(brd)
+
     link.sendtoboard(f"turn_{'white' if brd.turn == chess.WHITE else 'black'}")
     display.show_arrow(last_uci, suffix=f"{'WHITE' if brd.turn == chess.WHITE else 'BLACK'} to move")
 
 
 def engine_move_and_send(link: BoardLink, display: Display, ctx: EngineContext, state: RuntimeState, cfg: GameConfig):
-    if state.game_over:
-        return
-
     reply = engine_bestmove(ctx, state.board, cfg.move_time_ms)
     if reply is None:
         return
-
     state.board.push_uci(reply)
     link.sendtoboard(f"m{reply}")
 
     if state.board.is_game_over():
-        report_game_over(link, display, state)
+        _res = report_game_over(link, display, state.board)
         while True:
             msg2 = link.getboard()
+            if msg2 is None:
+                continue
             if msg2 in ("n", "new", "in", "newgame", "btn_new"):
                 raise GoToModeSelect()
-            if msg2 is None or msg2.startswith("typing_") or msg2 in ("hint", "btn_hint"):
+            if msg2.startswith("typing_") or msg2 in ("hint", "btn_hint"):
                 continue
+        # no handoff needed because game ended
     else:
         handoff_next_turn(link, display, state.board, state.mode, cfg, reply)
 
@@ -315,7 +302,6 @@ def handle_typing_preview(display: Display, payload: str) -> None:
 def play_game(link: BoardLink, display: Display, ctx: EngineContext, state: RuntimeState, cfg: GameConfig) -> None:
     # Reset and banner
     state.board = chess.Board()
-    state.game_over = False
     link.sendtoboard("GameStart")
     ui_new_game_banner(display)
     time.sleep(0.3)
@@ -365,11 +351,6 @@ def play_game(link: BoardLink, display: Display, ctx: EngineContext, state: Runt
         if msg == "shutdown":
             shutdown_pi(link, display)
             return
-        
-        if state.game_over:
-            if msg in ("n", "new", "in", "newgame", "btn_new"):
-                raise GoToModeSelect()
-            continue
 
         # 4) Also handle typing previews in the blocking path (to be consistent)
         if msg.startswith("typing_"):
@@ -441,7 +422,7 @@ def play_game(link: BoardLink, display: Display, ctx: EngineContext, state: Runt
 
         # 11) Game over?
         if state.board.is_game_over():
-            report_game_over(link, display, state)
+            _res = report_game_over(link, display, state.board)
             # Wait for Pico to acknowledge by sending 'n' (OK)
             while True:
                 msg2 = link.getboard()
