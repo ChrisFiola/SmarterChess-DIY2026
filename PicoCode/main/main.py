@@ -1187,5 +1187,5 @@ def run():
 # Start firmware
 run()
 
-# Clear board
+# Clear board 
 #board.clear(BLACK)     # uncomment to reset the board

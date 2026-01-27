@@ -19,7 +19,7 @@ from piDisplay import Display
 from piSerial import BoardLink
 from piEngine import EngineContext, engine_bestmove, engine_hint
 
-# -------------------- Data classes --------------------
+# -------------------- Data classes -------------------- 
 
 @dataclass
 class GameConfig:

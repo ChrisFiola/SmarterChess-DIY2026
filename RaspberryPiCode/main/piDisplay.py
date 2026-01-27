@@ -60,7 +60,7 @@ class Display:
             self.send(arrow)
 
     def prompt_move(self, side: str) -> None:
-        # side is human-friendly descriptor: "WHITE" or "BLACK"
+        # side is human-friendly descriptor: "WHITE" or "BLACK" 
         self.send(f"You are {side.lower()}\nEnter move:")
 
     def show_hint_result(self, uci: str) -> None:
