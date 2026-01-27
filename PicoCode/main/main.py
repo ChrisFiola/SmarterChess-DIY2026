@@ -868,8 +868,9 @@ def game_over_wait_ok_and_ack(result_str):
     so the Pi can return to mode select.
     """
     buttons.reset()
-    cp.coord(False); cp.hint(False); cp.ok(True)
+    cp.coord(False); cp.hint(True); cp.ok(True)
     board.show_checkmate_scene_hash()
+    time.sleep_ms(500)
 
     # Optional: blink OK pixel while waiting
     blink = False

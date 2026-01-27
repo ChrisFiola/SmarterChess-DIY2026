@@ -114,7 +114,7 @@ def report_game_over(link: BoardLink, display: Display, brd: chess.Board) -> Non
     result = brd.result(claim_draw=True)
     winner = winner_text_from_result(result)
     link.sendtoboard(f"GameOver:{result}")
-    display.send(f"GAME OVER\n{winner}\nPress OK")
+    display.send(f"GAME OVER\n{winner}\nStart new game?")
     return result
 
 # -------------------- Flow control --------------------
