@@ -350,6 +350,25 @@ def play_game(link: BoardLink, display: Display, ctx: EngineContext, state: Runt
             display.show_invalid(msg)
             continue
 
+        
+        # === PROMOTION PRE-DETECTION ===
+        # If the pawn move ends on rank 8 (white) or rank 1 (black),
+        # and the UCI has no promotion letter, trigger promotion.
+        from_sq = uci[:2]
+        to_sq = uci[2:4]
+
+        if len(uci) == 4:
+            # we need board state BEFORE including this move
+            piece = state.board.piece_at(chess.parse_square(from_sq))
+            if piece and piece.piece_type == chess.PAWN:
+                rank = int(to_sq[1])
+                if (piece.color == chess.WHITE and rank == 8) or \
+                (piece.color == chess.BLACK and rank == 1):
+                    # ask promotion piece BEFORE creating the move
+                    promo = ask_promotion_piece(link, display)
+                    uci = uci + promo
+
+
         # 8) Validate UCI and handle promotion if needed
         try:
             move = chess.Move.from_uci(uci)
