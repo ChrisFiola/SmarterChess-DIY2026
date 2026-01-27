@@ -238,6 +238,10 @@ def engine_move_and_send(link: BoardLink, display: Display, ctx: EngineContext, 
     link.sendtoboard(f"m{reply}")
     handoff_next_turn(link, display, state.board, state.mode, cfg, reply)
 
+    if state.board.is_game_over():
+        report_game_over(link, display, state.board)
+        raise GoToModeSelect()
+
 # -------------------- Typing preview --------------------
 
 def handle_typing_preview(display: Display, payload: str) -> None:
