@@ -1,4 +1,3 @@
-
 # -*- coding: utf-8 -*-
 """
 Display abstraction for SmarterChess (modular version)
