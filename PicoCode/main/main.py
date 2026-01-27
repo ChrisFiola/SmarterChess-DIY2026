@@ -72,6 +72,10 @@ pending_gameover_result = None       # "1-0" | "0-1" | "1/2-1/2" if Pi already t
 buffered_turn_msg = None             # store a turn_* that arrives before we ack the engine move
 
 
+# Was a capture detected for the last previewed move?
+preview_cap_flag = False
+
+
 # ============================================================
 # =============== PERSISTENT OVERLAYS ========================
 # ============================================================
@@ -129,14 +133,14 @@ def _handle_pi_overlay_or_gameover(msg):
         raw = msg[len("heyArduinohint_"):].strip()
         cap = raw.endswith("_cap")
         best = raw[:-4] if cap else raw
-        show_persistent_trail(best, YELLOW, 'hint', end_color=(CYAN if cap else None))
+        show_persistent_trail(best, YELLOW, 'hint', end_color=(MAGENTA if cap else None))
         return "hint"
 
     if msg.startswith("heyArduinom"):
         raw = msg[11:].strip()
         cap = raw.endswith("_cap")
         mv  = raw[:-4] if cap else raw
-        show_persistent_trail(mv, ENGINE_COLOR, 'engine', end_color=(CYAN if cap else None))
+        show_persistent_trail(mv, ENGINE_COLOR, 'engine', end_color=(MAGENTA if cap else None))
         return "engine"
 
     return None
@@ -395,6 +399,29 @@ class Chessboard:
             self.set_square(x, 5, WHITE)
         self.write()
 
+    
+    def show_promotion_scene_p(self):
+        """
+        Fill board MAGENTA and overlay a bold white 'P' glyph (8x8 grid).
+        """
+        # Full MAGENTA background
+        for i in range(self.w * self.h):
+            self.np[i] = MAGENTA
+        self.np.write()
+
+        # Draw 'P' in WHITE (blocky, high-contrast)
+        # Vertical spine
+        self.draw_vline(2, 1, 6, WHITE)   # from y=1 to y=6 inclusive
+        # Top bar
+        self.draw_hline(2, 6, 4, WHITE)   # x=2..5 at y=6
+        # Mid bar (to make the bowl)
+        self.draw_hline(2, 4, 4, WHITE)   # x=2..5 at y=4
+        # Right bowl edge (short vertical)
+        self.draw_vline(5, 5, 2, WHITE)   # x=5, y=5..6
+
+        self.write()
+
+
 
 # ============================================================
 # =============== BUTTONS & INPUT ============================
@@ -499,6 +526,30 @@ def wait_ok_fresh(blink_ok=True):
         time.sleep_ms(15)
 
 
+def probe_capture_with_pi(uci, timeout_ms=150):
+    """
+    Ask the Pi if <uci> would capture in the *current* board state.
+    Returns True/False. Times out quickly to avoid blocking UX.
+    """
+    global preview_cap_flag
+    preview_cap_flag = False
+    # send heypicapq_<uci>
+    send_to_pi("capq_", uci)
+
+    deadline = time.ticks_add(time.ticks_ms(), timeout_ms)
+    while time.ticks_diff(deadline, time.ticks_ms()) > 0:
+        msg = read_from_pi()
+        if not msg:
+            time.sleep_ms(5)
+            continue
+        # expect heyArduinocapr_0 or heyArduinocapr_1
+        if msg.startswith("heyArduinocapr_"):
+            val = msg.split("_", 1)[1].strip()
+            preview_cap_flag = (val.startswith("1"))
+            return preview_cap_flag
+    return False
+
+
 # ============================================================
 # =============== PERSISTENT TRAILS (HINT/ENGINE) ============
 # ============================================================
@@ -515,7 +566,7 @@ def clear_persistent_trail():
 def show_persistent_trail(move_uci, color, trail_type, end_color=None):
     """
     Draw a persistent overlay (latest wins). For engine/hint we allow an end_color
-    (e.g., cyan for capture) — this is *not* the pre-OK user preview.
+    (e.g., MAGENTA for capture) — this is *not* the pre-OK user preview.
     """
     global persistent_trail_active, persistent_trail_type, persistent_trail_move
     persistent_trail_active = True
@@ -595,7 +646,7 @@ def _send_confirm_preview(move):
 # ============================================================
 # Pipeline:
 #   1) enter_from_square: draw FROM preview square (green)
-#   2) enter_to_square:   draw green trail FROM->TO (no cyan, no legality check)
+#   2) enter_to_square:   draw green trail FROM->TO (no MAGENTA, no legality check)
 #   3) confirm_move:      OK triggers Pi validation; illegal => red flash
 #
 # Any newly arriving hint/engine overlay cancels current entry and displays the overlay.
@@ -695,7 +746,7 @@ def enter_from_square(seed_btn=None):
 
 
 def enter_to_square(move_from):
-    """Collect TO: column then row; draw green trail (no cyan, no legality)."""
+    """Collect TO: column then row; draw green trail (no MAGENTA, no legality)."""
     if game_state != GAME_RUNNING:
         return None
 
@@ -773,10 +824,16 @@ def enter_to_square(move_from):
         row = str(b)
         _send_to_preview(move_from, col + row)
 
-    # Draw simple green trail preview (FROM->TO), no cyan/no legality
+    # Draw simple green trail preview (FROM->TO), no MAGENTA/no legality
     to = col + row
+    uci = move_from + to
     board.show_markings()
-    board.draw_trail(move_from + to, GREEN)
+    board.draw_trail(uci, GREEN)
+    
+    # Ask the Pi if this would capture; recolor end square to MAGENTA if yes
+    if probe_capture_with_pi(uci):
+        board.draw_trail(uci, GREEN, end_color=MAGENTA)
+
     return to
 
 
@@ -839,7 +896,7 @@ def confirm_move(move):
 
 def collect_and_send_move():
     """Full user move entry cycle. No pre-OK legality. Simple green preview."""
-    global in_input
+    global in_input, preview_cap_flag
     in_input = True
     try:
         seed = None  # optional seed coord if user cancels with a coord button
@@ -877,11 +934,12 @@ def collect_and_send_move():
                 # Show the trail again in the correct color (GREEN for user)
                 trail_color = _color_for_user_confirm()
                 board.clear(BLACK)  # dark background for clarity
-                board.draw_trail(move, trail_color)
+                board.draw_trail(move, trail_color, end_color=(MAGENTA if preview_cap_flag else None))
 
                 time.sleep_ms(200)
                 send_to_pi(move)  # Pi validates after OK; illegal => will send error
                 # Return to markings; further feedback handled via main_loop on Pi messages
+                preview_cap_flag = False
                 board.show_markings()
                 return
 
@@ -1065,18 +1123,29 @@ def handle_promotion_choice():
     Pi requests promotion choice; we forward btn_<piece> back.
     1=Queen, 2=Rook, 3=Bishop, 4=Knight (as before).
     """
+    # Show the Magenta board with a white 'P'
+    board.show_promotion_scene_p()
+
+    # Turn OK pixel steady ON to indicate "make a selection"
+    cp.ok(True)
     buttons.reset()
-    while True:
-        irq = process_hint_irq()
-        if irq == "new":
-            return
-        b = buttons.detect_press()
-        if not b:
-            time.sleep_ms(5); continue
-        if b == 1: send_to_pi("btn_q"); return
-        if b == 2: send_to_pi("btn_r"); return
-        if b == 3: send_to_pi("btn_b"); return
-        if b == 4: send_to_pi("btn_n"); return
+    try:
+        while True:
+            irq = process_hint_irq()
+            if irq == "new":
+                return
+            b = buttons.detect_press()
+            if not b:
+                time.sleep_ms(5); continue
+            if b == 1: send_to_pi("btn_q"); break
+            if b == 2: send_to_pi("btn_r"); break
+            if b == 3: send_to_pi("btn_b"); break
+            if b == 4: send_to_pi("btn_n"); break
+    finally:
+        # Turn off OK and restore markings after the choice
+        cp.ok(False)
+        board.show_markings()
+
 
 # ============================================================
 # =============== MAIN LOOP ==================================
@@ -1259,10 +1328,9 @@ def main_loop():
             else:
                 mv = raw
 
-            # Draw deep blue trail; cyan end if capture flag provided by Pi
+            # Draw deep blue trail; MAGENTA end if capture flag provided by Pi
             board.clear(BLACK)
-            board.draw_trail(mv, ENGINE_COLOR, end_color=(CYAN if cap else None))
-            show_persistent_trail(mv, ENGINE_COLOR, 'engine', end_color=(CYAN if cap else None))
+            show_persistent_trail(mv, ENGINE_COLOR, 'engine', end_color=(MAGENTA if cap else None))
 
             # --- NEW: require OK to acknowledge engine move before anything else ---
             engine_ack_pending = True
@@ -1287,8 +1355,7 @@ def main_loop():
             else:
                 best = raw
             board.clear(BLACK)
-            board.draw_trail(best, YELLOW, end_color=(CYAN if cap else None))
-            show_persistent_trail(best, YELLOW, 'hint', end_color=(CYAN if cap else None))
+            show_persistent_trail(best, YELLOW, 'hint', end_color=(MAGENTA if cap else None))
 
             cancel_user_input_and_restart()
             continue
