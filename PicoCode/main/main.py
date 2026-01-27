@@ -144,7 +144,7 @@ class Chessboard:
 
         # Precompute checkerboard pattern buffer (LIGHT/DARK) for quick restore
         self._marking_cache = [BLACK]*(w*h)
-        LIGHT = (100,100,120); DARK=(0,0,0)
+        LIGHT = (100,100,100); DARK=(3,3,3)
         for y in range(self.h):
             for x in range(self.w):
                 col = DARK if ((x+y) % 2 == 0) else LIGHT
@@ -1053,7 +1053,7 @@ def main_loop():
         irq = process_hint_irq()
         if irq == "new":
             disable_hint_irq(); cp.hint(False); cp.coord(False)
-            board.show_markings()
+            board.opening_markings()
             continue
 
         msg = read_from_pi()

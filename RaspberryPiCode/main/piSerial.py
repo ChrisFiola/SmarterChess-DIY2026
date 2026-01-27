@@ -23,11 +23,11 @@ class BoardLink:
 
     # Writes
     def send_raw(self, text: str) -> None:
-        self.ser.write(text.encode("utf-8") + b"")
+        self.ser.write(text.encode("utf-8") + b"\n")
 
     def sendtoboard(self, text: str) -> None:
         payload = "heyArduino" + text
-        self.ser.write(payload.encode("utf-8") + b"")
+        self.ser.write(payload.encode("utf-8") + b"\n")
         print(f"[-→Board] {payload}")
 
     # Reads
