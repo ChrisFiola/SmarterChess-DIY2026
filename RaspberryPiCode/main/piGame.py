@@ -234,6 +234,7 @@ def ui_engine_thinking(display: Display):
 
 def handoff_next_turn(link: BoardLink, display: Display, brd: chess.Board, mode: str, cfg: GameConfig, last_uci: str):
     print(brd)
+
     link.sendtoboard(f"turn_{'white' if brd.turn == chess.WHITE else 'black'}")
     display.show_arrow(last_uci, suffix=f"{'WHITE' if brd.turn == chess.WHITE else 'BLACK'} to move")
 
@@ -347,21 +348,6 @@ def play_game(link: BoardLink, display: Display, ctx: EngineContext, state: Runt
         if msg is None:
             # serial timeout; loop to allow engine step or previews again
             continue
-
-        if state.board.is_game_over():
-            _res = report_game_over(link, display, state.board)
-            # Wait for Pico to acknowledge by sending 'n' (OK)
-            while True:
-                msg2 = link.getboard()
-                if msg2 is None:
-                    continue
-                if msg2 in ("n", "new", "in", "newgame", "btn_new"):
-                    # Return to mode select
-                    raise GoToModeSelect()
-                # swallow typing/hint during game over
-                if msg2.startswith("typing_") or msg2 in ("hint", "btn_hint"):
-                    continue
-                
         if msg == "shutdown":
             shutdown_pi(link, display)
             return
