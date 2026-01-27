@@ -332,6 +332,30 @@ class Chessboard:
         for x,y in L: self.set_square(x,y,MAGENTA)
         self.write()
 
+    def show_checkmate_scene_hash(self):
+        """
+        Fill board MAGENTA and overlay a bold white '#' sign.
+        On 8x8:
+        - vertical bars at x = 2 and x = 5
+        - horizontal bars at y = 2 and y = 5
+        """
+        # Full MAGENTA
+        for i in range(self.w * self.h):
+            self.np[i] = MAGENTA
+        self.np.write()
+
+        # Draw '#' bars in WHITE
+        # vertical bars
+        for y in range(self.h):
+            self.set_square(2, y, WHITE)
+            self.set_square(5, y, WHITE)
+        # horizontal bars
+        for x in range(self.w):
+            self.set_square(x, 2, WHITE)
+            self.set_square(x, 5, WHITE)
+        self.write()
+
+
 # ============================================================
 # =============== BUTTONS & INPUT ============================
 # ============================================================
@@ -837,6 +861,37 @@ def collect_and_send_move():
     finally:
         in_input = False
 
+def game_over_wait_ok_and_ack(result_str):
+    """
+    Show MAGENTA '#' scene and wait until OK is pressed.
+    Then send 'n' to Pi (same message you use for New Game)
+    so the Pi can return to mode select.
+    """
+    buttons.reset()
+    cp.coord(False); cp.hint(False); cp.ok(True)
+    board.show_checkmate_scene_hash()
+
+    # Optional: blink OK pixel while waiting
+    blink = False
+    last = time.ticks_ms()
+
+    while True:
+        now = time.ticks_ms()
+        if time.ticks_diff(now, last) > 400:
+            blink = not blink
+            cp.ok(blink)
+            last = now
+
+        b = buttons.detect_press()
+        if b == (OK_BUTTON_INDEX + 1):
+            cp.ok(False)
+            send_to_pi("n")  # signal the Pi to return to mode select
+            break
+        time.sleep_ms(20)
+
+    # restore markings after acknowledgment
+    board.show_markings()
+
 # ============================================================
 # =============== SETUP / MODE SELECTION =====================
 # ============================================================
@@ -1004,6 +1059,14 @@ def main_loop():
         msg = read_from_pi()
         if not msg:
             time.sleep_ms(10); continue
+        
+        # GameOver from Pi: "heyArduinoGameOver:<result>"
+        if msg.startswith("heyArduinoGameOver"):
+            res = ""
+            if ":" in msg:
+                res = msg.split(":", 1)[1].strip()
+            game_over_wait_ok_and_ack(res)
+            continue
 
         # Hard reset from Pi
         if msg.startswith("heyArduinoResetBoard"):

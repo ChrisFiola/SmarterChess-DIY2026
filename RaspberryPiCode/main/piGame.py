@@ -112,8 +112,11 @@ def side_name_from_board(brd: chess.Board) -> str:
 
 def report_game_over(link: BoardLink, display: Display, brd: chess.Board) -> None:
     result = brd.result(claim_draw=True)
+    winner = winner_text_from_result(result)
     link.sendtoboard(f"GameOver:{result}")
-    display.show_gameover(result)
+    display.send(f"GAME OVER\n{winner}\nPress OK")
+    return result
+
 # -------------------- Flow control --------------------
 
 class GoToModeSelect(Exception):
@@ -241,11 +244,30 @@ def engine_move_and_send(link: BoardLink, display: Display, ctx: EngineContext, 
         return
     state.board.push_uci(reply)
     link.sendtoboard(f"m{reply}")
-    handoff_next_turn(link, display, state.board, state.mode, cfg, reply)
 
     if state.board.is_game_over():
-        report_game_over(link, display, state.board)
-        raise GoToModeSelect()
+        _res = report_game_over(link, display, state.board)
+        while True:
+            msg2 = link.getboard()
+            if msg2 is None:
+                continue
+            if msg2 in ("n", "new", "in", "newgame", "btn_new"):
+                raise GoToModeSelect()
+            if msg2.startswith("typing_") or msg2 in ("hint", "btn_hint"):
+                continue
+        # no handoff needed because game ended
+    else:
+        handoff_next_turn(link, display, state.board, state.mode, cfg, reply)
+
+
+def winner_text_from_result(res: str) -> str:
+    res = (res or "").strip()
+    if res == "1-0":
+        return "White wins"
+    if res == "0-1":
+        return "Black wins"
+    return "Draw"
+
 
 # -------------------- Typing preview --------------------
 
@@ -400,10 +422,19 @@ def play_game(link: BoardLink, display: Display, ctx: EngineContext, state: Runt
 
         # 11) Game over?
         if state.board.is_game_over():
-            report_game_over(link, display, state.board)
-            # Wait for new game command (back to mode select)
-            # The Pico UX expects user to press 'n' => GoToModeSelect
-            raise GoToModeSelect()
+            _res = report_game_over(link, display, state.board)
+            # Wait for Pico to acknowledge by sending 'n' (OK)
+            while True:
+                msg2 = link.getboard()
+                if msg2 is None:
+                    continue
+                if msg2 in ("n", "new", "in", "newgame", "btn_new"):
+                    # Return to mode select
+                    raise GoToModeSelect()
+                # swallow typing/hint during game over
+                if msg2.startswith("typing_") or msg2 in ("hint", "btn_hint"):
+                    continue
+
 
 # -------------------- Online placeholder --------------------
 
