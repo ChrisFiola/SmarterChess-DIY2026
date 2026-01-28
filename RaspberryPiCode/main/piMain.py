@@ -29,7 +29,15 @@ def main():
     display.restart_server()
     display.wait_ready()
 
+    # Splash + engine pre-warm before we open UART / ask for mode
+    display.banner("SMARTCHESS", delay_s=1.2)   # splash
+    display.send("Engine starting...")          # status line prior to mode select
+
     ctx = EngineContext()
+    # Synchronous pre-warm: blocks until stockfish is ready with your current ensure()
+    # If stockfish may not be installed, consider Option B below.
+    ctx.ensure("/usr/games/stockfish")
+
     link = BoardLink()
     cfg = GameConfig()
     state = RuntimeState(board=chess.Board(), mode="stockfish")
@@ -41,8 +49,7 @@ def main():
             mode_dispatch(link, display, ctx, state, cfg)
         except GoToModeSelect:
             state.board = chess.Board()
-            display.send("SMARTCHESS\nengine starting...")
-            ctx.ensure("/usr/games/stockfish") # Starting engine early 
+            display.send("SMARTCHESS")
             time.sleep(2.5)
             continue
         except KeyboardInterrupt:
