@@ -30,7 +30,6 @@ def main():
     display.wait_ready()
 
     ctx = EngineContext()
-    ctx.ensure("/usr/games/stockfish") # Starting engine early 
     link = BoardLink()
     cfg = GameConfig()
     state = RuntimeState(board=chess.Board(), mode="stockfish")
@@ -42,7 +41,8 @@ def main():
             mode_dispatch(link, display, ctx, state, cfg)
         except GoToModeSelect:
             state.board = chess.Board()
-            display.send("SMARTCHESS")
+            display.send("SMARTCHESS\nengine starting...")
+            ctx.ensure("/usr/games/stockfish") # Starting engine early 
             time.sleep(2.5)
             continue
         except KeyboardInterrupt:
