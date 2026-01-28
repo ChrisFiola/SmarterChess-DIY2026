@@ -12,6 +12,7 @@ from typing import Optional
 PIPE_PATH: str = "/run/smartchess/lcdpipe"
 READY_FLAG_PATH: str = "/run/smartchess/display_server_ready"
 DISPLAY_SERVER_SCRIPT: str = "/home/king/SmarterChess-DIY2026/RaspberryPiCode/display_server.py"
+
 class Display:
     """
     Minimal abstraction around display_server IPC.
