@@ -997,7 +997,7 @@ def wait_for_mode_request():
     lit = 0
     while True:
         lit = board.loading_status(lit)
-        time.sleep_ms(1000)
+        time.sleep_ms(2000)             # 2 seconds per LED
         msg = read_from_pi()
         if not msg:
             continue
