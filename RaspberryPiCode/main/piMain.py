@@ -23,15 +23,12 @@ from piEngine import EngineContext
 from piGame import GameConfig, RuntimeState, select_mode, mode_dispatch, GoToModeSelect
 import chess  # type: ignore
 
-from systemd.daemon import notify
+
 
 def main():
     display = Display()
     display.restart_server()
     display.wait_ready()
-
-    # Notify systemd that service is ready
-    notify("READY=1")
 
     # Splash + engine pre-warm before we open UART / ask for mode
     display.banner("SMARTCHESS", delay_s=1.2)   # splash
