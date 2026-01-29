@@ -11,7 +11,7 @@ from typing import Optional
 
 PIPE_PATH: str = "/tmp/lcdpipe"
 READY_FLAG_PATH: str = "/tmp/display_server_ready"
-DISPLAY_SERVER_SCRIPT: str = "/home/king/SmarterChess-DIY2026/RaspberryPiCode/display/display_server.py"
+DISPLAY_SERVER_SCRIPT: str = "/home/king/SmarterChess-DIY2026/RaspberryPiCode/screen/display_server.py"
 
 class Display:
     """
