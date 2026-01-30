@@ -64,7 +64,25 @@ class Display:
         self.send(f"You are {side.lower()}\nEnter move:")
 
     def show_hint_result(self, uci: str) -> None:
-        self.show_arrow(uci)
+        """
+        Show hint in the format:
+        Hint received: e2 → e4
+        Falls back gracefully if UCI is shorter than 4.
+        """
+        try:
+            frm, to = uci[:2], uci[2:4]
+            if len(uci) >= 4:
+                self.send(f"Hint received: {frm} → {to}")
+            else:
+                # Fallback: just show whatever we received
+                self.send(f"Hint received: {uci}")
+        except Exception:
+            self.send(f"Hint received: {uci}")
+
+    '''
+        def show_hint_result(self, uci: str) -> None:
+            self.show_arrow(uci)
+    '''
 
     def show_invalid(self, text: str) -> None:
         self.send(f"Invalid\n{text}\nTry again")

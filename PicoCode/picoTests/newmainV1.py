@@ -1,5 +1,5 @@
 # ============================================================
-#  PICO FIRMWARE (2026)
+#  PICO FIRMWARE (2026) - Control Panel LEDs aligned to Arduino UX
 # ============================================================
 
 from machine import Pin, UART
@@ -93,7 +93,7 @@ persistent_trail_move   = None    # UCI string (e.g., 'e2e4')
 uart = UART(0, baudrate=115200, tx=Pin(0), rx=Pin(1), timeout=10)
 
 def send_to_pi(kind, payload=""):
-    """Send: heypi<kind><payload>\\n (protocol preserved)."""
+    """Send: heypi<kind><payload>\n (protocol preserved)."""
     uart.write(f"heypi{kind}{payload}\n".encode())
 
 def read_from_pi():
@@ -500,6 +500,17 @@ def hard_reset_board():
     disable_hint_irq(); buttons.reset()
     cp.fill(BLACK); board.clear(BLACK); board.show_markings()
 
+# --- Control-panel ambient background (to mimic Arduino setUpGame tail) ---
+def cp_set_ambient(active=True):
+    """
+    Mimic Arduino's controlPanelLED.fill(cpDimWHITE, 6, 16) during game runtime.
+    Keeps indices 6..21 dim white; turn off when active=False.
+    """
+    if active:
+        cp.fill(DIMW, 6, 16)
+    else:
+        cp.fill(BLACK, 6, 16)
+
     
 def wait_ok_fresh(blink_ok=True):
     """
@@ -665,7 +676,6 @@ def enter_from_square(seed_btn=None):
                 if outcome == "gameover":
                     return None
                 # For hint/engine keep showing the freshest overlay; wait for a button
-                # (same behavior you already had)
             b = buttons.detect_press()
             if not b:
                 time.sleep_ms(5); continue
@@ -759,7 +769,6 @@ def enter_to_square(move_from):
                 if outcome == "gameover":
                     return None
                 # For hint/engine keep showing the freshest overlay; wait for a button
-                # (same behavior you already had)
             b = buttons.detect_press()
             if not b:
                 time.sleep_ms(5); continue
@@ -856,7 +865,7 @@ def confirm_move(move):
     if game_state != GAME_RUNNING:
         return None
 
-    cp.coord(False); cp.ok(True)
+    cp.coord(False); cp.ok(True); cp.hint(False)  # Arduino: hint off during confirm
     buttons.reset()
     _send_confirm_preview(move)
 
@@ -931,6 +940,9 @@ def collect_and_send_move():
                 return
 
             if res == 'ok':
+                # Arduino: once OK'ed, switch off the OK, hint and coordinates lights in 0..5
+                cp.fill(BLACK, 0, 6)
+
                 # Show the trail again in the correct color (GREEN for user)
                 trail_color = _color_for_user_confirm()
                 board.clear(BLACK)  # dark background for clarity
@@ -1109,6 +1121,7 @@ def wait_for_setup():
             if msg.startswith("heyArduinoSetupComplete"):
                 game_state = GAME_RUNNING
                 in_setup = False
+                cp_set_ambient(True)        # Arduino-like: dim indices 6..21 during game runtime
                 board.show_markings()
                 return
     finally:
@@ -1332,7 +1345,11 @@ def main_loop():
             board.clear(BLACK)
             show_persistent_trail(mv, ENGINE_COLOR, 'engine', end_color=(MAGENTA if cap else None))
 
-            # --- NEW: require OK to acknowledge engine move before anything else ---
+            # Arduino-like Hint indicator: hint pixel ON (white) after engine move (Stockfish mode)
+            if game_mode != MODE_ONLINE:
+                cp.hint(True, WHITE)
+
+            # --- acknowledgement flow kept as in your firmware ---
             engine_ack_pending = True
             pending_gameover_result = None
             buffered_turn_msg = None
@@ -1354,8 +1371,17 @@ def main_loop():
                 best = raw[:-4]; cap = True
             else:
                 best = raw
+
+            # Draw the hint overlay persistently (board side)
             board.clear(BLACK)
             show_persistent_trail(best, YELLOW, 'hint', end_color=(MAGENTA if cap else None))
+
+            # Arduino-like CP behavior: coords OFF, hint BLUE briefly, then hint WHITE & coords ON
+            cp.fill(BLACK, 0, 4)     # coords off
+            cp.hint(True, BLUE)      # hint blue while showing
+            time.sleep_ms(150)
+            cp.hint(True, WHITE)     # hint stays white after
+            cp.coord(True)           # coords back on for next input
 
             cancel_user_input_and_restart()
             continue
@@ -1417,7 +1443,6 @@ def run():
         main_loop()
 
 # Start firmware
-
 run()
 
 # Clear board 

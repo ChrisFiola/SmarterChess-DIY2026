@@ -1,5 +1,5 @@
 # ============================================================
-#  PICO FIRMWARE (2026)
+#  PICO FIRMWARE (2026) - Control Panel LEDs per requested UX
 # ============================================================
 
 from machine import Pin, UART
@@ -39,6 +39,9 @@ ENGINE_COLOR = BLUE  # Deep blue for computer moves
 CP_COORD_START = 0
 CP_OK_PIX      = 4
 CP_HINT_PIX    = 5
+
+# Choice-lane base: where we "draw" buttons 1..N (N in [3,4,8]) on CP LEDs
+CP_CHOICE_BASE = 6  # Button k -> LED index CP_CHOICE_BASE + (k-1)
 
 # ============================================================
 # =============== STATE & MODES ===============================
@@ -93,7 +96,7 @@ persistent_trail_move   = None    # UCI string (e.g., 'e2e4')
 uart = UART(0, baudrate=115200, tx=Pin(0), rx=Pin(1), timeout=10)
 
 def send_to_pi(kind, payload=""):
-    """Send: heypi<kind><payload>\\n (protocol preserved)."""
+    """Send: heypi<kind><payload>\n (protocol preserved)."""
     uart.write(f"heypi{kind}{payload}\n".encode())
 
 def read_from_pi():
@@ -172,10 +175,12 @@ class ControlPanel:
         self.fill(WHITE if on else BLACK, CP_COORD_START, 4)
 
     def ok(self, on=True):
-        self.set(CP_OK_PIX, WHITE if on else BLACK)
+        # OK must be GREEN when on
+        self.set(CP_OK_PIX, GREEN if on else BLACK)
 
-    def hint(self, on=True, color=WHITE):
-        self.set(CP_HINT_PIX, color if on else BLACK)
+    def hint(self, on=True, color=YELLOW):
+        # Hint must be YELLOW when on (unless explicitly overridden)
+        self.set(CP_HINT_PIX, (color if on else BLACK))
 
 
 class Chessboard:
@@ -383,42 +388,33 @@ class Chessboard:
         - vertical bars at x = 2 and x = 5
         - horizontal bars at y = 2 and y = 5
         """
-        # Full MAGENTA
+        # Full MAGENTA (kept your original color override to GREEN for visibility)
         for i in range(self.w * self.h):
             self.np[i] = GREEN
         self.np.write()
 
         # Draw '#' bars in WHITE
-        # vertical bars
         for y in range(self.h):
             self.set_square(2, y, WHITE)
             self.set_square(5, y, WHITE)
-        # horizontal bars
         for x in range(self.w):
             self.set_square(x, 2, WHITE)
             self.set_square(x, 5, WHITE)
         self.write()
 
-    
     def show_promotion_scene_p(self):
         """
         Fill board MAGENTA and overlay a bold white 'P' glyph (8x8 grid).
         """
-        # Full MAGENTA background
         for i in range(self.w * self.h):
             self.np[i] = MAGENTA
         self.np.write()
 
-        # Draw 'P' in WHITE (blocky, high-contrast)
-        # Vertical spine
-        self.draw_vline(2, 1, 6, WHITE)   # from y=1 to y=6 inclusive
-        # Top bar
-        self.draw_hline(2, 6, 4, WHITE)   # x=2..5 at y=6
-        # Mid bar (to make the bowl)
-        self.draw_hline(2, 4, 4, WHITE)   # x=2..5 at y=4
-        # Right bowl edge (short vertical)
-        self.draw_vline(5, 5, 2, WHITE)   # x=5, y=5..6
-
+        # Draw 'P' in WHITE (blocky)
+        self.draw_vline(2, 1, 6, WHITE)
+        self.draw_hline(2, 6, 4, WHITE)
+        self.draw_hline(2, 4, 4, WHITE)
+        self.draw_vline(5, 5, 2, WHITE)
         self.write()
 
 
@@ -485,6 +481,43 @@ def enable_hint_irq():
 BTN_HINT.irq(trigger=Pin.IRQ_FALLING, handler=hint_irq)
 
 # ============================================================
+# =============== CP LED HELPERS (ONLY/CHOICES) ==============
+# ============================================================
+
+def cp_all_off():
+    cp.fill(BLACK)
+
+def cp_only_ok(on=True):
+    """Turn everything off, then OK GREEN if on=True."""
+    cp_all_off()
+    cp.ok(on)
+
+def cp_only_hint_and_coords_for_input():
+    """
+    For user's move entry:
+      - coords ON (0..3, white)
+      - hint ON (YELLOW)
+      - OK OFF
+      - everything else OFF
+    """
+    cp_all_off()
+    cp.coord(True)
+    cp.hint(True, YELLOW)
+    # OK remains off
+
+def cp_show_choice_range(btn_start, btn_end, color):
+    """
+    Light only the "buttons" in [btn_start..btn_end] on the CP choice-lane.
+    Button k -> LED index CP_CHOICE_BASE + (k-1).
+    All other CP LEDs are off.
+    """
+    cp_all_off()
+    for k in range(btn_start, btn_end + 1):
+        idx = CP_CHOICE_BASE + (k - 1)
+        if 0 <= idx < CONTROL_PANEL_LED_COUNT:
+            cp.set(idx, color)
+
+# ============================================================
 # =============== HELPERS & RESET ============================
 # ============================================================
 
@@ -498,7 +531,7 @@ def hard_reset_board():
     in_input=False; in_setup=False
     persistent_trail_active=False; persistent_trail_type=None; persistent_trail_move=None
     disable_hint_irq(); buttons.reset()
-    cp.fill(BLACK); board.clear(BLACK); board.show_markings()
+    cp_all_off(); board.clear(BLACK); board.show_markings()
 
     
 def wait_ok_fresh(blink_ok=True):
@@ -508,9 +541,8 @@ def wait_ok_fresh(blink_ok=True):
      - small guard
      - then wait for a new press
     """
-    # show OK pixel if asked
     if blink_ok:
-        cp.ok(True)
+        cp_only_ok(True)  # show OK (GREEN), others off
     # require release first
     while BTN_OK.value() == 0:
         time.sleep_ms(10)
@@ -521,7 +553,7 @@ def wait_ok_fresh(blink_ok=True):
     while True:
         b = buttons.detect_press()
         if b == (OK_BUTTON_INDEX + 1):
-            cp.ok(False)
+            cp_only_ok(False)
             return
         time.sleep_ms(15)
 
@@ -560,7 +592,7 @@ def clear_persistent_trail():
     persistent_trail_active = False
     persistent_trail_type   = None
     persistent_trail_move   = None
-    cp.hint(False)
+    # do not touch CP LEDs here (callers decide)
     board.show_markings()
 
 def show_persistent_trail(move_uci, color, trail_type, end_color=None):
@@ -574,8 +606,6 @@ def show_persistent_trail(move_uci, color, trail_type, end_color=None):
     persistent_trail_move   = move_uci
     board.clear(BLACK)
     board.draw_trail(move_uci, color, end_color=end_color)
-    if trail_type == 'hint':
-        cp.hint(True, WHITE)
 
 def cancel_user_input_and_restart():
     """
@@ -583,7 +613,7 @@ def cancel_user_input_and_restart():
     Used when a newer hint/engine trail arrives mid-entry.
     """
     buttons.reset()
-    cp.coord(True); cp.ok(False)    # keep overlay on board; do not reset markings here.
+    # CP LEDs are controlled by callers to enforce "only" rules.
 
 # ============================================================
 # =============== HINT / NEW GAME PROCESSOR ==================
@@ -607,7 +637,8 @@ def process_hint_irq():
     if BTN_OK.value() == 0:
         game_state = GAME_SETUP
         send_to_pi("n")
-        cp.hint(False); cp.fill(WHITE, 0, 5)
+        # Immediately show "choose mode" availability (1..3 only)
+        cp_show_choice_range(1, 3, WHITE)
         v = 0
         board.clear(BLACK)
         while v < (board.w * board.h):
@@ -622,8 +653,7 @@ def process_hint_irq():
     if game_state != GAME_RUNNING:
         return None
 
-    # Blink hint pixel and signal Pi
-    cp.hint(True, BLUE); time.sleep_ms(100); cp.hint(True, WHITE)
+    # Forward hint request to Pi; no special CP state here (hint will arrive via UART)
     send_to_pi("btn_hint")
     return "hint"
 
@@ -644,12 +674,6 @@ def _send_confirm_preview(move):
 # ============================================================
 # =============== MOVE ENTRY (NO PRE-OK CHECK) ===============
 # ============================================================
-# Pipeline:
-#   1) enter_from_square: draw FROM preview square (green)
-#   2) enter_to_square:   draw green trail FROM->TO (no MAGENTA, no legality check)
-#   3) confirm_move:      OK triggers Pi validation; illegal => red flash
-#
-# Any newly arriving hint/engine overlay cancels current entry and displays the overlay.
 
 def enter_from_square(seed_btn=None):
     """Collect FROM: column then row. If overlay active, clear on first press."""
@@ -664,8 +688,6 @@ def enter_from_square(seed_btn=None):
                 outcome = _handle_pi_overlay_or_gameover(msg)
                 if outcome == "gameover":
                     return None
-                # For hint/engine keep showing the freshest overlay; wait for a button
-                # (same behavior you already had)
             b = buttons.detect_press()
             if not b:
                 time.sleep_ms(5); continue
@@ -674,9 +696,8 @@ def enter_from_square(seed_btn=None):
                 seed_btn = b
             break
 
-        cp.coord(True); cp.ok(False); cp.hint(False)
+        cp_only_hint_and_coords_for_input()
         buttons.reset()
-
 
     # Column
     col=None; row=None
@@ -758,8 +779,6 @@ def enter_to_square(move_from):
                 outcome = _handle_pi_overlay_or_gameover(msg)
                 if outcome == "gameover":
                     return None
-                # For hint/engine keep showing the freshest overlay; wait for a button
-                # (same behavior you already had)
             b = buttons.detect_press()
             if not b:
                 time.sleep_ms(5); continue
@@ -768,9 +787,8 @@ def enter_to_square(move_from):
                 seed_btn = b
             break
 
-        cp.coord(True); cp.ok(False); cp.hint(False)
+        cp_only_hint_and_coords_for_input()
         buttons.reset()
-
 
     col=None; row=None
 
@@ -838,14 +856,7 @@ def enter_to_square(move_from):
 
 
 def _color_for_user_confirm():
-    """
-    Trail color after OK for user move:
-      - Local mode: always GREEN (white/black users)
-      - PC mode: user's move GREEN
-    """
-    if game_mode == MODE_LOCAL:
-        return GREEN
-    return GREEN
+    return GREEN  # user move preview color after OK
 
 
 def confirm_move(move):
@@ -856,18 +867,19 @@ def confirm_move(move):
     if game_state != GAME_RUNNING:
         return None
 
-    cp.coord(False); cp.ok(True)
+    # Only OK (GREEN) during confirm
+    cp_only_ok(True)
     buttons.reset()
     _send_confirm_preview(move)
 
     while True:
         if game_state != GAME_RUNNING:
-            cp.ok(False)
+            cp_only_ok(False)
             return None
 
         irq = process_hint_irq()
         if irq == "new":
-            cp.ok(False)
+            cp_only_ok(False)
             return None
 
         # New overlay cancels confirm
@@ -875,7 +887,7 @@ def confirm_move(move):
         if msg:
             outcome = _handle_pi_overlay_or_gameover(msg)
             if outcome == "gameover":
-                cp.ok(False)
+                cp_only_ok(False)
                 return None
             if outcome in ("hint", "engine"):
                 cancel_user_input_and_restart()
@@ -886,11 +898,11 @@ def confirm_move(move):
             time.sleep_ms(5); continue
 
         if b == (OK_BUTTON_INDEX+1):  # OK
-            cp.ok(False)
+            cp_only_ok(False)
             return "ok"
         else:
             # Cancel confirm; allow FROM seed if coord button
-            cp.ok(False)
+            cp_only_ok(False)
             board.show_markings()
             return ("redo", b)
 
@@ -901,13 +913,13 @@ def collect_and_send_move():
     try:
         seed = None  # optional seed coord if user cancels with a coord button
         while True:
-            cp.coord(True); cp.hint(False); cp.ok(False)
+            # For user's move input: coords + hint(YELLOW) only
+            cp_only_hint_and_coords_for_input()
             buttons.reset()
 
             move_from = enter_from_square(seed_btn=seed)
             if move_from is None:
                 if persistent_trail_active:
-                    # Interrupted by hint/engine; restart fresh
                     seed = None
                     continue
                 return
@@ -931,14 +943,16 @@ def collect_and_send_move():
                 return
 
             if res == 'ok':
-                # Show the trail again in the correct color (GREEN for user)
+                # After OK is pressed, all CP LEDs off (clean state)
+                cp_all_off()
+
+                # Show the trail again in GREEN (MAGENTA end if capture previewed)
                 trail_color = _color_for_user_confirm()
-                board.clear(BLACK)  # dark background for clarity
+                board.clear(BLACK)
                 board.draw_trail(move, trail_color, end_color=(MAGENTA if preview_cap_flag else None))
 
                 time.sleep_ms(200)
                 send_to_pi(move)  # Pi validates after OK; illegal => will send error
-                # Return to markings; further feedback handled via main_loop on Pi messages
                 preview_cap_flag = False
                 board.show_markings()
                 return
@@ -947,7 +961,8 @@ def collect_and_send_move():
             if isinstance(res, tuple) and res[0] == 'redo':
                 cancel_btn = res[1]
                 seed = cancel_btn if (1 <= cancel_btn <= 8) else None
-                cp.coord(True)
+                # Back to input state display
+                cp_only_hint_and_coords_for_input()
                 continue
     finally:
         in_input = False
@@ -957,7 +972,8 @@ def game_over_wait_ok_and_ack(result_str):
     disable_hint_irq()
     try:
         buttons.reset()
-        cp.coord(False); cp.hint(True); cp.ok(True)
+        # Game over: ONLY OK blinks (GREEN)
+        cp_only_ok(True)
         board.show_checkmate_scene_hash()
 
         # Wait for OK to be released, then a small guard to avoid bounce
@@ -972,12 +988,14 @@ def game_over_wait_ok_and_ack(result_str):
             now = time.ticks_ms()
             if time.ticks_diff(now, last) > 400:
                 blink = not blink
+                # Keep "only OK" while blinking
+                cp_all_off()
                 cp.ok(blink)
                 last = now
 
             b = buttons.detect_press()
             if b == (OK_BUTTON_INDEX + 1):
-                cp.ok(False)
+                cp_only_ok(False)
                 send_to_pi("n")  # back to mode select on Pi
                 break
             time.sleep_ms(20)
@@ -1007,8 +1025,9 @@ def wait_for_mode_request():
             while lit < (board.w * board.h):
                 lit = board.loading_status(lit)
                 time.sleep_ms(15)
-            cp.fill(WHITE, 0, 5)
             board.show_markings()
+            # CP: ONLY buttons 1..3 lit for mode selection
+            cp_show_choice_range(1, 3, WHITE)
             # enter SETUP state
             global game_state
             game_state = GAME_SETUP
@@ -1086,6 +1105,8 @@ def wait_for_setup():
                 continue
 
             if msg.startswith("heyArduinoEngineStrength"):
+                # CP: show only buttons 1..8 (WHITE)
+                cp_show_choice_range(1, 8, WHITE)
                 board.show_strength_prompt()
                 v = select_strength_singlepress(default_strength)
                 send_to_pi(str(v))
@@ -1094,6 +1115,8 @@ def wait_for_setup():
                 return
 
             if msg.startswith("heyArduinoTimeControl"):
+                # CP: show only buttons 1..8 (WHITE)
+                cp_show_choice_range(1, 8, WHITE)
                 board.show_time_prompt()
                 v = select_time_singlepress(default_move_time)
                 send_to_pi(str(v))
@@ -1102,6 +1125,8 @@ def wait_for_setup():
                 return
 
             if msg.startswith("heyArduinoPlayerColor"):
+                # CP: show only buttons 1..3 (WHITE)
+                cp_show_choice_range(1, 3, WHITE)
                 select_color_choice()
                 board.show_markings()
                 return
@@ -1109,6 +1134,7 @@ def wait_for_setup():
             if msg.startswith("heyArduinoSetupComplete"):
                 game_state = GAME_RUNNING
                 in_setup = False
+                cp_all_off()  # clean CP at end of setup
                 board.show_markings()
                 return
     finally:
@@ -1121,13 +1147,15 @@ def wait_for_setup():
 def handle_promotion_choice():
     """
     Pi requests promotion choice; we forward btn_<piece> back.
-    1=Queen, 2=Rook, 3=Bishop, 4=Knight (as before).
+    1=Queen, 2=Rook, 3=Bishop, 4=Knight.
+    CP: Only buttons 1..4 lit in MAGENTA; OK/HINT off.
     """
-    # Show the Magenta board with a white 'P'
+    # Board side: show P scene
     board.show_promotion_scene_p()
 
-    # Turn OK pixel steady ON to indicate "make a selection"
-    cp.ok(True)
+    # CP: only 1..4 lit in MAGENTA
+    cp_show_choice_range(1, 4, MAGENTA)
+
     buttons.reset()
     try:
         while True:
@@ -1142,8 +1170,8 @@ def handle_promotion_choice():
             if b == 3: send_to_pi("btn_b"); break
             if b == 4: send_to_pi("btn_n"); break
     finally:
-        # Turn off OK and restore markings after the choice
-        cp.ok(False)
+        # Clear CP and restore markings after the choice
+        cp_all_off()
         board.show_markings()
 
 
@@ -1158,7 +1186,8 @@ def main_loop():
         # Consume any hint/new-game IRQ
         irq = process_hint_irq()
         if irq == "new":
-            disable_hint_irq(); cp.hint(False); cp.coord(False)
+            disable_hint_irq()
+            cp_all_off()
             board.opening_markings()
             engine_ack_pending = False
             pending_gameover_result = None
@@ -1175,7 +1204,6 @@ def main_loop():
             if nxt and nxt.startswith("heyArduinoGameOver"):
                 pending_gameover_result = nxt.split(":", 1)[1].strip() if ":" in nxt else ""
                 # Require a fresh OK to acknowledge engine move before showing GameOver
-                # (rely on the helper you added earlier if you prefer; inline here for clarity)
                 while BTN_OK.value() == 0:
                     time.sleep_ms(10)
                 time.sleep_ms(180)
@@ -1184,12 +1212,11 @@ def main_loop():
                 while True:
                     b = buttons.detect_press()
                     if b == (OK_BUTTON_INDEX + 1):
-                        cp.ok(False)
+                        cp_only_ok(False)
                         break
                     time.sleep_ms(15)
 
                 engine_ack_pending = False
-                # Now show Game Over animation and wait for OK to send 'n'
                 game_over_wait_ok_and_ack(pending_gameover_result)
                 pending_gameover_result = None
                 buffered_turn_msg = None
@@ -1199,18 +1226,16 @@ def main_loop():
             if nxt and nxt.startswith("heyArduinoturn_"):
                 buffered_turn_msg = nxt
                 # keep waiting for OK; do not start input yet
-                # (intentionally no continue here; we still check OK below)
 
             # Check OK press to acknowledge engine move
             b = buttons.detect_press()
             if b == (OK_BUTTON_INDEX + 1):
                 engine_ack_pending = False
-                cp.ok(False)
+                cp_only_ok(False)
                 
                 # CLEAR the engine overlay so the next coordinate press isn't consumed
                 clear_persistent_trail()
                 board.show_markings()
-                cp.coord(True)
 
                 # If a turn_* was buffered (normal case when no GameOver), process it now
                 if buffered_turn_msg:
@@ -1220,7 +1245,9 @@ def main_loop():
                     elif 'b' in turn_str:
                         current_turn = 'B'
                     buffered_turn_msg = None
-                    # Start collecting the human move
+
+                # Start collecting the human move
+                cp_only_hint_and_coords_for_input()
                 collect_and_send_move()
                 continue
 
@@ -1237,37 +1264,26 @@ def main_loop():
         
         # --- If we're waiting for engine-move acknowledgement, prioritize that flow --- 
         if engine_ack_pending:
-            # 1) GameOver arrived -> acknowledge engine move (fresh OK), then show GameOver
             if msg.startswith("heyArduinoGameOver"):
                 res = msg.split(":", 1)[1].strip() if ":" in msg else ""
                 pending_gameover_result = res
                 # Wait for user's OK to acknowledge engine move
                 wait_ok_fresh(blink_ok=True)
-                # Engine move is acknowledged; clear state
                 engine_ack_pending = False
-                cp.ok(False)
-
-                # Now show Game Over animation and wait for OK to send 'n'
+                cp_only_ok(False)
                 game_over_wait_ok_and_ack(pending_gameover_result)
                 pending_gameover_result = None
                 buffered_turn_msg = None
                 continue
 
-            # 2) Turn notification arrived -> buffer it; we'll process after OK
             if msg.startswith("heyArduinoturn_"):
                 buffered_turn_msg = msg
-                # Still waiting for OK; do not start input yet
                 continue
 
-            # 3) Other messages (hints, engine overlays, typing previews, etc.) can be ignored or handled;
-            #    safest is to ignore during this brief waiting period.
-            # Now check if the user pressed OK to acknowledge the engine move
             btn = buttons.detect_press()
             if btn == (OK_BUTTON_INDEX + 1):
-                # Engine move acknowledged
                 engine_ack_pending = False
-                cp.ok(False)
-                # If a turn_* was buffered (normal case when no GameOver), process it now
+                cp_only_ok(False)
                 if buffered_turn_msg:
                     turn_str = buffered_turn_msg.split("_", 1)[1].strip().lower()
                     if 'w' in turn_str:
@@ -1275,15 +1291,13 @@ def main_loop():
                     elif 'b' in turn_str:
                         current_turn = 'B'
                     buffered_turn_msg = None
-                    # Start collecting the human move
+                    cp_only_hint_and_coords_for_input()
                     collect_and_send_move()
                     continue
                 else:
-                    # No turn_* (rare) – just go back to markings; next message will drive the flow
                     board.show_markings()
                     continue
 
-            # No OK yet; keep waiting
             time.sleep_ms(10)
             continue
 
@@ -1304,7 +1318,8 @@ def main_loop():
         # Mode selection (Pi triggers it)
         if msg.startswith("heyArduinoChooseMode"):
             disable_hint_irq(); buttons.reset()
-            cp.hint(False); board.show_markings(); cp.fill(WHITE,0,5)
+            board.show_markings()
+            cp_show_choice_range(1, 3, WHITE)  # only 1..3 lit
             global game_state
             game_state = GAME_SETUP
             select_game_mode()
@@ -1318,7 +1333,6 @@ def main_loop():
             continue
 
         # Computer/engine move (with optional _cap)
-
         if msg.startswith("heyArduinom"):
             raw = msg[11:].strip()
             cap = False
@@ -1332,14 +1346,14 @@ def main_loop():
             board.clear(BLACK)
             show_persistent_trail(mv, ENGINE_COLOR, 'engine', end_color=(MAGENTA if cap else None))
 
-            # --- NEW: require OK to acknowledge engine move before anything else ---
+            # ONLY OK (GREEN) must light when a move is received
+            cp_only_ok(True)
+
+            # Acknowledgement flow (unchanged)
             engine_ack_pending = True
             pending_gameover_result = None
             buffered_turn_msg = None
-            cp.ok(True)  # indicate "press OK to continue"
-            # Do NOT call collect_and_send_move() here; we wait for OK or GameOver.
             continue
-
 
         # Promotion request from Pi
         if msg.startswith("heyArduinopromotion_choice_needed"):
@@ -1354,8 +1368,13 @@ def main_loop():
                 best = raw[:-4]; cap = True
             else:
                 best = raw
+
+            # Board overlay persists (visual hint)
             board.clear(BLACK)
             show_persistent_trail(best, YELLOW, 'hint', end_color=(MAGENTA if cap else None))
+
+            # When a hint is received, ONLY OK lights (GREEN)
+            cp_only_ok(True)
 
             cancel_user_input_and_restart()
             continue
@@ -1363,7 +1382,8 @@ def main_loop():
         # Illegal / error from Pi -> full red flash, then prompt same side again
         if msg.startswith("heyArduinoerror"):
             board.illegal_flash(hold_ms=700)
-            cp.coord(True)
+            # After error: back to move input state (coords + hint yellow only)
+            cp_only_hint_and_coords_for_input()
             collect_and_send_move()
             continue
 
@@ -1374,9 +1394,9 @@ def main_loop():
                 current_turn = 'W'
             elif 'b' in turn_str:
                 current_turn = 'B'
-            # --- NEW: quick drain for an immediate GameOver with priority ---
+            # Peek for immediate GameOver
             t_start = time.ticks_ms()
-            while time.ticks_diff(time.ticks_ms(), t_start) < 80:   # ~80ms peek window
+            while time.ticks_diff(time.ticks_ms(), t_start) < 80:
                 nxt = read_from_pi()
                 if not nxt:
                     time.sleep_ms(5)
@@ -1384,10 +1404,10 @@ def main_loop():
                 if nxt.startswith("heyArduinoGameOver"):
                     res = nxt.split(":", 1)[1].strip() if ":" in nxt else ""
                     game_over_wait_ok_and_ack(res)
-                    # Skip collecting input since game ended
                     break
             else:
-                # Only collect input if no GameOver was spotted during the drain
+                # Start collecting the human move; CP state for input:
+                cp_only_hint_and_coords_for_input()
                 collect_and_send_move()
             continue
 
@@ -1398,8 +1418,8 @@ def main_loop():
 
 def run():
     global game_state
-    print("Pico Chess Controller Starting (CLEAN REWRITE)")
-    cp.fill(BLACK); board.clear(BLACK)
+    print("Pico Chess Controller Starting (LED UX Update)")
+    cp_all_off(); board.clear(BLACK)
     buttons.reset()
 
     disable_hint_irq()
@@ -1417,7 +1437,6 @@ def run():
         main_loop()
 
 # Start firmware
-
 run()
 
 # Clear board 
