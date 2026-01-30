@@ -72,12 +72,12 @@ class Display:
         try:
             frm, to = uci[:2], uci[2:4]
             if len(uci) >= 4:
-                self.send(f"Hint received: {frm} → {to}")
+                self.send(f"Hint received:\n{frm} → {to}")
             else:
                 # Fallback: just show whatever we received
-                self.send(f"Hint received: {uci}")
+                self.send(f"Hint received:\n{uci}")
         except Exception:
-            self.send(f"Hint received: {uci}")
+            self.send(f"Hint received:\n{uci}")
 
     '''
         def show_hint_result(self, uci: str) -> None:
