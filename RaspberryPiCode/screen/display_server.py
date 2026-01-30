@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 import os, sys, time
 from PIL import Image, ImageDraw, ImageFont
