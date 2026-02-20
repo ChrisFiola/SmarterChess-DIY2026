@@ -2,6 +2,7 @@
 #  PICO FIRMWARE (2026) - Control Panel LEDs per requested UX
 #  + Centralized Chessboard UI (ChessboardUI)
 #  + DIY illegal animation + coordinate bars lit (6..21 DIM)
+#  + "New Game" guard to ignore stale messages and never send a move
 # ============================================================
 
 from machine import Pin, UART
@@ -42,19 +43,16 @@ CP_COORD_START = 0
 CP_OK_PIX      = 4
 CP_HINT_PIX    = 5
 
-# Choice-lane base (legacy small block behavior)
+# Choice-lane base: where we "draw" buttons 1..N (N in [3,4,8]) on CP LEDs
 CP_CHOICE_BASE = 6  # Button k -> LED index CP_CHOICE_BASE + (k-1)
 
 # ===== Extended coordinate LED mapping (A–H files + 1–8 ranks) =====
-# Default layout for a 22-LED chain:
-#   0..3  = small coord ready block (legacy)
-#   4     = OK (GREEN)
-#   5     = HINT (YELLOW)
-#   6..13 = Files A..H (left-to-right when looking at panel)
-#   14..21= Ranks 1..8  (left-to-right or right-to-left depending on your mounting)
-#
-# If your physical order is reversed, just reverse these lists.
-
+# Chain of 22 LEDs:
+#   0..3  = small coord ready block
+#   4     = OK (GREEN per your UX)
+#   5     = HINT (YELLOW per your UX)
+#   6..13 = Files A..H
+#   14..21= Ranks 1..8
 CP_FILES_LEDS = [6, 7, 8, 9, 10, 11, 12, 13]     # A..H
 CP_RANKS_LEDS = [14, 15, 16, 17, 18, 19, 20, 21] # 1..8
 
@@ -83,26 +81,24 @@ default_move_time  = 2000   # Pi maps 1..8 => 3000..12000
 in_setup = False
 in_input = False
 
-
 # --- Engine move acknowledgement state ---
-engine_ack_pending = False           # waiting for OK to acknowledge engine move?
-pending_gameover_result = None       # "1-0" | "0-1" | "1/2-1/2" if Pi already told us
-buffered_turn_msg = None             # store a turn_* that arrives before we ack the engine move
-
+engine_ack_pending = False
+pending_gameover_result = None
+buffered_turn_msg = None
 
 # Was a capture detected for the last previewed move?
 preview_cap_flag = False
 
+# --- NEW: Guard to ignore stale messages after "New Game" is requested ---
+suspend_until_new_game = False
 
 # ============================================================
 # =============== PERSISTENT OVERLAYS ========================
 # ============================================================
-# We keep a persistent overlay (hint/engine) until the user presses
-# any coordinate or OK. Latest overlay wins.
 
 persistent_trail_active = False
 persistent_trail_type   = None    # 'hint' or 'engine'
-persistent_trail_move   = None    # UCI string (e.g., 'e2e4')
+persistent_trail_move   = None    # e.g., 'e2e4'
 
 # ============================================================
 # =============== UART (Pico <-> Pi) =========================
@@ -111,11 +107,9 @@ persistent_trail_move   = None    # UCI string (e.g., 'e2e4')
 uart = UART(0, baudrate=115200, tx=Pin(0), rx=Pin(1), timeout=10)
 
 def send_to_pi(kind, payload=""):
-    """Send: heypi<kind><payload>\n (protocol preserved)."""
     uart.write(f"heypi{kind}{payload}\n".encode())
 
 def read_from_pi():
-    """Non-blocking read if available; returns lower-level raw line w/o newline or None."""
     if uart.any():
         try:
             return uart.readline().decode().strip() # type: ignore
@@ -124,21 +118,12 @@ def read_from_pi():
     return None
 
 def send_typing_preview(label, text):
-    """Typing preview for FROM/TO/CONFIRM only."""
     if game_state != GAME_RUNNING:
         return
-    # heypityping_<label>_<text>
     uart.write(f"heypityping_{label}_{text}\n".encode())
 
 
 def _handle_pi_overlay_or_gameover(msg):
-    """
-    Returns one of:
-      'gameover'  -> Game over handled (scene shown); caller must abort input
-      'hint'      -> Hint shown; caller should cancel and restart input
-      'engine'    -> Engine overlay shown; caller should cancel and restart input
-      None        -> Irrelevant message; caller can continue
-    """
     if not msg:
         return None
 
@@ -168,7 +153,6 @@ def _handle_pi_overlay_or_gameover(msg):
 # ============================================================
 
 class ControlPanel:
-    """Small NeoPixel strip that mirrors coordinate readiness, OK, and Hint."""
     def __init__(self, pin, count):
         self.np = neopixel.NeoPixel(Pin(pin, Pin.OUT), count)
         self.count = count
@@ -186,7 +170,6 @@ class ControlPanel:
             self.np[i] = c
         self.np.write()
 
-    # --- write without flush (to update multiple pixels before one write) ---
     def _set_no_write(self, i, c):
         if 0 <= i < self.count:
             self.np[i] = c
@@ -207,14 +190,11 @@ class ControlPanel:
         self.fill(COLOR if on else BLACK, CP_COORD_START, 4)
 
     def ok(self, on=True):
-        # OK must be GREEN when on (kept per your UX)
         self.set(CP_OK_PIX, GREEN if on else BLACK)
 
     def hint(self, on=True, color=YELLOW):
-        # Hint must be YELLOW when on (unless explicitly overridden)
         self.set(CP_HINT_PIX, (color if on else BLACK))
 
-    # --- coordinate bars control (DIY-style persistent dim bars) ---
     def bars_set_dim(self, dim_color, on=True):
         col = dim_color if on else BLACK
         for idx in CP_FILES_LEDS + CP_RANKS_LEDS:
@@ -222,7 +202,6 @@ class ControlPanel:
                 self._set_no_write(idx, col)
         self._write()
 
-    # --- clear only the small panel (0..5), keep bars intact ---
     def clear_small_panel(self):
         for i in range(0, 6):
             if i < self.count:
@@ -231,24 +210,20 @@ class ControlPanel:
 
 
 class Chessboard:
-    """8x8 chessboard LED matrix with DIY Machines wiring (bottom-right origin, zigzag)."""
     def __init__(self, pin, w, h, origin_bottom_right=True, zigzag=True):
         self.w, self.h = w, h
         self.origin_bottom_right = origin_bottom_right
         self.zigzag = zigzag
         self.np = neopixel.NeoPixel(Pin(pin, Pin.OUT), w*h)
 
-        # Precompute checkerboard pattern buffer (LIGHT/DARK) for quick restore
         self._marking_cache = [BLACK]*(w*h)
         LIGHT = (100,100,100); DARK=(3,3,3)
         for y in range(self.h):
             for x in range(self.w):
                 col = DARK if ((x+y) % 2 == 0) else LIGHT
                 self._raw_set(x, y, col, into_cache=True)
-        # Initialize physical board off; show markings when asked
         self.clear(BLACK)
 
-    # -------- low-level mapping --------
     def _xy_to_index(self, x, y):
         row = y
         if self.origin_bottom_right:
@@ -266,13 +241,11 @@ class Chessboard:
             return row_top*self.w + col_index
 
     def _raw_set(self, x, y, color, into_cache=False):
-        """Set without bounds/write; optionally update marking cache."""
         idx = self._xy_to_index(x, y)
         self.np[idx] = color
         if into_cache:
             self._marking_cache[idx] = color
 
-    # -------- public drawing API --------
     def clear(self, color=BLACK):
         for i in range(self.w*self.h):
             self.np[i] = color
@@ -298,12 +271,6 @@ class Chessboard:
         return 0 if v == 0 else (1 if v > 0 else -1)
 
     def _path_squares(self, frm, to):
-        """
-        FROM..TO inclusive path:
-         - Rank/file straight and diagonals inclusive
-         - Knight: include unit steps along the longer leg first (visual L)
-         - Fallback: from->to
-        """
         f = self.algebraic_to_xy(frm)
         t = self.algebraic_to_xy(to)
         if not f or not t:
@@ -314,21 +281,18 @@ class Chessboard:
         adx, ady = abs(dx), abs(dy)
         path = []
 
-        # File
         if fx == tx and fy != ty:
             sy = self._sgn(dy)
             for y in range(fy, ty + sy, sy):
                 path.append((fx, y))
             return path
 
-        # Rank
         if fy == ty and fx != tx:
             sx = self._sgn(dx)
             for x in range(fx, tx + sx, sx):
                 path.append((x, fy))
             return path
 
-        # Diagonal
         if adx == ady and adx != 0:
             sx = self._sgn(dx); sy = self._sgn(dy)
             x, y = fx, fy
@@ -337,7 +301,7 @@ class Chessboard:
                 x += sx; y += sy
             return path
 
-        # Knight: longer leg first (L path)  <-- your correct version
+        # Knight: longer leg first (L path) — fixed (indent exactly as intended)
         if (adx, ady) in ((1,2), (2,1)):
             sx = self._sgn(dx); sy = self._sgn(dy)
             path.append((fx, fy))
@@ -360,7 +324,6 @@ class Chessboard:
         return [(fx, fy), (tx, ty)]
 
     def draw_trail(self, move_uci, color, end_color=None):
-        """Light FROM..TO along computed path. end_color used for target if provided."""
         if not move_uci or len(move_uci) < 4:
             return
         frm, to = move_uci[:2], move_uci[2:4]
@@ -372,15 +335,12 @@ class Chessboard:
                 self.set_square(x, y, color)
         self.write()
 
-    # ---------- Display patterns ----------
     def show_markings(self):
-        # Write cached checkerboard pattern (faster than recompute)
         for i in range(self.w*self.h):
             self.np[i] = self._marking_cache[i]
         self.np.write()
 
     def opening_markings(self):
-        # Small diagonal sweep, then show markings
         self.clear(BLACK)
         for k in range(self.w + self.h - 1):
             for y in range(self.h):
@@ -391,7 +351,6 @@ class Chessboard:
         time.sleep_ms(150); self.show_markings()
 
     def loading_status(self, count):
-        # Blue progressive fill (DIY style)
         total = self.w*self.h
         if count >= total: return count
         idx = count
@@ -402,39 +361,27 @@ class Chessboard:
         return count + 1
 
     def illegal_flash(self, hold_ms=700):
-        """
-        DIY Machines-style illegal animation:
-          1) Fill entire board BLUE
-          2) Blink a RED 'X' (both diagonals) 3 times
-          3) Restore checkerboard markings
-        'hold_ms' controls the ON/OFF timing (default ~500–700ms)
-        """
-        # 1) BLUE fill
+        # DIY Machines-style illegal animation
         for i in range(self.w * self.h):
             self.np[i] = BLUE
         self.np.write()
         time.sleep_ms(hold_ms)
 
-        # 2) Blink RED 'X' three times
         for _ in range(3):
-            # Red X ON
             for i in range(8):
-                self.set_square(i, i, RED)           # main diagonal
-                self.set_square(i, 7 - i, RED)       # anti-diagonal
+                self.set_square(i, i, RED)
+                self.set_square(i, 7 - i, RED)
             self.write()
             time.sleep_ms(hold_ms)
 
-            # Red X OFF (restore blue on those pixels)
             for i in range(8):
                 self.set_square(i, i, BLUE)
                 self.set_square(i, 7 - i, BLUE)
             self.write()
             time.sleep_ms(hold_ms)
 
-        # 3) Back to markings
         self.show_markings()
 
-    # Minimal helpers for setup icons (keep visual parity)
     def draw_hline(self, x, y, length, color):
         for dx in range(length):
             self.set_square(x+dx, y, color)
@@ -456,35 +403,19 @@ class Chessboard:
         self.write()
 
     def show_checkmate_scene_hash(self):
-        """
-        Fill board MAGENTA and overlay a bold white '#' sign.
-        On 8x8:
-        - vertical bars at x = 2 and x = 5
-        - horizontal bars at y = 2 and y = 5
-        """
-        # Full MAGENTA (kept your original color override to GREEN for visibility)
         for i in range(self.w * self.h):
             self.np[i] = GREEN
         self.np.write()
-
-        # Draw '#' bars in WHITE
         for y in range(self.h):
-            self.set_square(2, y, WHITE)
-            self.set_square(5, y, WHITE)
+            self.set_square(2, y, WHITE); self.set_square(5, y, WHITE)
         for x in range(self.w):
-            self.set_square(x, 2, WHITE)
-            self.set_square(x, 5, WHITE)
+            self.set_square(x, 2, WHITE); self.set_square(x, 5, WHITE)
         self.write()
 
     def show_promotion_scene_p(self):
-        """
-        Fill board MAGENTA and overlay a bold white 'P' glyph (8x8 grid).
-        """
         for i in range(self.w * self.h):
             self.np[i] = MAGENTA
         self.np.write()
-
-        # Draw 'P' in WHITE (blocky)
         self.draw_vline(2, 1, 6, WHITE)
         self.draw_hline(2, 6, 4, WHITE)
         self.draw_hline(2, 4, 4, WHITE)
@@ -497,29 +428,23 @@ class Chessboard:
 # ============================================================
 
 class ChessboardUI:
-    """
-    Centralizes all chessboard visuals so you can tweak them in one place.
-    """
     def __init__(self, board: Chessboard):
         self.board = board
         self.overlay_active = False
-        self.overlay_type = None  # 'hint' | 'engine'
+        self.overlay_type = None
         self.overlay_move = None
 
-    # Base
     def off(self): self.board.clear(BLACK)
     def markings(self): self.board.show_markings()
     def opening(self): self.board.opening_markings()
     def loading_step(self, count): return self.board.loading_status(count)
 
-    # Prompts / scenes
     def illegal(self): self.board.illegal_flash(hold_ms=700)
     def prompt_time(self): self.board.show_time_prompt()
     def prompt_strength(self): self.board.show_strength_prompt()
     def game_over_scene(self): self.board.show_checkmate_scene_hash()
     def promotion_scene(self): self.board.show_promotion_scene_p()
 
-    # Previews
     def preview_from(self, sq):
         self.markings()
         xy = self.board.algebraic_to_xy(sq)
@@ -534,17 +459,8 @@ class ChessboardUI:
         self.off()
         self.board.draw_trail(uci, GREEN, end_color=(MAGENTA if cap else None))
 
-    # Overlays
     def overlay_show(self, role, move_uci, cap=False, color_override=None, end_color=None):
-        """
-        role: 'engine' or 'hint'
-        If color_override is given, it wins. Otherwise:
-         - engine => ENGINE_COLOR
-         - hint   => YELLOW
-        If end_color provided, use it; else MAGENTA if cap=True.
-        """
         self.overlay_active = True
-               # (restoring your exact overlay flow)
         self.overlay_type = role
         self.overlay_move = move_uci
         self.off()
@@ -564,7 +480,6 @@ class ChessboardUI:
 # ============================================================
 
 class ButtonManager:
-    """Debounced, edge-triggered button manager (active-low)."""
     def __init__(self, pins):
         self.pins = [Pin(g, Pin.IN, Pin.PULL_UP) for g in pins]
         self._last = [1]*len(self.pins)
@@ -577,7 +492,6 @@ class ButtonManager:
             self._last[i] = p.value()
 
     def detect_press(self):
-        """Return 1-based index on press, else None."""
         for i,p in enumerate(self.pins):
             cur = p.value(); prev = self._last[i]
             self._last[i] = cur
@@ -606,7 +520,7 @@ BTN_HINT = buttons.btn(HINT_BUTTON_INDEX)
 # ============================================================
 
 hint_irq_flag = False
-suppress_hints_until_ms = 0   # small debounce window after setup banners
+suppress_hints_until_ms = 0
 
 def hint_irq(pin):
     global hint_irq_flag
@@ -618,7 +532,6 @@ def disable_hint_irq():
 def enable_hint_irq():
     BTN_HINT.irq(trigger=Pin.IRQ_FALLING, handler=hint_irq)
 
-# Start with IRQ armed for general use (we toggle during setup as needed)
 BTN_HINT.irq(trigger=Pin.IRQ_FALLING, handler=hint_irq)
 
 # ============================================================
@@ -628,39 +541,26 @@ BTN_HINT.irq(trigger=Pin.IRQ_FALLING, handler=hint_irq)
 def cp_all_off():
     cp.fill(BLACK)
 
-# --- NEW: coordinate bars persist (6..21). Only touch small panel 0..5. ---
-
 def cp_bars_dim_on():
-    """Set the 16 coordinate LEDs (6..21) to a dim color (DIY look)."""
     cp.bars_set_dim(DIMW, on=True)
 
 def cp_bars_dim_off():
     cp.bars_set_dim(DIMW, on=False)
 
 def cp_only_ok(on=True):
-    """ONLY OK on (GREEN) without clearing the coordinate bars."""
     cp.clear_small_panel()
     cp.ok(on)
 
 def cp_only_hint_and_coords_for_input():
-    """
-    For user's move entry:
-      - small 4-dot coords ON (WHITE)
-      - hint ON (YELLOW)
-      - OK OFF
-      - leave the 16 coordinate LEDs (6..21) AS IS
-    """
-    cp.clear_small_panel()          # <-- preserve bars
+    cp.clear_small_panel()
     cp.coord(WHITE)
     cp.hint(True, YELLOW)
 
 def cp_show_coords_top(COLOR):
-    """Lights only the top 2 dots in your small 0..3 block; bars remain."""
     cp.clear_small_panel()
     cp.coordTop(COLOR, True)
 
 def cp_show_coords_down(COLOR):
-    """Lights only the bottom 2 dots in your small 0..3 block; bars remain."""
     cp.clear_small_panel()
     cp.coordDown(COLOR, True)
 
@@ -672,31 +572,20 @@ def map_range(x, in_min, in_max, out_min, out_max):
     return int((x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min)
 
 def hard_reset_board():
-    """Return to base markings, clear overlays, reset inputs."""
-    global in_input, in_setup
-    global persistent_trail_active, persistent_trail_type, persistent_trail_move
+    global in_input, in_setup, persistent_trail_active, persistent_trail_type, persistent_trail_move
     in_input=False; in_setup=False
     persistent_trail_active=False; persistent_trail_type=None; persistent_trail_move=None
     disable_hint_irq(); buttons.reset()
     cp_all_off(); ui_board.off(); ui_board.markings()
 
-    
 def wait_ok_fresh(blink_ok=True):
-    """
-    Wait for a fresh OK press:
-     - require release (active-low -> wait for HIGH)
-     - small guard
-     - then wait for a new press
-    """
     if blink_ok:
-        cp_only_ok(True)  # show OK (GREEN), others off on small panel; bars preserved
-    # require release first
+        cp_only_ok(True)
     while BTN_OK.value() == 0:
         time.sleep_ms(10)
     time.sleep_ms(180)
     buttons.reset()
 
-    # Wait for press
     while True:
         b = buttons.detect_press()
         if b == (OK_BUTTON_INDEX + 1):
@@ -704,37 +593,27 @@ def wait_ok_fresh(blink_ok=True):
             return
         time.sleep_ms(15)
 
-
 def probe_capture_with_pi(uci, timeout_ms=150):
-    """
-    Ask the Pi if <uci> would capture in the *current* board state.
-    Returns True/False. Times out quickly to avoid blocking UX.
-    """
     global preview_cap_flag
     preview_cap_flag = False
-    # send heypicapq_<uci>
     send_to_pi("capq_", uci)
 
     deadline = time.ticks_add(time.ticks_ms(), timeout_ms)
     while time.ticks_diff(deadline, time.ticks_ms()) > 0:
         msg = read_from_pi()
         if not msg:
-            time.sleep_ms(5)
-            continue
-        # expect heyArduinocapr_0 or heyArduinocapr_1
+            time.sleep_ms(5); continue
         if msg.startswith("heyArduinocapr_"):
             val = msg.split("_", 1)[1].strip()
             preview_cap_flag = (val.startswith("1"))
             return preview_cap_flag
     return False
 
-
 # ============================================================
 # =============== PERSISTENT TRAILS (HINT/ENGINE) ============
 # ============================================================
 
 def clear_persistent_trail():
-    """Clear any persistent hint/engine overlay and restore markings."""
     global persistent_trail_active, persistent_trail_type, persistent_trail_move
     persistent_trail_active = False
     persistent_trail_type   = None
@@ -742,36 +621,25 @@ def clear_persistent_trail():
     ui_board.overlay_clear()
 
 def show_persistent_trail(move_uci, color, trail_type, end_color=None):
-    """
-    Draw a persistent overlay (latest wins). For engine/hint we allow an end_color
-    (e.g., MAGENTA for capture) — this is *not* the pre-OK user preview.
-    """
     global persistent_trail_active, persistent_trail_type, persistent_trail_move
     persistent_trail_active = True
-    persistent_trail_type   = trail_type   # 'hint' or 'engine'
+    persistent_trail_type   = trail_type
     persistent_trail_move   = move_uci
     cap = (end_color == MAGENTA) if end_color is not None else False
     role = 'engine' if trail_type == 'engine' else 'hint'
     ui_board.overlay_show(role, move_uci, cap=cap, color_override=color, end_color=end_color)
 
 def cancel_user_input_and_restart():
-    """
-    Abort current input phase but keep the overlay on screen.
-    Used when a newer hint/engine trail arrives mid-entry.
-    """
     buttons.reset()
-    # CP LEDs are controlled by callers to enforce "only" rules.
 
 # ============================================================
 # =============== HINT / NEW GAME PROCESSOR ==================
 # ============================================================
 
 def process_hint_irq():
-    """
-    Consume IRQ flag; handle 'New Game' if OK held; forward hint request to Pi.
-    Returns: "new" if new-game initiated, "hint" if hint requested, or None.
-    """
-    global hint_irq_flag, suppress_hints_until_ms, game_state
+    global hint_irq_flag, suppress_hints_until_ms, game_state, suspend_until_new_game
+    global engine_ack_pending, pending_gameover_result, buffered_turn_msg
+
     if not hint_irq_flag:
         return None
     hint_irq_flag = False
@@ -780,11 +648,15 @@ def process_hint_irq():
     if time.ticks_diff(suppress_hints_until_ms, now) > 0:
         return None
 
-    # New Game if A1(OK) held during hint (DIY behavior)
     if BTN_OK.value() == 0:
         game_state = GAME_SETUP
         send_to_pi("n")
-        # Immediately show "choose mode" availability (1..3 only)
+
+        suspend_until_new_game = True
+        engine_ack_pending = False
+        pending_gameover_result = None
+        buffered_turn_msg = None
+
         cp_show_coords_top(WHITE)
         v = 0
         ui_board.off()
@@ -796,11 +668,9 @@ def process_hint_irq():
         suppress_hints_until_ms = time.ticks_add(now, 800)
         return "new"
 
-    # During setup ignore hints (Arduino-like)
     if game_state != GAME_RUNNING:
         return None
 
-    # Forward hint request to Pi; no special CP state here (hint will arrive via UART)
     send_to_pi("btn_hint")
     return "hint"
 
@@ -823,11 +693,9 @@ def _send_confirm_preview(move):
 # ============================================================
 
 def enter_from_square(seed_btn=None):
-    """Collect FROM: column then row. If overlay active, clear on first press."""
     if game_state != GAME_RUNNING:
         return None
 
-    # If overlay is active, clear it on first user press (OK or coord)
     if persistent_trail_active:
         while True:
             msg = read_from_pi()
@@ -842,11 +710,9 @@ def enter_from_square(seed_btn=None):
             if 1 <= b <= 8:
                 seed_btn = b
             break
-
         cp_only_hint_and_coords_for_input()
         buttons.reset()
 
-    # Column
     col=None; row=None
     while col is None:
         if game_state != GAME_RUNNING:
@@ -859,7 +725,6 @@ def enter_from_square(seed_btn=None):
             irq = process_hint_irq()
             if irq == "new": return None
 
-            # Interrupts from Pi (overlay wins)
             msg = read_from_pi()
             if msg:
                 outcome = _handle_pi_overlay_or_gameover(msg)
@@ -878,7 +743,6 @@ def enter_from_square(seed_btn=None):
         col = chr(ord('a') + b - 1)
         _send_from_preview(col)
 
-    # Row
     while row is None:
         if game_state != GAME_RUNNING:
             return None
@@ -903,18 +767,15 @@ def enter_from_square(seed_btn=None):
         row = str(b)
         _send_from_preview(col + row)
 
-    # FROM preview — green square
     frm = col + row
     ui_board.preview_from(frm)
     return frm
 
 
 def enter_to_square(move_from):
-    """Collect TO: column then row; draw green trail (no MAGENTA, no legality)."""
     if game_state != GAME_RUNNING:
         return None
 
-    # If overlay is active, clear it on first user press (OK or coord)
     if persistent_trail_active:
         while True:
             msg = read_from_pi()
@@ -935,7 +796,6 @@ def enter_to_square(move_from):
 
     col=None; row=None
 
-    # Column
     while col is None:
         if game_state != GAME_RUNNING:
             return None
@@ -960,7 +820,6 @@ def enter_to_square(move_from):
         col = chr(ord('a') + b - 1)
         _send_to_preview(move_from, col)
 
-    # Row
     while row is None:
         if game_state != GAME_RUNNING:
             return None
@@ -985,28 +844,20 @@ def enter_to_square(move_from):
         row = str(b)
         _send_to_preview(move_from, col + row)
 
-    # Draw simple green trail preview (FROM->TO), no MAGENTA/no legality
     to = col + row
     uci = move_from + to
     cap_prev = probe_capture_with_pi(uci)
     ui_board.preview_trail(uci, cap=cap_prev)
-
     return to
 
 
 def _color_for_user_confirm():
-    return GREEN  # user move preview color after OK
-
+    return GREEN
 
 def confirm_move(move):
-    """
-    OK to send, or redo if any other button is pressed.
-    During confirm, newer hint/engine overlays cancel confirm and restart input.
-    """
     if game_state != GAME_RUNNING:
         return None
 
-    # Only OK (GREEN) during confirm -- preserve bars
     cp_only_ok(True)
     buttons.reset()
     _send_confirm_preview(move)
@@ -1021,7 +872,6 @@ def confirm_move(move):
             cp_only_ok(False)
             return None
 
-        # New overlay cancels confirm
         msg = read_from_pi()
         if msg:
             outcome = _handle_pi_overlay_or_gameover(msg)
@@ -1036,23 +886,20 @@ def confirm_move(move):
         if not b:
             time.sleep_ms(5); continue
 
-        if b == (OK_BUTTON_INDEX+1):  # OK
+        if b == (OK_BUTTON_INDEX+1):
             cp_only_ok(False)
             return "ok"
         else:
-            # Cancel confirm; allow FROM seed if coord button
             cp_only_ok(False)
             ui_board.markings()
             return ("redo", b)
 
 def collect_and_send_move():
-    """Full user move entry cycle. No pre-OK legality. Simple green preview."""
     global in_input, preview_cap_flag
     in_input = True
     try:
-        seed = None  # optional seed coord if user cancels with a coord button
+        seed = None
         while True:
-            # For user's move input: coords + hint(YELLOW) only; keep bars persistent
             cp_only_hint_and_coords_for_input()
             buttons.reset()
 
@@ -1073,7 +920,6 @@ def collect_and_send_move():
 
             move = move_from + move_to
 
-            # Keep the green preview trail until OK/redo (already drawn by enter_to_square)
             res = confirm_move(move)
             if res is None:
                 if persistent_trail_active:
@@ -1082,21 +928,16 @@ def collect_and_send_move():
                 return
 
             if res == 'ok':
-                # Do NOT wipe the bars; just redraw final trail and send
                 ui_board.redraw_final_trail(move, cap=preview_cap_flag)
-
                 time.sleep_ms(200)
-                send_to_pi(move)  # Pi validates after OK; illegal => will send error
-                # Return to markings; further feedback handled via main_loop on Pi messages
+                send_to_pi(move)
                 preview_cap_flag = False
                 ui_board.markings()
                 return
 
-            # res is ('redo', btn)
             if isinstance(res, tuple) and res[0] == 'redo':
                 cancel_btn = res[1]
                 seed = cancel_btn if (1 <= cancel_btn <= 8) else None
-                # Back to input state display
                 cp_only_hint_and_coords_for_input()
                 continue
     finally:
@@ -1107,11 +948,9 @@ def game_over_wait_ok_and_ack(result_str):
     disable_hint_irq()
     try:
         buttons.reset()
-        # Game over: ONLY OK blinks (GREEN) -- preserve coordinate bars
         cp_only_ok(True)
         ui_board.game_over_scene()
 
-        # Wait for OK to be released, then a small guard to avoid bounce
         while BTN_OK.value() == 0:
             time.sleep_ms(10)
         time.sleep_ms(200)
@@ -1123,7 +962,6 @@ def game_over_wait_ok_and_ack(result_str):
             now = time.ticks_ms()
             if time.ticks_diff(now, last) > 400:
                 blink = not blink
-                # Blink only on small panel; leave bars intact
                 cp.clear_small_panel()
                 cp.ok(blink)
                 last = now
@@ -1131,7 +969,7 @@ def game_over_wait_ok_and_ack(result_str):
             b = buttons.detect_press()
             if b == (OK_BUTTON_INDEX + 1):
                 cp_only_ok(False)
-                send_to_pi("n")  # back to mode select on Pi
+                send_to_pi("n")
                 break
             time.sleep_ms(20)
 
@@ -1145,31 +983,26 @@ def game_over_wait_ok_and_ack(result_str):
 # ============================================================
 
 def wait_for_mode_request():
-    """Show intro sweep and wait until Pi asks us to choose a mode."""
     ui_board.opening()
     lit = 0
     while True:
         lit = ui_board.loading_step(lit)
-        time.sleep_ms(2000)             # 2 seconds per LED
+        time.sleep_ms(2000)
         msg = read_from_pi()
         if not msg:
             continue
         print(f"{msg}")
         if msg.startswith("heyArduinoChooseMode"):
-            # Finish the loading fill quickly
             while lit < (board.w * board.h):
                 lit = ui_board.loading_step(lit)
                 time.sleep_ms(15)
             ui_board.markings()
-            # CP: ONLY buttons 1..3 lit for mode selection
             cp_show_coords_top(WHITE)
-            # enter SETUP state
             global game_state
             game_state = GAME_SETUP
             return
 
 def select_game_mode():
-    """Button 1=PC, 2=Online, 3=Local. Send preserved UART strings to Pi."""
     buttons.reset()
     global game_mode
     while True:
@@ -1189,7 +1022,6 @@ def select_game_mode():
         time.sleep_ms(5)
 
 def select_singlepress(default_value, out_min, out_max):
-    """Map 1..8 to supplied range on a single coord press."""
     buttons.reset()
     while True:
         b = buttons.detect_press()
@@ -1204,24 +1036,16 @@ def select_time_singlepress(default_value):
     return select_singlepress(default_value, 1000, 8000)
 
 def select_color_choice():
-    """Color: 1=White(First), 2=Black(Second), 3=Random — forward to Pi."""
     buttons.reset()
     while True:
         b = buttons.detect_press()
-        if b == 1: send_to_pi("s1"); return   # White/First
-        if b == 2: send_to_pi("s2"); return   # Black/Second
-        if b == 3: send_to_pi("s3"); return   # Random
+        if b == 1: send_to_pi("s1"); return
+        if b == 2: send_to_pi("s2"); return
+        if b == 3: send_to_pi("s3"); return
         time.sleep_ms(5)
 
 def wait_for_setup():
-    """
-    Handle configuration prompts from Pi during setup:
-      - default_strength_<n>
-      - default_time_<ms>
-      - EngineStrength / TimeControl / PlayerColor
-      - SetupComplete
-    """
-    global in_setup, game_state, default_strength, default_move_time
+    global in_setup, game_state, default_strength, default_move_time, suspend_until_new_game
     in_setup = True
     try:
         while True:
@@ -1240,7 +1064,6 @@ def wait_for_setup():
                 continue
 
             if msg.startswith("heyArduinoEngineStrength"):
-                # CP: show only buttons 1..8 (COLOR)
                 cp.coord(MAGENTA)
                 ui_board.prompt_strength()
                 v = select_strength_singlepress(default_strength)
@@ -1250,7 +1073,6 @@ def wait_for_setup():
                 return
 
             if msg.startswith("heyArduinoTimeControl"):
-                # CP: show only buttons 1..8 (COLOR)
                 cp.coord(MAGENTA)
                 ui_board.prompt_time()
                 v = select_time_singlepress(default_move_time)
@@ -1260,7 +1082,6 @@ def wait_for_setup():
                 return
 
             if msg.startswith("heyArduinoPlayerColor"):
-                # CP: show only buttons 1..3 (COLOR)
                 cp_show_coords_top(WHITE)
                 select_color_choice()
                 ui_board.markings()
@@ -1269,7 +1090,7 @@ def wait_for_setup():
             if msg.startswith("heyArduinoSetupComplete"):
                 game_state = GAME_RUNNING
                 in_setup = False
-                # Turn ON persistent dim coordinate bars like DIY
+                suspend_until_new_game = False  # resume normal flow
                 cp_bars_dim_on()
                 ui_board.markings()
                 return
@@ -1281,15 +1102,7 @@ def wait_for_setup():
 # ============================================================ 
 
 def handle_promotion_choice():
-    """
-    Pi requests promotion choice; we forward btn_<piece> back.
-    1=Queen, 2=Rook, 3=Bishop, 4=Knight.
-    CP: Only buttons 1..4 lit in MAGENTA; OK/HINT off.
-    """
-    # Board side: show P scene
     ui_board.promotion_scene()
-
-    # CP: only 1..4 lit in MAGENTA
     cp_show_coords_top(MAGENTA)
 
     buttons.reset()
@@ -1306,7 +1119,6 @@ def handle_promotion_choice():
             if b == 3: send_to_pi("btn_b"); break
             if b == 4: send_to_pi("btn_n"); break
     finally:
-        # Clear only small panel; keep bars
         cp.clear_small_panel()
         ui_board.markings()
 
@@ -1316,10 +1128,9 @@ def handle_promotion_choice():
 # ============================================================
 
 def main_loop():
-    """Central message loop: handles hints, engine moves, errors, turns, and setup requests."""
-    global current_turn, engine_ack_pending, pending_gameover_result, buffered_turn_msg
+    global current_turn, engine_ack_pending, pending_gameover_result, buffered_turn_msg, suspend_until_new_game, game_state
+
     while True:
-        # Consume any hint/new-game IRQ
         irq = process_hint_irq()
         if irq == "new":
             disable_hint_irq()
@@ -1330,21 +1141,15 @@ def main_loop():
             buffered_turn_msg = None
             continue
 
-        
-        # ---------- HANDLE ENGINE-ACK PENDING FIRST (even if no new msg) ----------
         if engine_ack_pending:
-            # Try to read a message (non-blocking)
             nxt = read_from_pi()
 
-            # Prioritize GameOver if it arrives while waiting for OK
             if nxt and nxt.startswith("heyArduinoGameOver"):
                 pending_gameover_result = nxt.split(":", 1)[1].strip() if ":" in nxt else ""
-                # Require a fresh OK to acknowledge engine move before showing GameOver
                 while BTN_OK.value() == 0:
                     time.sleep_ms(10)
                 time.sleep_ms(180)
                 buttons.reset()
-                # Now wait for a new OK press
                 while True:
                     b = buttons.detect_press()
                     if b == (OK_BUTTON_INDEX + 1):
@@ -1358,22 +1163,16 @@ def main_loop():
                 buffered_turn_msg = None
                 continue
 
-            # If turn_* arrives while we are waiting, buffer it
             if nxt and nxt.startswith("heyArduinoturn_"):
                 buffered_turn_msg = nxt
-                # keep waiting for OK; do not start input yet
 
-            # Check OK press to acknowledge engine move
             b = buttons.detect_press()
             if b == (OK_BUTTON_INDEX + 1):
                 engine_ack_pending = False
                 cp_only_ok(False)
-                
-                # CLEAR the engine overlay so the next coordinate press isn't consumed
                 clear_persistent_trail()
                 ui_board.markings()
 
-                # If a turn_* was buffered (normal case when no GameOver), process it now
                 if buffered_turn_msg:
                     turn_str = buffered_turn_msg.split("_", 1)[1].strip().lower()
                     if 'w' in turn_str:
@@ -1382,63 +1181,23 @@ def main_loop():
                         current_turn = 'B'
                     buffered_turn_msg = None
 
-                # Start collecting the human move
                 cp_only_hint_and_coords_for_input()
                 collect_and_send_move()
                 continue
 
-            # Still waiting; small sleep to avoid a hot loop
             time.sleep_ms(10)
             continue
-        # ---------- END ENGINE-ACK PENDING GATE ----------
-
 
         msg = read_from_pi()
         print(f"{msg}")
         if not msg:
             time.sleep_ms(10); continue
-        
-        # --- If we're waiting for engine-move acknowledgement, prioritize that flow --- 
-        if engine_ack_pending:
-            if msg.startswith("heyArduinoGameOver"):
-                res = msg.split(":", 1)[1].strip() if ":" in msg else ""
-                pending_gameover_result = res
-                # Wait for user's OK to acknowledge engine move
-                wait_ok_fresh(blink_ok=True)
-                engine_ack_pending = False
-                cp_only_ok(False)
-                game_over_wait_ok_and_ack(pending_gameover_result)
-                pending_gameover_result = None
-                buffered_turn_msg = None
+
+        # Ignore stale msgs while suspended or not running, except ChooseMode/Reset
+        if suspend_until_new_game or game_state != GAME_RUNNING:
+            if not (msg.startswith("heyArduinoChooseMode") or msg.startswith("heyArduinoResetBoard")):
                 continue
 
-            if msg.startswith("heyArduinoturn_"):
-                buffered_turn_msg = msg
-                continue
-
-            btn = buttons.detect_press()
-            if btn == (OK_BUTTON_INDEX + 1):
-                engine_ack_pending = False
-                cp_only_ok(False)
-                if buffered_turn_msg:
-                    turn_str = buffered_turn_msg.split("_", 1)[1].strip().lower()
-                    if 'w' in turn_str:
-                        current_turn = 'W'
-                    elif 'b' in turn_str:
-                        current_turn = 'B'
-                    buffered_turn_msg = None
-                    cp_only_hint_and_coords_for_input()
-                    collect_and_send_move()
-                    continue
-                else:
-                    ui_board.markings()
-                    continue
-
-            time.sleep_ms(10)
-            continue
-
-        
-        # GameOver from Pi: "heyArduinoGameOver:<result>"
         if msg.startswith("heyArduinoGameOver"):
             res = ""
             if ":" in msg:
@@ -1446,31 +1205,25 @@ def main_loop():
             game_over_wait_ok_and_ack(res)
             continue
 
-        # Hard reset from Pi
         if msg.startswith("heyArduinoResetBoard"):
             hard_reset_board()
             continue
 
-        # Mode selection (Pi triggers it)
         if msg.startswith("heyArduinoChooseMode"):
             disable_hint_irq(); buttons.reset()
             ui_board.markings()
-            cp_show_coords_top(WHITE)  # only 1..3 lit
-            global game_state
+            cp_show_coords_top(WHITE)
             game_state = GAME_SETUP
             select_game_mode()
             while game_state == GAME_SETUP:
                 wait_for_setup()
             continue
 
-        # Game start banner (compat)
         if msg.startswith("heyArduinoGameStart"):
             ui_board.markings()
             continue
 
-        # Computer/engine move (with optional _cap)
         if msg.startswith("heyArduinom"):
-            raw = msg[11:].trip() if False else msg[11:].strip()  # guard: keep original
             raw = msg[11:].strip()
             cap = False
             if raw.endswith("_cap"):
@@ -1479,26 +1232,18 @@ def main_loop():
             else:
                 mv = raw
 
-            # Draw deep blue trail; MAGENTA end if capture flag provided by Pi
             show_persistent_trail(mv, ENGINE_COLOR, 'engine', end_color=(MAGENTA if cap else None))
-
-            # ONLY OK (GREEN) must light when a move is received
             cp_only_ok(True)
-
-            # Acknowledgement flow (unchanged)
             engine_ack_pending = True
             pending_gameover_result = None
             buffered_turn_msg = None
             continue
 
-        # Promotion request from Pi
         if msg.startswith("heyArduinopromotion_choice_needed"):
             handle_promotion_choice()
             continue
 
-        # Hint trail from Pi (with optional _cap)
         if msg.startswith("heyArduinohint_"):
-            # When a hint is received, ONLY OK lights (GREEN) (kept per your flow)
             cp_only_ok(True)
             raw = msg[len("heyArduinohint_"):].strip()
             cap = False
@@ -1506,29 +1251,22 @@ def main_loop():
                 best = raw[:-4]; cap = True
             else:
                 best = raw
-
-            # Board overlay persists (visual hint)
             show_persistent_trail(best, YELLOW, 'hint', end_color=(MAGENTA if cap else None))
-
             cancel_user_input_and_restart()
             continue
 
-        # Illegal / error from Pi -> DIY illegal animation (blue + red X), then prompt again
         if msg.startswith("heyArduinoerror"):
             ui_board.illegal()
-            # After error: back to move input state (coords + hint yellow only)
             cp_only_hint_and_coords_for_input()
             collect_and_send_move()
             continue
 
-        # Turn notification: heyArduinoturn_W or _B
         if msg.startswith("heyArduinoturn_"):
             turn_str = msg.split("_", 1)[1].strip().lower()
             if 'w' in turn_str:
                 current_turn = 'W'
             elif 'b' in turn_str:
                 current_turn = 'B'
-            # Peek for immediate GameOver
             t_start = time.ticks_ms()
             while time.ticks_diff(time.ticks_ms(), t_start) < 80:
                 nxt = read_from_pi()
@@ -1540,7 +1278,6 @@ def main_loop():
                     game_over_wait_ok_and_ack(res)
                     break
             else:
-                # Start collecting the human move; CP state for input:
                 cp_only_hint_and_coords_for_input()
                 collect_and_send_move()
             continue
@@ -1552,7 +1289,7 @@ def main_loop():
 
 def run():
     global game_state
-    print("Pico Chess Controller Starting (LED UX + Centralized Board UI + DIY illegal + coord bars)")
+    print("Pico Chess Controller Starting (LED UX + DIY illegal + coord bars)")
     cp_all_off(); ui_board.off()
     buttons.reset()
 
@@ -1565,9 +1302,7 @@ def run():
         wait_for_setup()
 
     ui_board.markings()
-    # Turn on persistent dim coordinate bars after setup
     cp_bars_dim_on()
-
     enable_hint_irq()
 
     while True:

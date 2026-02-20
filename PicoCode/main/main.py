@@ -3,6 +3,7 @@
 #  + Centralized Chessboard UI (ChessboardUI)
 #  + DIY illegal animation + coordinate bars lit (6..21 DIM)
 #  + "New Game" guard to ignore stale messages and never send a move
+#  + Capture blink on destination square (keeps your full trail/logic)
 # ============================================================
 
 from machine import Pin, UART
@@ -335,6 +336,8 @@ class Chessboard:
                 self.set_square(x, y, color)
         self.write()
 
+    # ---------- DIY Illegal + Capture Blink Helpers ----------
+
     def show_markings(self):
         for i in range(self.w*self.h):
             self.np[i] = self._marking_cache[i]
@@ -381,6 +384,37 @@ class Chessboard:
             time.sleep_ms(hold_ms)
 
         self.show_markings()
+
+    # --- NEW: CAPTURE BLINK HELPERS (blink destination only; keep your trail/colors) ---
+
+    def _blink_square_xy(self, x, y, color_on, times=3, on_ms=200, off_ms=200, final_color=None):
+        """
+        Blink one square at (x,y) without touching the rest of the trail.
+        Leaves the square on final_color (or color_on) at the end.
+        """
+        if not (0 <= x < self.w and 0 <= y < self.h):
+            return
+        for _ in range(times):
+            self.set_square(x, y, color_on)
+            self.write()
+            time.sleep_ms(on_ms)
+            self.set_square(x, y, BLACK)
+            self.write()
+            time.sleep_ms(off_ms)
+        self.set_square(x, y, (final_color if final_color is not None else color_on))
+        self.write()
+
+    def blink_dest_algebraic(self, to_sq, color_on, times=3, on_ms=200, off_ms=200, final_color=None):
+        """
+        Blink the destination square specified in algebraic (e.g., 'e4').
+        """
+        xy = self.algebraic_to_xy(to_sq)
+        if not xy:
+            return
+        x, y = xy
+        self._blink_square_xy(x, y, color_on, times=times, on_ms=on_ms, off_ms=off_ms, final_color=final_color)
+
+    # ---------- Prompts / Scenes ----------
 
     def draw_hline(self, x, y, length, color):
         for dx in range(length):
@@ -451,14 +485,37 @@ class ChessboardUI:
         if xy:
             self.board.set_square(xy[0], xy[1], GREEN); self.board.write()
 
+    # --- UPDATED: keep your full trail; blink dest if capture ---
     def preview_trail(self, uci, cap=False):
         self.markings()
-        self.board.draw_trail(uci, GREEN, end_color=(MAGENTA if cap else None))
+        endc = MAGENTA if cap else None
+        # draw full trail/path (unchanged logic)
+        self.board.draw_trail(uci, GREEN, end_color=endc)
+        # blink only the destination if capture
+        if cap:
+            to_sq = uci[2:4]
+            self.board.blink_dest_algebraic(
+                to_sq,
+                color_on=(endc if endc else RED),
+                times=3, on_ms=200, off_ms=200,
+                final_color=endc
+            )
 
+    # --- UPDATED: keep your full trail; blink dest if capture ---
     def redraw_final_trail(self, uci, cap=False):
         self.off()
-        self.board.draw_trail(uci, GREEN, end_color=(MAGENTA if cap else None))
+        endc = MAGENTA if cap else None
+        self.board.draw_trail(uci, GREEN, end_color=endc)
+        if cap:
+            to_sq = uci[2:4]
+            self.board.blink_dest_algebraic(
+                to_sq,
+                color_on=(endc if endc else RED),
+                times=3, on_ms=200, off_ms=200,
+                final_color=endc
+            )
 
+    # --- UPDATED: overlays keep your colors; blink dest if capture ---
     def overlay_show(self, role, move_uci, cap=False, color_override=None, end_color=None):
         self.overlay_active = True
         self.overlay_type = role
@@ -467,6 +524,14 @@ class ChessboardUI:
         col = color_override if color_override is not None else (ENGINE_COLOR if role == 'engine' else YELLOW)
         endc = end_color if end_color is not None else (MAGENTA if cap else None)
         self.board.draw_trail(move_uci, col, end_color=endc)
+        if cap:
+            to_sq = move_uci[2:4]
+            self.board.blink_dest_algebraic(
+                to_sq,
+                color_on=(endc if endc else RED),
+                times=3, on_ms=200, off_ms=200,
+                final_color=endc
+            )
 
     def overlay_clear(self):
         self.overlay_active = False
@@ -1289,7 +1354,7 @@ def main_loop():
 
 def run():
     global game_state
-    print("Pico Chess Controller Starting (LED UX + DIY illegal + coord bars)")
+    print("Pico Chess Controller Starting (LED UX + DIY illegal + coord bars + capture blink)")
     cp_all_off(); ui_board.off()
     buttons.reset()
 
