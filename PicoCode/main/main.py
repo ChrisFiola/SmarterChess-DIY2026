@@ -1507,8 +1507,7 @@ def handle_puzzle_setup_cmd(msg):
 
 
 def main_loop():
-    global current_turn, engine_ack_pending, pending_gameover_result, buffered_turn_msg
-    global suspend_until_new_game, game_state, ok_last_val
+    global current_turn, engine_ack_pending, pending_gameover_result, buffered_turn_msg, suspend_until_new_game, game_state, ok_last_val, puzzle_setup_active
 
     while True:
         if is_shutdown_held():
