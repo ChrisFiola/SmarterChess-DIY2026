@@ -241,11 +241,11 @@ class DailyPuzzleController:
                         return
 
                     # allow abort
-                    if msg in ("n", "new", "in", "newgame", "btn_new"):
+                    if msg in ("new", "in", "newgame", "btn_new"):
                         return
 
                     # OK advances
-                    if msg in ("btn_ok", "ok", "n"):
+                    if msg in ("btn_ok", "ok"):
                         break
 
                     # ignore other chatter
@@ -282,7 +282,7 @@ class DailyPuzzleController:
             if msg == "shutdown":
                 return
 
-            if msg in ("n", "new", "in", "newgame", "btn_new"):
+            if msg in ("new", "in", "newgame", "btn_new"):
                 return
 
             if msg in ("hint", "btn_hint"):
