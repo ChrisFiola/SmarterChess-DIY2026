@@ -118,6 +118,7 @@ class OnlineController:
         send_turn()
 
         your_color = chess.WHITE if you_are_white else chess.BLACK
+        prompted_for_this_turn = False
 
         while True:
 
@@ -188,11 +189,14 @@ class OnlineController:
                     raise self.d.GoToModeSelect()
 
                 send_turn()
+                prompted_for_this_turn = False
                 continue
 
             # --- Your turn ---
             send_turn()
-            display.prompt_move("WHITE" if your_color == chess.WHITE else "BLACK")
+            if not prompted_for_this_turn:
+                display.prompt_move("WHITE" if your_color == chess.WHITE else "BLACK")
+                prompted_for_this_turn = True
 
             msg = link.getboard()
             if not msg:
@@ -262,3 +266,4 @@ class OnlineController:
 
             board.push(move)
             last_move_count += 1
+            prompted_for_this_turn = False
