@@ -1463,7 +1463,10 @@ def handle_puzzle_setup_cmd(msg):
                 board.set_square(x, y, BLACK)
                 board.write()
                 time.sleep_ms(200)
-            ui_board.markings()
+
+            # leave it RED when done blinking
+            board.set_square(x, y, RED)
+            board.write()
         return True
 
     if msg.startswith("heyArduinosetup_move_"):
