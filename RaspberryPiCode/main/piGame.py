@@ -274,7 +274,7 @@ def ui_engine_thinking(display: Display):
 def handoff_next_turn(link: BoardLink, display: Display, brd: chess.Board, mode: str, cfg: GameConfig, last_uci: str):
     print(brd)
 
-    human_to_move = (mode == "local" or (mode in ("stockfish","online") and ((brd.turn == chess.WHITE and cfg.human_is_white) or (brd.turn == chess.BLACK and not cfg.human_is_white))))
+    human_to_move = (mode == "local" or (mode == "stockfish" and ( (brd.turn == chess.WHITE and cfg.human_is_white) or (brd.turn == chess.BLACK and not cfg.human_is_white))))
     if human_to_move:
         link.sendtoboard(f"turn_{'white' if brd.turn == chess.WHITE else 'black'}")
         display.show_arrow(last_uci, suffix=f"{'WHITE' if brd.turn == chess.WHITE else 'BLACK'} to move")
@@ -350,7 +350,7 @@ def handle_typing_preview(display: Display, payload: str) -> None:
 
 # -------------------- Human move processing (extracted) --------------------
 
-def process_human_move(*, link: BoardLink, display: Display, board: chess.Board, uci: str, mode: str = "stockfish", cfg: Optional[GameConfig] = None, on_accepted=None) -> None:
+def process_human_move(*, link: BoardLink, display: Display, board: chess.Board, uci: str) -> None:
     """Validate, handle promotion, push, and report/handoff.
 
     Extracted from the previous monolithic play loop to make the core loop
@@ -413,18 +413,9 @@ def process_human_move(*, link: BoardLink, display: Display, board: chess.Board,
         report_game_over(link, display, board)
         return
 
-    # Optional callback after the move is accepted and pushed (e.g., submit to Lichess).
-    if on_accepted is not None:
-        try:
-            on_accepted(uci)
-        except Exception:
-            # If callback fails, we still keep local state; caller may decide what to do.
-            pass
-    
     # Keep your existing "arrow + whose turn" messaging
-    if cfg is None:
-        cfg = GameConfig(skill_level=5, move_time_ms=2000, human_is_white=True)
-    handoff_next_turn(link, display, board, mode, cfg, uci)
+    dummy_cfg = GameConfig(skill_level=5, move_time_ms=2000, human_is_white=True)
+    handoff_next_turn(link, display, board, "stockfish", dummy_cfg, uci)
 
 # -------------------- Unified play loop --------------------
 
@@ -589,32 +580,179 @@ def play_game(link: BoardLink, display: Display, ctx: EngineContext, state: Runt
 
 # -------------------- Online placeholder --------------------
 
-def run_online_mode(link: BoardLink, display: Display) -> None:
+def run_online_mode(link: BoardLink, display: Display, cfg: GameConfig) -> None:
     """Online (Lichess) manual-start mode.
 
-    For testing: start/accept a game on Lichess (browser/phone). The Pi will
-    auto-attach via the event stream and relay moves.
-    Requires env var LICHESS_TOKEN with scope board:play.
+    Testing workflow:
+      1) Select Online mode on the board.
+      2) Start/accept a game on Lichess using the SAME account as your API token.
+      3) The Pi will attach to the game and relay moves.
+
+    Notes:
+      - Hints are disabled in online mode.
+      - Requires env var LICHESS_TOKEN (scope: board:play).
     """
     from app.lichess_client import LichessClient
     from app.lichess_opponent import LichessOpponent
-    from app.game_controller import GameController, LoopDeps
-    from app.stockfish_opponent import StockfishOpponent
 
-    # We reuse StockfishOpponent only as a dependency for existing hint/capture utilities,
-    # but hints are disabled online by the controller.
-    sf = StockfishOpponent()
-    deps = LoopDeps(link=link, display=display, opponent=sf)
-
+    # Identify our account username
     client = LichessClient()
-    lichess = LichessOpponent(client)
+    acct = client.get_account()
+    username = (acct.get("username") or acct.get("id") or "").strip()
+    if not username:
+        display.send("Lichess error
+No username
+(token?)")
+        time.sleep(2)
+        raise GoToModeSelect()
 
+    display.send("Lichess online
+Start a game
+on lichess.org")
+    # Wait for gameStart
+    lichess = LichessOpponent(client, username=username)
     try:
-        controller = GameController(deps, human_is_white=True)
-        controller.play_online(lichess=lichess)
+        game = lichess.wait_for_game()
+        lichess.start_stream()
+        cfg.human_is_white = game.is_white
+
+        # Start local board mirror
+        brd = chess.Board()
+        link.sendtoboard("GameStart")
+
+        # Determine first turn prompt
+        if brd.turn == chess.WHITE:
+            link.sendtoboard("turn_white")
+            display.send("Connected
+You are WHITE" if cfg.human_is_white else "Connected
+You are BLACK")
+        else:
+            link.sendtoboard("turn_black")
+
+        # Track who we are
+        def we_to_move() -> bool:
+            return (brd.turn == chess.WHITE and cfg.human_is_white) or (brd.turn == chess.BLACK and (not cfg.human_is_white))
+
+        # Main relay loop
+        while True:
+            # Handle remote moves if it's not our turn
+            if not we_to_move():
+                # wait for remote move (poll, but still allow shutdown/newgame)
+                rm = lichess.pop_remote_move(timeout_s=0.2)
+                if rm:
+                    try:
+                        mv = chess.Move.from_uci(rm)
+                        is_cap = brd.is_capture(mv)
+                        brd.push(mv)
+                        link.sendtoboard(f"m{rm}{'_cap' if is_cap else ''}")
+                        # If game over, report and wait for new
+                        if brd.is_game_over():
+                            report_game_over(link, display, brd)
+                            raise GoToModeSelect()
+                    except Exception:
+                        # ignore malformed remote moves
+                        pass
+                # also drain pico nonblocking
+                peek = link.getboard_nonblocking()
+                if peek == "shutdown":
+                    shutdown_pi(link, display); return
+                if peek and peek.startswith("capq_"):
+                    uci = peek[5:].strip()
+                    try:
+                        cap = compute_capture_preview(brd, uci)
+                    except Exception:
+                        cap = False
+                    link.sendtoboard(f"capr_{1 if cap else 0}")
+                if peek in ("n","new","in","newgame","btn_new"):
+                    raise GoToModeSelect()
+                if peek in ("hint","btn_hint"):
+                    display.send("Online
+Hints disabled")
+                continue
+
+            # Our turn: block for pico move
+            msg = link.getboard()
+            if msg is None:
+                continue
+            if msg == "shutdown":
+                shutdown_pi(link, display); return
+            if msg.startswith("typing_"):
+                handle_typing_preview(display, msg[len("typing_"):])
+                continue
+            if msg.startswith("capq_"):
+                uci = msg[5:].strip()
+                try:
+                    cap = compute_capture_preview(brd, uci)
+                except Exception:
+                    cap = False
+                link.sendtoboard(f"capr_{1 if cap else 0}")
+                continue
+            if msg in ("n","new","in","newgame","btn_new"):
+                raise GoToModeSelect()
+            if msg in ("hint","btn_hint"):
+                display.send("Online
+Hints disabled")
+                continue
+
+            uci = parse_move_payload(msg)
+            if not uci:
+                link.sendtoboard(f"error_invalid_{msg}")
+                display.show_invalid(msg)
+                continue
+
+            # Promotion handling (reuse your existing helper path)
+            # We reuse the same logic blocks from offline:
+            from_sq = uci[:2]; to_sq = uci[2:4]
+            if len(uci) == 4:
+                piece = brd.piece_at(chess.parse_square(from_sq))
+                if piece and piece.piece_type == chess.PAWN:
+                    rank = int(to_sq[1])
+                    if (piece.color == chess.WHITE and rank == 8) or (piece.color == chess.BLACK and rank == 1):
+                        promo = ask_promotion_piece(link, display)
+                        uci = uci + promo
+
+            try:
+                move = chess.Move.from_uci(uci)
+            except ValueError:
+                link.sendtoboard(f"error_invalid_{uci}")
+                display.show_invalid(uci)
+                continue
+
+            if requires_promotion(move, brd):
+                promo = ask_promotion_piece(link, display)
+                uci = uci + promo
+                try:
+                    move = chess.Move.from_uci(uci)
+                except ValueError:
+                    link.sendtoboard(f"error_invalid_{uci}")
+                    display.show_invalid(uci)
+                    continue
+
+            if move not in brd.legal_moves:
+                link.sendtoboard(f"error_illegal_{uci}")
+                display.show_illegal(uci, side_name_from_board(brd))
+                continue
+
+            # Submit to lichess first, then push locally
+            ok = lichess.submit_our_move(uci)
+            if not ok:
+                # Lichess rejected move (desync, etc.)
+                link.sendtoboard(f"error_illegal_{uci}")
+                display.send("Lichess rejected
+Move")
+                continue
+
+            brd.push(move)
+
+            if brd.is_game_over():
+                report_game_over(link, display, brd)
+                raise GoToModeSelect()
+
+            # Prompt next turn
+            handoff_next_turn(link, display, brd, "online", cfg, uci)
+
     finally:
         lichess.stop()
-
 
 # -------------------- Dispatcher --------------------
 
@@ -633,7 +771,7 @@ def mode_dispatch(link: BoardLink, display: Display, ctx: EngineContext, state: 
         link.sendtoboard("SetupComplete")
         play_game(link, display, ctx, state, cfg)
     else:
-        run_online_mode(link, display)
+        run_online_mode(link, display, cfg)
 
 # -------------------- Shutdown --------------------
 

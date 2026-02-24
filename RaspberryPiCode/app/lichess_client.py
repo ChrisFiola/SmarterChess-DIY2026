@@ -1,84 +1,71 @@
 # -*- coding: utf-8 -*-
-"""Minimal Lichess Board API client (manual-start workflow).
+"""Minimal Lichess Board API client (manual-start).
 
-Uses environment variable LICHESS_TOKEN for auth.
-Endpoints (Board API, NDJSON streams):
+Requires env var LICHESS_TOKEN with scope: board:play
+Uses NDJSON streaming endpoints:
   - GET  https://lichess.org/api/stream/event
   - GET  https://lichess.org/api/board/game/stream/{gameId}
   - POST https://lichess.org/api/board/game/{gameId}/move/{uci}
-
-Notes:
-  - This is designed for *manual start*: you start a game on Lichess (or accept one),
-    and this client attaches when it receives a gameStart event.
-  - No bot account required (board:play scope).
+  - GET  https://lichess.org/api/account
 """
 
 from __future__ import annotations
 
 import os
 import json
-import time
-from typing import Dict, Iterator, Optional, Any
+from typing import Iterator, Optional, Dict, Any
 
-import requests  # type: ignore
+try:
+    import requests  # type: ignore
+except Exception as e:  # pragma: no cover
+    requests = None  # type: ignore
+
+LICHESS_BASE = "https://lichess.org"
 
 
 class LichessClient:
-    BASE = "https://lichess.org"
+    def __init__(self, token: Optional[str] = None):
+        tok = token or os.environ.get("LICHESS_TOKEN")
+        if not tok:
+            raise RuntimeError("LICHESS_TOKEN not found. Add it to EnvironmentFile or export it.")
+        self.token = tok
+        self.headers = {"Authorization": f"Bearer {self.token}"}
 
-    def __init__(self, token_env: str = "LICHESS_TOKEN"):
-        token = os.environ.get(token_env)
-        if not token:
-            raise RuntimeError(f"{token_env} not found in environment")
-        self._session = requests.Session()
-        self._headers = {"Authorization": f"Bearer {token}"}
+        if requests is None:
+            raise RuntimeError("Python package 'requests' is required for Lichess online mode.")
 
-    def _stream_ndjson(self, url: str, *, timeout_s: float = 10.0) -> Iterator[Dict[str, Any]]:
-        """Yield JSON objects from an NDJSON streaming endpoint, auto-reconnecting."""
-        backoff = 1.0
-        while True:
-            try:
-                with self._session.get(url, headers=self._headers, stream=True, timeout=(timeout_s, None)) as r:
-                    r.raise_for_status()
-                    backoff = 1.0
-                    for line in r.iter_lines(decode_unicode=True):
-                        if not line:
-                            continue
-                        try:
-                            yield json.loads(line)
-                        except Exception:
-                            # Ignore malformed chunks
-                            continue
-            except Exception:
-                time.sleep(backoff)
-                backoff = min(30.0, backoff * 1.8)
+    def get_account(self) -> Dict[str, Any]:
+        r = requests.get(f"{LICHESS_BASE}/api/account", headers=self.headers, timeout=10)
+        r.raise_for_status()
+        return r.json()
 
     def stream_events(self) -> Iterator[Dict[str, Any]]:
-        return self._stream_ndjson(f"{self.BASE}/api/stream/event")
+        """Stream account events as NDJSON dicts."""
+        r = requests.get(f"{LICHESS_BASE}/api/stream/event", headers=self.headers, stream=True, timeout=60)
+        r.raise_for_status()
+        for line in r.iter_lines(decode_unicode=True):
+            if not line:
+                continue
+            try:
+                yield json.loads(line)
+            except Exception:
+                continue
 
     def stream_game(self, game_id: str) -> Iterator[Dict[str, Any]]:
-        return self._stream_ndjson(f"{self.BASE}/api/board/game/stream/{game_id}")
-
-
-def get_account(self) -> Dict[str, Any]:
-    """Return /api/account JSON (id, username, etc.)."""
-    url = f"{self.BASE}/api/account"
-    r = self._session.get(url, headers=self._headers, timeout=10)
-    r.raise_for_status()
-    return r.json()
+        r = requests.get(f"{LICHESS_BASE}/api/board/game/stream/{game_id}", headers=self.headers, stream=True, timeout=60)
+        r.raise_for_status()
+        for line in r.iter_lines(decode_unicode=True):
+            if not line:
+                continue
+            try:
+                yield json.loads(line)
+            except Exception:
+                continue
 
     def make_move(self, game_id: str, uci: str) -> bool:
-        url = f"{self.BASE}/api/board/game/{game_id}/move/{uci}"
-        try:
-            r = self._session.post(url, headers=self._headers, timeout=10)
-            return 200 <= r.status_code < 300
-        except Exception:
-            return False
-
-    def abort(self, game_id: str) -> bool:
-        url = f"{self.BASE}/api/board/game/{game_id}/abort"
-        try:
-            r = self._session.post(url, headers=self._headers, timeout=10)
-            return 200 <= r.status_code < 300
-        except Exception:
-            return False
+        # Lichess expects UCI without spaces. Promotion like e7e8q.
+        u = uci.strip()
+        r = requests.post(f"{LICHESS_BASE}/api/board/game/{game_id}/move/{u}", headers=self.headers, timeout=10)
+        if r.status_code == 200:
+            return True
+        return False
