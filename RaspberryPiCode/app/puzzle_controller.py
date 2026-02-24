@@ -13,6 +13,7 @@ This intentionally does NOT submit results back to Lichess yet.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from os import link
 from typing import List, Optional, Tuple
 
 import chess  # type: ignore
@@ -23,12 +24,104 @@ from piSerial import BoardLink
 from .lichess_client import LichessClient
 
 
+# -------------------- LED-guided physical setup helpers --------------------
+from collections import defaultdict
+
+
+def _dist(a: str, b: str) -> int:
+    af, ar = ord(a[0]) - 97, int(a[1]) - 1
+    bf, br = ord(b[0]) - 97, int(b[1]) - 1
+    return abs(af - bf) + abs(ar - br)
+
+
+def _pieces_by_type_and_color(brd: chess.Board):
+    buckets = defaultdict(list)  # (color, piece_type) -> [sq,...]
+    for sq in chess.SQUARES:
+        p = brd.piece_at(sq)
+        if not p:
+            continue
+        buckets[(p.color, p.piece_type)].append(chess.square_name(sq))
+    for k in buckets:
+        buckets[k].sort()
+    return buckets
+
+
+def _compute_setup_actions_from_start(target_fen: str):
+    """Compute physical actions to reach target_fen from standard start.
+
+    Assumes the physical board starts in standard initial setup.
+    Returns list of tuples:
+      ("move", side_char, from_sq, to_sq, piece_symbol)
+      ("remove", side_char, from_sq, "", piece_symbol)
+    """
+    start = chess.Board()
+    target = chess.Board(target_fen)
+
+    start_b = _pieces_by_type_and_color(start)
+    targ_b = _pieces_by_type_and_color(target)
+
+    actions = []
+    used_start = set()
+
+    for (color, ptype), targ_sqs in sorted(
+        targ_b.items(), key=lambda x: (x[0][0], x[0][1])
+    ):
+        avail = [s for s in start_b.get((color, ptype), []) if s not in used_start]
+        for t in targ_sqs:
+            if not avail:
+                continue
+            best = min(avail, key=lambda s: _dist(s, t))
+            avail.remove(best)
+            used_start.add(best)
+            sym = chess.Piece(ptype, color).symbol()
+            if best != t:
+                actions.append(
+                    ("move", "w" if color == chess.WHITE else "b", best, t, sym)
+                )
+
+    for (color, ptype), start_sqs in start_b.items():
+        for s in start_sqs:
+            if s in used_start:
+                continue
+            sym = chess.Piece(ptype, color).symbol()
+            actions.append(("remove", "w" if color == chess.WHITE else "b", s, "", sym))
+
+    removes_b = sorted(
+        [a for a in actions if a[0] == "remove" and a[1] == "b"], key=lambda x: x[2]
+    )
+    moves_b = sorted(
+        [a for a in actions if a[0] == "move" and a[1] == "b"],
+        key=lambda x: (x[2], x[3]),
+    )
+    removes_w = sorted(
+        [a for a in actions if a[0] == "remove" and a[1] == "w"], key=lambda x: x[2]
+    )
+    moves_w = sorted(
+        [a for a in actions if a[0] == "move" and a[1] == "w"],
+        key=lambda x: (x[2], x[3]),
+    )
+
+    return removes_b + moves_b + removes_w + moves_w
+
+
+def _piece_name(sym: str) -> str:
+    u = sym.upper()
+    return {
+        "P": "PAWN",
+        "N": "KNIGHT",
+        "B": "BISHOP",
+        "R": "ROOK",
+        "Q": "QUEEN",
+        "K": "KING",
+    }.get(u, "PIECE")
+
+
 @dataclass
 class PuzzleState:
     puzzle_id: str
     fen_start: str
     solution: List[str]  # UCI moves
-    idx: int = 0         # next expected move index
+    idx: int = 0  # next expected move index
 
 
 def _board_from_pgn_at_ply(pgn_text: str, initial_ply: int) -> chess.Board:
@@ -58,7 +151,7 @@ def _fen_to_lines(fen: str, width: int = 22) -> List[str]:
         i += width
     if i < len(fen) and out:
         # indicate truncation
-        out[-1] = (out[-1][: max(0, width - 1)] + "…")
+        out[-1] = out[-1][: max(0, width - 1)] + "…"
     return out
 
 
@@ -105,17 +198,56 @@ class DailyPuzzleController:
             link.sendtoboard("error_puzzle_fetch")
             return
 
-        # 2) Ask user to set up position
-        fen_lines = _fen_to_lines(st.fen_start)
-        # show FEN over multiple frames so it is readable
-        display.send("Daily Puzzle\nSet position")
-        __import__("time").sleep(1.0)
-        display.send("FEN:")
-        __import__("time").sleep(0.7)
-        display.send("\n".join(fen_lines), size="auto")
-        __import__("time").sleep(0.7)
-        display.send("Press OK\nwhen ready")
-        link.sendtoboard("turn_white")  # just to keep Pico in input-ready UX
+        # 2) LED-guided setup from standard starting position
+        actions = _compute_setup_actions_from_start(st.fen_start)
+
+        # Put Pico in setup guidance mode (disables hint IRQ + forwards OK presses)
+        link.sendtoboard("puzzle_setup_begin")
+        try:
+            display.send("DAILY PUZZLE\nSetup position\nOK = next")
+            __import__("time").sleep(1.0)
+            for act in actions:
+                if act[0] == "remove":
+                    _, side, frm, _, sym = act
+                    display.send(
+                        f"REMOVE {('BLACK' if side=='b' else 'WHITE')}\n{_piece_name(sym)} {frm}\nOK=Next"
+                    )
+                    link.sendtoboard(f"setup_remove_{frm}")
+                else:
+                    _, side, frm, to, sym = act
+                    display.send(
+                        f"MOVE {('BLACK' if side=='b' else 'WHITE')}\n{_piece_name(sym)}\n{frm} -> {to}"
+                    )
+                    link.sendtoboard(f"setup_move_{frm}{to}_{side}")
+
+            # Wait for OK from Pico to advance
+            while True:
+                msg = link.getboard()
+                if msg is None:
+                    continue
+                if msg == "shutdown":
+                    from piGame import (
+                        shutdown_pi,
+                    )  # safe import for service environment
+
+                    shutdown_pi(link, display)
+                    return
+                if msg in ("n", "new", "in", "newgame", "btn_new"):
+                    # user aborted
+                    return
+                if msg in ("btn_ok", "ok"):
+                    break
+                # Ignore all other inputs during setup
+                if msg.startswith("typing_") or msg in ("hint", "btn_hint"):
+                    continue
+
+            display.send("SETUP DONE\nPuzzle begins")
+            __import__("time").sleep(0.8)
+        finally:
+            link.sendtoboard("puzzle_setup_done")
+
+        # Keep Pico in normal input-ready UX after setup
+        link.sendtoboard("turn_white")
 
         # Wait for OK (Pico sends 'n' on OK in some scenes; here we accept both)
         while True:
@@ -153,7 +285,9 @@ class DailyPuzzleController:
 
             if msg in ("hint", "btn_hint"):
                 # show next move as hint
-                link.sendtoboard(f"hint_{expected}{'_cap' if _is_cap(board, expected) else ''}")
+                link.sendtoboard(
+                    f"hint_{expected}{'_cap' if _is_cap(board, expected) else ''}"
+                )
                 display.send("Hint:\n" + f"{expected[:2]} → {expected[2:4]}")
                 continue
 
@@ -167,7 +301,9 @@ class DailyPuzzleController:
                 continue
 
             # Validate expected move
-            if uci[:4] != expected[:4] or (len(expected) == 5 and len(uci) == 5 and uci[4] != expected[4]):
+            if uci[:4] != expected[:4] or (
+                len(expected) == 5 and len(uci) == 5 and uci[4] != expected[4]
+            ):
                 display.send("Try again")
                 continue
 

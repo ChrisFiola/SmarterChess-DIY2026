@@ -106,6 +106,9 @@ preview_cap_flag = False
 # --- Guard to ignore stale messages after "New Game" is requested ---
 suspend_until_new_game = False
 
+# --- Puzzle setup mode (Pi-driven LED guidance) ---
+puzzle_setup_active = False
+
 # ============================================================
 # =============== PERSISTENT OVERLAYS ========================
 # ============================================================
@@ -664,6 +667,8 @@ buttons = ButtonManager(BUTTON_PINS)
 BTN_OK = buttons.btn(OK_BUTTON_INDEX)
 BTN_HINT = buttons.btn(HINT_BUTTON_INDEX)
 BTN_SHUT = buttons.btn(SHUTDOWN_BTN_INDEX)  # <- H/8 button pin object
+
+ok_last_val = 1  # for puzzle setup OK edge detect
 
 # ============================================================
 # =============== HINT IRQ (EDGE) ============================
@@ -1456,17 +1461,102 @@ def handle_promotion_choice():
 
 
 # ============================================================
+# =============== PUZZLE SETUP COMMANDS (Pi -> Pico) ==========
+# ============================================================
+
+
+def _handle_puzzle_setup_cmd(msg: str):
+    """Handle Pi-driven puzzle setup LED guidance commands.
+
+    Protocol (payload after 'heyArduino'):
+      - puzzle_setup_begin
+      - puzzle_setup_done
+      - setup_clear
+      - setup_move_<uci>_<side>   side: 'w' or 'b'
+      - setup_remove_<sq>
+    """
+    global puzzle_setup_active
+    if not msg:
+        return False
+
+    if msg.startswith("heyArduinopuzzle_setup_begin"):
+        puzzle_setup_active = True
+        disable_hint_irq()
+        cp_bars_dim_on()
+        ui_board.markings()
+        return True
+
+    if msg.startswith("heyArduinopuzzle_setup_done"):
+        puzzle_setup_active = False
+        ui_board.markings()
+        enable_hint_irq()
+        return True
+
+    if not puzzle_setup_active:
+        return False
+
+    if msg.startswith("heyArduinosetup_clear"):
+        ui_board.markings()
+        return True
+
+    if msg.startswith("heyArduinosetup_remove_"):
+        sq = msg.split("_")[-1].strip()
+        ui_board.markings()
+        xy = board.algebraic_to_xy(sq)
+        if xy:
+            x, y = xy
+            for _ in range(3):
+                board.set_square(x, y, RED)
+                board.write()
+                time.sleep_ms(180)
+                board.set_square(x, y, BLACK)
+                board.write()
+                time.sleep_ms(180)
+            ui_board.markings()
+        return True
+
+    if msg.startswith("heyArduinosetup_move_"):
+        # setup_move_e2e4_w
+        tail = msg[len("heyArduinosetup_move_") :].strip()
+        parts = tail.split("_")
+        uci = parts[0].strip() if parts else ""
+        side = parts[1].strip().lower() if len(parts) > 1 else "w"
+        col = GREEN if side.startswith("w") else ENGINE_COLOR  # use existing colors
+        ui_board.off()
+        board.draw_trail(uci, col, end_color=None)
+        return True
+
+    return False
+
+
+# ============================================================
 # =============== MAIN LOOP ==================================
 # ============================================================
 
 
 def main_loop():
-    global current_turn, engine_ack_pending, pending_gameover_result, buffered_turn_msg, suspend_until_new_game, game_state
+    global current_turn, engine_ack_pending, pending_gameover_result, buffered_turn_msg, suspend_until_new_game, game_state, ok_last_val
 
     while True:
         # --- Allow shutdown gesture at top of loop ---
         if is_shutdown_held():
             shutdown_pico()
+
+        # --- Puzzle setup mode: Pi drives LED guidance; OK acts as 'next step' ---
+        if puzzle_setup_active:
+            # Handle incoming setup commands first
+            msg_setup = read_from_pi()
+            if msg_setup:
+                _handle_puzzle_setup_cmd(msg_setup)
+
+            # Edge-detect OK press and forward to Pi
+            cur_ok = BTN_OK.value()
+            if ok_last_val == 1 and cur_ok == 0:
+                send_to_pi("btn_ok")
+            ok_last_val = cur_ok
+
+            time.sleep_ms(25)
+            continue
 
         irq = process_hint_irq()
         if irq == "new":
@@ -1528,6 +1618,9 @@ def main_loop():
             continue
 
         msg = read_from_pi()
+        # Allow puzzle setup commands at any time
+        if msg and _handle_puzzle_setup_cmd(msg):
+            continue
         print(f"{msg}")
         if not msg:
             time.sleep_ms(10)
