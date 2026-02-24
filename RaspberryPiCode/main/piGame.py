@@ -670,12 +670,12 @@ def run_online_mode(link: BoardLink, display: Display, cfg: GameConfig) -> None:
     client = LichessClient()
     acct = client.get_account()
     if acct.get("_error"):
-        display.send("Lichess offline Check WiFi/DNS")
+        display.send("Lichess offline \nCheck WiFi/DNS")
         time.sleep(5)
         raise GoToModeSelect()
 
     username = (acct.get("username") or acct.get("id") or "").strip().lower()
-    display.send("Lichess online Start a game on lichess.org")
+    display.send("Lichess online \nStart a game on lichess.org")
 
     # Wait for gameStart
     game_id = None
@@ -685,16 +685,16 @@ def run_online_mode(link: BoardLink, display: Display, cfg: GameConfig) -> None:
                 game_id = (ev.get("game") or {}).get("id")
                 break
     except Exception:
-        display.send("Lichess error Event stream")
+        display.send("Lichess error \nEvent stream")
         time.sleep(3)
         raise GoToModeSelect()
 
     if not game_id:
-        display.send("No game found Try again")
+        display.send("No game found \nTry again")
         time.sleep(2)
         raise GoToModeSelect()
 
-    display.send("Connected Attaching...")
+    display.send("Connected \nAttaching...")
     stream = client.stream_game(game_id)
 
     brd = chess.Board()
@@ -704,7 +704,7 @@ def run_online_mode(link: BoardLink, display: Display, cfg: GameConfig) -> None:
     try:
         first = next(stream)
     except Exception:
-        display.send("Lichess error Game stream")
+        display.send("Lichess error \nGame stream")
         time.sleep(3)
         raise GoToModeSelect()
 
@@ -754,7 +754,7 @@ def run_online_mode(link: BoardLink, display: Display, cfg: GameConfig) -> None:
             if peek in ("n", "new", "in", "newgame", "btn_new"):
                 raise GoToModeSelect()
             if peek in ("hint", "btn_hint"):
-                display.send("Online mode Hints disabled")
+                display.send("Online mode \nHints disabled")
 
         if brd.turn != your_color:
             display.send("Waiting for opponent...")
@@ -776,7 +776,7 @@ def run_online_mode(link: BoardLink, display: Display, cfg: GameConfig) -> None:
                         game_over_wait_ok_and_ack(res)
                         raise GoToModeSelect()
             except Exception:
-                display.send("Lichess error Stream lost")
+                display.send("Lichess error \nStream lost")
                 time.sleep(3)
                 raise GoToModeSelect()
             send_turn()
@@ -805,7 +805,7 @@ def run_online_mode(link: BoardLink, display: Display, cfg: GameConfig) -> None:
         if msg in ("n", "new", "in", "newgame", "btn_new"):
             raise GoToModeSelect()
         if msg in ("hint", "btn_hint"):
-            display.send("Online mode Hints disabled")
+            display.send("Online mode \nHints disabled")
             continue
 
         uci = parse_move_payload(msg)
