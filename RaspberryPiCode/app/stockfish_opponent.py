@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Stockfish opponent wrapper.
 
-Uses your existing EngineContext + engine_bestmove() helper.
+Uses existing EngineContext + engine_bestmove() helper.
 """
 
 from __future__ import annotations
