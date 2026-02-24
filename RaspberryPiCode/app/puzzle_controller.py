@@ -13,7 +13,8 @@ This intentionally does NOT submit results back to Lichess yet.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from os import link
+
+# from os import link
 from typing import List, Optional, Tuple
 
 import chess  # type: ignore
@@ -206,67 +207,67 @@ class DailyPuzzleController:
         try:
             display.send("DAILY PUZZLE\nSetup position\nOK = next")
             __import__("time").sleep(1.0)
+
+            # Optional: clear any stale setup drawing
+            link.sendtoboard("setup_clear")
+
             for act in actions:
+                # Draw ONE instruction on LEDs + LCD
                 if act[0] == "remove":
                     _, side, frm, _, sym = act
                     display.send(
-                        f"REMOVE {('BLACK' if side=='b' else 'WHITE')}\n{_piece_name(sym)} {frm}\nOK=Next"
+                        f"REMOVE {('BLACK' if side=='b' else 'WHITE')}\n{_piece_name(sym)} {frm}\nOK = next"
                     )
                     link.sendtoboard(f"setup_remove_{frm}")
+
                 else:
                     _, side, frm, to, sym = act
                     display.send(
-                        f"MOVE {('BLACK' if side=='b' else 'WHITE')}\n{_piece_name(sym)}\n{frm} -> {to}"
+                        f"MOVE {('BLACK' if side=='b' else 'WHITE')}\n{_piece_name(sym)}\n{frm} -> {to}\nOK = next"
                     )
                     link.sendtoboard(f"setup_move_{frm}{to}_{side}")
 
-            # Wait for OK from Pico to advance
-            while True:
-                msg = link.getboard()
-                if msg is None:
-                    continue
-                if msg == "shutdown":
-                    from piGame import (
-                        shutdown_pi,
-                    )  # safe import for service environment
+                # WAIT for OK *after each step*
+                while True:
+                    msg = link.getboard()
+                    if msg is None:
+                        continue
 
-                    shutdown_pi(link, display)
-                    return
-                if msg in ("n", "new", "in", "newgame", "btn_new"):
-                    # user aborted
-                    return
-                if msg in ("btn_ok", "ok"):
-                    break
-                # Ignore all other inputs during setup
-                if msg.startswith("typing_") or msg in ("hint", "btn_hint"):
-                    continue
+                    if msg == "shutdown":
+                        # avoid circular import hell; keep it local
+                        from piGame import shutdown_pi
+
+                        shutdown_pi(link, display)
+                        return
+
+                    # allow abort
+                    if msg in ("n", "new", "in", "newgame", "btn_new"):
+                        return
+
+                    # OK advances
+                    if msg in ("btn_ok", "ok", "n"):
+                        break
+
+                    # ignore other chatter
+                    if msg.startswith("typing_") or msg in ("hint", "btn_hint"):
+                        continue
 
             display.send("SETUP DONE\nPuzzle begins")
             __import__("time").sleep(0.8)
+
         finally:
             link.sendtoboard("puzzle_setup_done")
 
-        # Keep Pico in normal input-ready UX after setup
-        link.sendtoboard("turn_white")
-
-        # Wait for OK (Pico sends 'n' on OK in some scenes; here we accept both)
-        while True:
-            msg = link.getboard()
-            if msg is None:
-                continue
-            if msg in ("n", "ok", "btn_ok"):
-                break
-            if msg in ("new", "in", "newgame", "btn_new"):
-                # treat as cancel
-                return
-
         # 3) Load board state
         board = chess.Board(st.fen_start)
+
+        # Tell Pico it’s the side-to-move (so it keeps normal UX flow)
+        link.sendtoboard(f"turn_{'white' if board.turn == chess.WHITE else 'black'}")
         display.send(f"Daily Puzzle\n{'WHITE' if board.turn else 'BLACK'} to move")
 
         # 4) Main solve loop
         while True:
-            # game over if solved
+            # puzzle solved
             if st.idx >= len(st.solution):
                 display.send("Puzzle solved!\nNice.")
                 link.sendtoboard("GameOver:1-0")
@@ -277,14 +278,14 @@ class DailyPuzzleController:
             msg = link.getboard()
             if msg is None:
                 continue
+
             if msg == "shutdown":
                 return
+
             if msg in ("n", "new", "in", "newgame", "btn_new"):
-                # exit back to mode select
                 return
 
             if msg in ("hint", "btn_hint"):
-                # show next move as hint
                 link.sendtoboard(
                     f"hint_{expected}{'_cap' if _is_cap(board, expected) else ''}"
                 )
@@ -296,33 +297,35 @@ class DailyPuzzleController:
             if uci.startswith("m"):
                 uci = uci[1:]
             uci = "".join(ch for ch in uci if ch.isalnum())
+
             if len(uci) not in (4, 5):
                 display.send("Try again")
                 continue
 
-            # Validate expected move
+            # Check expected match
             if uci[:4] != expected[:4] or (
-                len(expected) == 5 and len(uci) == 5 and uci[4] != expected[4]
+                len(expected) == 5 and (len(uci) != 5 or uci[4] != expected[4])
             ):
                 display.send("Try again")
                 continue
 
-            # Must also be legal from the current board
+            # Must be legal
             try:
                 mv = chess.Move.from_uci(expected)
             except Exception:
                 display.send("Puzzle error")
                 return
+
             if mv not in board.legal_moves:
                 display.send("Try again")
                 continue
 
-            # Correct!
+            # Correct
             display.send("Correct")
             board.push(mv)
             st.idx += 1
 
-            # If the puzzle includes an opponent reply, play it automatically
+            # Auto-play opponent reply if present/legal
             if st.idx < len(st.solution):
                 reply = st.solution[st.idx]
                 try:
@@ -330,6 +333,7 @@ class DailyPuzzleController:
                 except Exception:
                     display.send("Puzzle error")
                     return
+
                 if rmv in board.legal_moves:
                     cap = board.is_capture(rmv)
                     link.sendtoboard(f"m{reply}{'_cap' if cap else ''}")
@@ -337,4 +341,7 @@ class DailyPuzzleController:
                     st.idx += 1
 
             # Next prompt
+            link.sendtoboard(
+                f"turn_{'white' if board.turn == chess.WHITE else 'black'}"
+            )
             display.send(f"{'WHITE' if board.turn else 'BLACK'} to move\nEnter move")
