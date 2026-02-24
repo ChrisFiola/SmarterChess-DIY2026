@@ -89,8 +89,16 @@ class OnlineController:
             raise self.d.GoToModeSelect()
 
         white_name, black_name = extract_players(first)
-        if white_name and username:
-            you_are_white = white_name.strip().lower() == username
+
+        w = (white_name or "").strip().lower()
+        b = (black_name or "").strip().lower()
+        u = (username or "").strip().lower()
+
+        if u and b and u == b:
+            you_are_white = False
+        elif u and w and u == w:
+            you_are_white = True
+        # else: keep default True (fallback)
 
         display.send(f"Connected\nYou are {'WHITE' if you_are_white else 'BLACK'}")
 
