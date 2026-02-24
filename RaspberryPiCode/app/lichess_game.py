@@ -4,7 +4,6 @@ from __future__ import annotations
 from typing import List, Dict, Any, Tuple, Optional
 
 def extract_moves(payload: Dict[str, Any]) -> List[str]:
-    """Return list of UCI moves from either gameFull.state.moves or gameState.moves."""
     if not payload:
         return []
     if payload.get("type") == "gameFull":
@@ -17,7 +16,6 @@ def extract_moves(payload: Dict[str, Any]) -> List[str]:
     return []
 
 def extract_players(payload: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
-    """Return (white_name, black_name) from gameFull."""
     if (payload or {}).get("type") != "gameFull":
         return (None, None)
     w = (payload.get("white") or {})
@@ -25,7 +23,6 @@ def extract_players(payload: Dict[str, Any]) -> Tuple[Optional[str], Optional[st
     return (w.get("name") or w.get("id"), b.get("name") or b.get("id"))
 
 def extract_status(payload: Dict[str, Any]) -> Optional[str]:
-    """Return status from gameState if present (e.g., started, mate, resign, draw)."""
     if (payload or {}).get("type") == "gameState":
         return payload.get("status")
     if (payload or {}).get("type") == "gameFull":
@@ -34,7 +31,6 @@ def extract_status(payload: Dict[str, Any]) -> Optional[str]:
     return None
 
 def extract_winner(payload: Dict[str, Any]) -> Optional[str]:
-    """Return winner ('white'/'black') if present."""
     if (payload or {}).get("type") == "gameState":
         return payload.get("winner")
     if (payload or {}).get("type") == "gameFull":

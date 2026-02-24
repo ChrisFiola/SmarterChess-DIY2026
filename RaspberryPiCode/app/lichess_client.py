@@ -1,14 +1,12 @@
 # -*- coding: utf-8 -*-
 """Lichess API client for SmartChess (manual-start online).
 
-Token must be provided via environment variable LICHESS_TOKEN (recommended via systemd EnvironmentFile).
+Token via env var LICHESS_TOKEN.
 """
 from __future__ import annotations
 
-import os
-import json
+import os, json
 from typing import Dict, Any, Iterator, Optional
-
 import requests
 from requests.exceptions import RequestException
 

@@ -581,73 +581,64 @@ def play_game(link: BoardLink, display: Display, ctx: EngineContext, state: Runt
 # -------------------- Online placeholder --------------------
 
 def run_online_mode(link: BoardLink, display: Display, cfg: GameConfig) -> None:
-    """Manual-start Lichess online mode.
+    """Manual-start Lichess online mode (Board API).
 
-    Flow:
-      - Pico chooses Online mode.
-      - Pi sends SetupComplete + GameStart so Pico enters GAME_RUNNING.
-      - Pi listens to Lichess event stream until a gameStart event arrives.
-      - Pi attaches to the game stream, replays existing moves to Pico,
-        then alternates between:
-          * waiting for opponent moves from stream (and sending m<uci> to Pico)
-          * waiting for human moves from Pico, POSTing to Lichess, then updating local board.
-
-    Hints are disabled online.
+    Critical: sends SetupComplete + GameStart so Pico enters GAME_RUNNING.
     """
     import time
     import chess  # type: ignore
     from app.lichess_client import LichessClient
     from app.lichess_game import extract_moves, extract_players, extract_status, extract_winner
 
-    # Ensure Pico is in running state (critical handshake)
+    # Handshake so Pico is fully running
     link.sendtoboard("SetupComplete")
     link.sendtoboard("GameStart")
 
     client = LichessClient()
     acct = client.get_account()
     if acct.get("_error"):
-        display.send("Lichess offline\nCheck WiFi/DNS")
+        display.send("Lichess offline
+Check WiFi/DNS")
         time.sleep(5)
         raise GoToModeSelect()
 
     username = (acct.get("username") or acct.get("id") or "").strip().lower()
-    display.send("Lichess online\nStart a game\non lichess.org")
+    display.send("Lichess online
+Start a game
+on lichess.org")
 
-    # Wait for a gameStart event
+    # Wait for gameStart
     game_id = None
     try:
         for ev in client.stream_events():
-            t = ev.get("type")
-            if t == "gameStart":
-                game = ev.get("game") or {}
-                game_id = game.get("id")
+            if ev.get("type") == "gameStart":
+                game_id = (ev.get("game") or {}).get("id")
                 break
     except Exception:
-        display.send("Lichess error\nEvent stream")
+        display.send("Lichess error
+Event stream")
         time.sleep(3)
         raise GoToModeSelect()
 
     if not game_id:
-        display.send("No game found\nTry again")
+        display.send("No game found
+Try again")
         time.sleep(2)
         raise GoToModeSelect()
 
-    display.send("Connected\nAttaching...")
-
-    # Attach to game stream
+    display.send("Connected
+Attaching...")
     stream = client.stream_game(game_id)
 
-    # Initialize local board + determine color from gameFull
     brd = chess.Board()
     last_n = 0
     you_are_white = True
 
-    # First payload is usually gameFull
-    first = None
     try:
         first = next(stream)
     except Exception:
-        display.send("Lichess error\nGame stream")
+        display.send("Lichess error
+Game stream")
         time.sleep(3)
         raise GoToModeSelect()
 
@@ -655,9 +646,9 @@ def run_online_mode(link: BoardLink, display: Display, cfg: GameConfig) -> None:
     if wname and bname and username:
         you_are_white = (wname.strip().lower() == username)
 
-    display.send(f"Connected\nYou are {'WHITE' if you_are_white else 'BLACK'}")
+    display.send(f"Connected
+You are {'WHITE' if you_are_white else 'BLACK'}")
 
-    # Replay any existing moves (from first payload + subsequent early updates)
     def apply_new_moves(moves_list):
         nonlocal last_n
         for uci in moves_list[last_n:]:
@@ -673,20 +664,14 @@ def run_online_mode(link: BoardLink, display: Display, cfg: GameConfig) -> None:
 
     apply_new_moves(extract_moves(first))
 
-    # After replay, announce turn
     def send_turn():
-        if brd.turn == chess.WHITE:
-            link.sendtoboard("turn_white")
-        else:
-            link.sendtoboard("turn_black")
+        link.sendtoboard("turn_white" if brd.turn == chess.WHITE else "turn_black")
 
     send_turn()
-
     your_color = chess.WHITE if you_are_white else chess.BLACK
 
-    # Main online loop
     while True:
-        # Allow New Game request at any time
+        # nonblocking handling: previews, capture queries, newgame/shutdown
         peek = link.getboard_nonblocking()
         if peek is not None:
             if peek == "shutdown":
@@ -701,78 +686,59 @@ def run_online_mode(link: BoardLink, display: Display, cfg: GameConfig) -> None:
                 except Exception:
                     cap = False
                 link.sendtoboard(f"capr_{1 if cap else 0}")
-            if peek in ("n", "new", "in", "newgame", "btn_new"):
+            if peek in ("n","new","in","newgame","btn_new"):
                 raise GoToModeSelect()
-            if peek in ("hint", "btn_hint"):
-                display.send("Online mode\nHints disabled")
-                # ignore
-
-        if brd.is_game_over():
-            # local safeguard
-            _res = report_game_over(link, display, brd)
-            raise GoToModeSelect()
+            if peek in ("hint","btn_hint"):
+                display.send("Online mode
+Hints disabled")
 
         if brd.turn != your_color:
-            # Wait for opponent move from stream
-            display.send("Waiting\nfor opponent...")
+            display.send("Waiting
+for opponent...")
             try:
                 while True:
                     payload = next(stream)
-                    # Update on any gameState/gameFull
                     mvlist = extract_moves(payload)
                     if mvlist and len(mvlist) > last_n:
                         apply_new_moves(mvlist)
                         break
                     status = extract_status(payload)
                     if status and status != "started":
-                        # Game ended. Report approximate result.
                         winner = extract_winner(payload)
-                        if winner == "white":
-                            res = "1-0"
-                        elif winner == "black":
-                            res = "0-1"
-                        else:
-                            res = "1/2-1/2"
+                        res = "1/2-1/2"
+                        if winner == "white": res = "1-0"
+                        elif winner == "black": res = "0-1"
                         game_over_wait_ok_and_ack(res)
                         raise GoToModeSelect()
-            except StopIteration:
-                display.send("Lichess ended")
-                time.sleep(2)
-                raise GoToModeSelect()
             except Exception:
-                display.send("Lichess error\nStream lost")
+                display.send("Lichess error
+Stream lost")
                 time.sleep(3)
                 raise GoToModeSelect()
-
             send_turn()
             continue
 
-        # Your turn: request move from Pico (blocking)
+        # Your turn: block for move from Pico
         send_turn()
         display.prompt_move("WHITE" if your_color == chess.WHITE else "BLACK")
-
         msg = link.getboard()
         if msg is None:
             continue
         if msg == "shutdown":
-            shutdown_pi(link, display)
-            return
+            shutdown_pi(link, display); return
         if msg.startswith("typing_"):
-            handle_typing_preview(display, msg[len("typing_"):])
-            continue
+            handle_typing_preview(display, msg[len("typing_"):]); continue
         if msg.startswith("capq_"):
             uciq = msg[5:].strip()
-            try:
-                cap = compute_capture_preview(brd, uciq)
-            except Exception:
-                cap = False
+            try: cap = compute_capture_preview(brd, uciq)
+            except Exception: cap = False
             link.sendtoboard(f"capr_{1 if cap else 0}")
             continue
-        if msg in ("n", "new", "in", "newgame", "btn_new"):
+        if msg in ("n","new","in","newgame","btn_new"):
             raise GoToModeSelect()
-        if msg in ("hint", "btn_hint"):
-            display.send("Online mode\nHints disabled")
-            continue
+        if msg in ("hint","btn_hint"):
+            display.send("Online mode
+Hints disabled"); continue
 
         uci = parse_move_payload(msg)
         if not uci:
@@ -780,9 +746,8 @@ def run_online_mode(link: BoardLink, display: Display, cfg: GameConfig) -> None:
             display.show_invalid(msg)
             continue
 
-        # Promotion pre-detect (same behavior as offline)
-        from_sq = uci[:2]
-        to_sq = uci[2:4]
+        # Promotion pre-detect (same as offline)
+        from_sq = uci[:2]; to_sq = uci[2:4]
         if len(uci) == 4:
             try:
                 piece = brd.piece_at(chess.parse_square(from_sq))
@@ -806,21 +771,35 @@ def run_online_mode(link: BoardLink, display: Display, cfg: GameConfig) -> None:
             display.show_illegal(uci, side_name_from_board(brd))
             continue
 
-        # Submit to Lichess first (authoritative)
         resp = client.make_move(game_id, uci)
         if not resp.get("ok"):
-            display.send(f"Move rejected\n{resp.get('status','')} {resp.get('text', resp.get('error',''))}")
+            display.send(f"Move rejected
+{resp.get('status','')} {resp.get('text', resp.get('error',''))}")
             time.sleep(2)
             continue
 
-        # Apply locally and continue (server will echo later; we dedup by last_n)
         brd.push(mv)
         last_n += 1
 
-        # If game over locally, wait for lichess status, but show anyway
-        if brd.is_game_over():
-            _res = report_game_over(link, display, brd)
-            raise GoToModeSelect()
+
+def mode_dispatch(link: BoardLink, display: Display, ctx: EngineContext, state: RuntimeState, cfg: GameConfig) -> None:
+    if state.mode == "stockfish":
+        setup_stockfish(link, display, cfg)
+        link.sendtoboard("SetupComplete")
+        # Refactored: run through the explicit GameController state machine.
+        from app.game_controller import GameController, LoopDeps
+        from app.stockfish_opponent import StockfishOpponent
+        opponent = StockfishOpponent(ctx, move_time_ms=cfg.move_time_ms)
+        controller = GameController(LoopDeps(link=link, display=display, opponent=opponent), human_is_white=cfg.human_is_white)
+        controller.play_stockfish(move_time_ms=cfg.move_time_ms)
+    elif state.mode == "local":
+        setup_local(link, display, cfg)
+        link.sendtoboard("SetupComplete")
+        play_game(link, display, ctx, state, cfg)
+    else:
+        run_online_mode(link, display, cfg)
+
+# -------------------- Shutdown --------------------
 
 def shutdown_pi(link: BoardLink, display: Display) -> None:
     if display:
