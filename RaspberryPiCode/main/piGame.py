@@ -16,17 +16,15 @@ import sys
 # Allow importing sibling packages (RaspberryPiCode/app) when running from
 # RaspberryPiCode/main under systemd.
 import os
-
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-import chess  # type: ignore
+import chess  # type: ignore 
 
 from piDisplay import Display
 from piSerial import BoardLink
 from piEngine import EngineContext, engine_bestmove, engine_hint
 
-# -------------------- Data classes --------------------
-
+# -------------------- Data classes -------------------- 
 
 @dataclass
 class GameConfig:
@@ -34,15 +32,12 @@ class GameConfig:
     move_time_ms: int = 2000
     human_is_white: bool = True
 
-
 @dataclass
 class RuntimeState:
     board: chess.Board
-    mode: str = "stockfish"  # "stockfish" | "local" | "online"
-
+    mode: str = "stockfish"  # "stockfish" | "local" | "online" 
 
 # -------------------- Parsing & helpers --------------------
-
 
 def parse_move_payload(payload: str) -> Optional[str]:
     if not payload:
@@ -55,15 +50,11 @@ def parse_move_payload(payload: str) -> Optional[str]:
         return cleaned
     return None
 
-
 def parse_side_choice(s: str) -> Optional[bool]:
     s = (s or "").strip().lower()
-    if s.startswith("s1"):
-        return True
-    if s.startswith("s2"):
-        return False
-    if s.startswith("s3"):
-        return bool(random.getrandbits(1))
+    if s.startswith("s1"): return True
+    if s.startswith("s2"): return False
+    if s.startswith("s3"): return bool(random.getrandbits(1))
     return None
 
 
@@ -74,7 +65,7 @@ def compute_capture_preview(brd: chess.Board, uci: str) -> bool:
     """
     try:
         from_sq = chess.parse_square(uci[:2])
-        to_sq = chess.parse_square(uci[2:4])
+        to_sq   = chess.parse_square(uci[2:4])
     except Exception:
         return False
 
@@ -95,7 +86,6 @@ def compute_capture_preview(brd: chess.Board, uci: str) -> bool:
 
 # -------------------- Promotion --------------------
 
-
 def requires_promotion(move: chess.Move, brd: chess.Board) -> bool:
     if move not in brd.legal_moves:
         return False
@@ -108,7 +98,6 @@ def requires_promotion(move: chess.Move, brd: chess.Board) -> bool:
     if brd.turn == chess.BLACK and to_rank == 0:
         return move.promotion is None
     return False
-
 
 def ask_promotion_piece(link: BoardLink, display: Display) -> str:
     """
@@ -125,27 +114,15 @@ def ask_promotion_piece(link: BoardLink, display: Display) -> str:
             # Signal to caller to restart mode selection via exception
             raise GoToModeSelect()
         m = msg.strip().lower()
-        if m in ("btn_q", "btn_queen"):
-            return "q"
-        if m in ("btn_r", "btn_rook"):
-            return "r"
-        if m in ("btn_b", "btn_bishop"):
-            return "b"
-        if m in ("btn_n", "btn_knight"):
-            return "n"
+        if m in ("btn_q", "btn_queen"): return "q"
+        if m in ("btn_r", "btn_rook"):  return "r"
+        if m in ("btn_b", "btn_bishop"):return "b"
+        if m in ("btn_n", "btn_knight"):return "n"
         display.send("Promotion!\n1=Queen\n2=Rook\n3=Bishop\n4=Knight")
-
 
 # -------------------- Hints & game-over --------------------
 
-
-def send_hint_to_board(
-    link: BoardLink,
-    display: Display,
-    ctx: EngineContext,
-    state: RuntimeState,
-    cfg: GameConfig,
-) -> None:
+def send_hint_to_board(link: BoardLink, display: Display, ctx: EngineContext, state: RuntimeState, cfg: GameConfig) -> None:
     if state.board.is_game_over():
         link.sendtoboard("hint_gameover")
         display.send("Game Over\nNo hints\nPress n to start over")
@@ -156,7 +133,7 @@ def send_hint_to_board(
     if not best:
         link.sendtoboard("hint_none")
         return
-
+    
     # Mark capture for hint if applicable
     try:
         mv = chess.Move.from_uci(best)
@@ -169,10 +146,8 @@ def send_hint_to_board(
     display.show_hint_result(best)
     print(f"[Hint] {best}")
 
-
 def side_name_from_board(brd: chess.Board) -> str:
     return "WHITE" if brd.turn == chess.WHITE else "BLACK"
-
 
 def report_game_over(link: BoardLink, display: Display, brd: chess.Board) -> str:
     result = brd.result(claim_draw=True)
@@ -181,16 +156,12 @@ def report_game_over(link: BoardLink, display: Display, brd: chess.Board) -> str
     display.send(f"GAME OVER\n{winner}\nStart new game?")
     return result
 
-
 # -------------------- Flow control --------------------
-
 
 class GoToModeSelect(Exception):
     pass
 
-
 # -------------------- Setup & mode selection --------------------
-
 
 def select_mode(link: BoardLink, display: Display, state: RuntimeState) -> str:
     link.sendtoboard("ChooseMode")
@@ -263,7 +234,6 @@ def setup_stockfish(link: BoardLink, display: Display, cfg: GameConfig) -> None:
             cfg.human_is_white = side
             break
 
-
 def setup_local(link: BoardLink, display: Display, cfg: GameConfig) -> None:
     display.send("Local 2-Player\nHints enabled")
     time.sleep(2)
@@ -293,57 +263,31 @@ def setup_local(link: BoardLink, display: Display, cfg: GameConfig) -> None:
             cfg.move_time_ms = max(10, int(msg))
             break
     """
-
-
-# -------------------- UI helpers & engine handoff --------------------
-
+# -------------------- UI helpers & engine handoff -------------------- 
 
 def ui_new_game_banner(display: Display):
     display.banner("NEW GAME", delay_s=1.0)
 
-
 def ui_engine_thinking(display: Display):
     display.send("Engine Thinking...")
 
-
-def handoff_next_turn(
-    link: BoardLink,
-    display: Display,
-    brd: chess.Board,
-    mode: str,
-    cfg: GameConfig,
-    last_uci: str,
-):
+def handoff_next_turn(link: BoardLink, display: Display, brd: chess.Board, mode: str, cfg: GameConfig, last_uci: str):
     print(brd)
 
-    human_to_move = mode == "local" or (
-        mode == "stockfish"
-        and (
-            (brd.turn == chess.WHITE and cfg.human_is_white)
-            or (brd.turn == chess.BLACK and not cfg.human_is_white)
-        )
-    )
+    human_to_move = (mode == "local" or (mode == "stockfish" and ( (brd.turn == chess.WHITE and cfg.human_is_white) or (brd.turn == chess.BLACK and not cfg.human_is_white))))
     if human_to_move:
         link.sendtoboard(f"turn_{'white' if brd.turn == chess.WHITE else 'black'}")
-        display.show_arrow(
-            last_uci,
-            suffix=f"{'WHITE' if brd.turn == chess.WHITE else 'BLACK'} to move",
-        )
+        display.show_arrow(last_uci, suffix=f"{'WHITE' if brd.turn == chess.WHITE else 'BLACK'} to move")
     else:
         display.show_arrow(last_uci, suffix="ENGINE thinking")
 
 
-def engine_move_and_send(
-    link: BoardLink,
-    display: Display,
-    ctx: EngineContext,
-    state: RuntimeState,
-    cfg: GameConfig,
-):
+
+def engine_move_and_send(link: BoardLink, display: Display, ctx: EngineContext, state: RuntimeState, cfg: GameConfig):
     reply = engine_bestmove(ctx, state.board, cfg.move_time_ms)
     if reply is None:
         return
-
+    
     # Compute capture BEFORE pushing
     mv = chess.Move.from_uci(reply)
     is_cap = state.board.is_capture(mv)
@@ -378,7 +322,6 @@ def winner_text_from_result(res: str) -> str:
 
 # -------------------- Typing preview --------------------
 
-
 def handle_typing_preview(display: Display, payload: str) -> None:
     """
     payload is the '<after heypityping_...>' part, e.g.:
@@ -407,10 +350,7 @@ def handle_typing_preview(display: Display, payload: str) -> None:
 
 # -------------------- Human move processing (extracted) --------------------
 
-
-def process_human_move(
-    *, link: BoardLink, display: Display, board: chess.Board, uci: str
-) -> None:
+def process_human_move(*, link: BoardLink, display: Display, board: chess.Board, uci: str) -> None:
     """Validate, handle promotion, push, and report/handoff.
 
     Extracted from the previous monolithic play loop to make the core loop
@@ -438,9 +378,7 @@ def process_human_move(
             piece = board.piece_at(chess.parse_square(from_sq))
             if piece and piece.piece_type == chess.PAWN:
                 rank = int(to_sq[1])
-                if (piece.color == chess.WHITE and rank == 8) or (
-                    piece.color == chess.BLACK and rank == 1
-                ):
+                if (piece.color == chess.WHITE and rank == 8) or (piece.color == chess.BLACK and rank == 1):
                     promo = ask_promotion_piece(link, display)
                     uci = uci + promo
                     move = chess.Move.from_uci(uci)
@@ -479,17 +417,9 @@ def process_human_move(
     dummy_cfg = GameConfig(skill_level=5, move_time_ms=2000, human_is_white=True)
     handoff_next_turn(link, display, board, "stockfish", dummy_cfg, uci)
 
-
 # -------------------- Unified play loop --------------------
 
-
-def play_game(
-    link: BoardLink,
-    display: Display,
-    ctx: EngineContext,
-    state: RuntimeState,
-    cfg: GameConfig,
-) -> None:
+def play_game(link: BoardLink, display: Display, ctx: EngineContext, state: RuntimeState, cfg: GameConfig) -> None:
     # Reset and banner
     state.board = chess.Board()
     link.sendtoboard("GameStart")
@@ -514,13 +444,13 @@ def play_game(
         # 1) Non-blocking: show typing previews if any
         peek = link.getboard_nonblocking()
         if peek is not None:
-            if peek == "shutdown":
+            if peek == "shutdown": 
                 shutdown_pi(link, display)
                 return
             if peek.startswith("typing_"):
-                handle_typing_preview(display, peek[len("typing_") :])
+                handle_typing_preview(display, peek[len("typing_"):])
             # do not 'continue' to still allow engine turn same cycle
-
+            
             # Pico asks: "capq_<uci>" -> answer quickly with "capr_0/1"
             if peek.startswith("capq_"):
                 uci = peek[5:].strip()
@@ -530,11 +460,13 @@ def play_game(
                     cap = False
                 link.sendtoboard(f"capr_{1 if cap else 0}")
 
+
         # 2) Engine turn (Stockfish mode)
         if state.mode == "stockfish" and not state.board.is_game_over():
             engine_should_move = (
-                state.board.turn == chess.WHITE and not cfg.human_is_white
-            ) or (state.board.turn == chess.BLACK and cfg.human_is_white)
+                (state.board.turn == chess.WHITE and not cfg.human_is_white) or
+                (state.board.turn == chess.BLACK and cfg.human_is_white)
+            )
             if engine_should_move:
                 ui_engine_thinking(display)
                 engine_move_and_send(link, display, ctx, state, cfg)
@@ -552,9 +484,9 @@ def play_game(
 
         # 4) Also handle typing previews in the blocking path (to be consistent)
         if msg.startswith("typing_"):
-            handle_typing_preview(display, msg[len("typing_") :])
+            handle_typing_preview(display, msg[len("typing_"):])
             continue
-
+        
         # --- NEW: capture preview probe (blocking path) ---
         if msg.startswith("capq_"):
             uci = msg[5:].strip()
@@ -581,6 +513,7 @@ def play_game(
             display.show_invalid(msg)
             continue
 
+        
         # === PROMOTION PRE-DETECTION ===
         # If the pawn move ends on rank 8 (white) or rank 1 (black),
         # and the UCI has no promotion letter, trigger promotion.
@@ -592,12 +525,12 @@ def play_game(
             piece = state.board.piece_at(chess.parse_square(from_sq))
             if piece and piece.piece_type == chess.PAWN:
                 rank = int(to_sq[1])
-                if (piece.color == chess.WHITE and rank == 8) or (
-                    piece.color == chess.BLACK and rank == 1
-                ):
+                if (piece.color == chess.WHITE and rank == 8) or \
+                (piece.color == chess.BLACK and rank == 1):
                     # ask promotion piece BEFORE creating the move
                     promo = ask_promotion_piece(link, display)
                     uci = uci + promo
+
 
         # 8) Validate UCI and handle promotion if needed
         try:
@@ -647,7 +580,6 @@ def play_game(
 
 # -------------------- Online placeholder --------------------
 
-
 def run_online_mode(link: BoardLink, display: Display, cfg: GameConfig) -> None:
     """Online mode (manual start) — thin wrapper.
 
@@ -665,32 +597,20 @@ def run_online_mode(link: BoardLink, display: Display, cfg: GameConfig) -> None:
         side_name_from_board=side_name_from_board,
         handle_typing_preview=handle_typing_preview,
         report_game_over=report_game_over,
-        game_over_wait_ok_and_ack=game_over_wait_ok_and_ack,
         shutdown_pi=shutdown_pi,
         GoToModeSelect=GoToModeSelect,
     )
     OnlineController(deps).run()
 
-
-def mode_dispatch(
-    link: BoardLink,
-    display: Display,
-    ctx: EngineContext,
-    state: RuntimeState,
-    cfg: GameConfig,
-) -> None:
+def mode_dispatch(link: BoardLink, display: Display, ctx: EngineContext, state: RuntimeState, cfg: GameConfig) -> None:
     if state.mode == "stockfish":
         setup_stockfish(link, display, cfg)
         link.sendtoboard("SetupComplete")
         # Refactored: run through the explicit GameController state machine.
         from app.game_controller import GameController, LoopDeps
         from app.stockfish_opponent import StockfishOpponent
-
         opponent = StockfishOpponent(ctx, move_time_ms=cfg.move_time_ms)
-        controller = GameController(
-            LoopDeps(link=link, display=display, opponent=opponent),
-            human_is_white=cfg.human_is_white,
-        )
+        controller = GameController(LoopDeps(link=link, display=display, opponent=opponent), human_is_white=cfg.human_is_white)
         controller.play_stockfish(move_time_ms=cfg.move_time_ms)
     elif state.mode == "local":
         setup_local(link, display, cfg)
@@ -699,6 +619,7 @@ def mode_dispatch(
     else:
         run_online_mode(link, display, cfg)
 
+# -------------------- Shutdown --------------------
 
 def shutdown_pi(link: BoardLink, display: Display) -> None:
     if display:
