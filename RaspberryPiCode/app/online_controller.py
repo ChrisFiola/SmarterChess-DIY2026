@@ -79,7 +79,7 @@ class OnlineController:
 
         board = chess.Board()
         last_move_count = 0
-        you_are_white = True
+        you_are_white = None
 
         try:
             first = next(stream)
