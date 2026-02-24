@@ -274,7 +274,7 @@ def ui_engine_thinking(display: Display):
 def handoff_next_turn(link: BoardLink, display: Display, brd: chess.Board, mode: str, cfg: GameConfig, last_uci: str):
     print(brd)
 
-    human_to_move = (mode == "local" or (mode == "stockfish" and ( (brd.turn == chess.WHITE and cfg.human_is_white) or (brd.turn == chess.BLACK and not cfg.human_is_white))))
+    human_to_move = (mode == "local" or (mode in ("stockfish","online") and ((brd.turn == chess.WHITE and cfg.human_is_white) or (brd.turn == chess.BLACK and not cfg.human_is_white))))
     if human_to_move:
         link.sendtoboard(f"turn_{'white' if brd.turn == chess.WHITE else 'black'}")
         display.show_arrow(last_uci, suffix=f"{'WHITE' if brd.turn == chess.WHITE else 'BLACK'} to move")
@@ -350,7 +350,7 @@ def handle_typing_preview(display: Display, payload: str) -> None:
 
 # -------------------- Human move processing (extracted) --------------------
 
-def process_human_move(*, link: BoardLink, display: Display, board: chess.Board, uci: str) -> None:
+def process_human_move(*, link: BoardLink, display: Display, board: chess.Board, uci: str, mode: str = "stockfish", cfg: Optional[GameConfig] = None, on_accepted=None) -> None:
     """Validate, handle promotion, push, and report/handoff.
 
     Extracted from the previous monolithic play loop to make the core loop
@@ -413,9 +413,18 @@ def process_human_move(*, link: BoardLink, display: Display, board: chess.Board,
         report_game_over(link, display, board)
         return
 
-    # Keep your existing "arrow + whose turn" messaging
-    dummy_cfg = GameConfig(skill_level=5, move_time_ms=2000, human_is_white=True)
-    handoff_next_turn(link, display, board, "stockfish", dummy_cfg, uci)
+# Optional callback after the move is accepted and pushed (e.g., submit to Lichess).
+if on_accepted is not None:
+    try:
+        on_accepted(uci)
+    except Exception:
+        # If callback fails, we still keep local state; caller may decide what to do.
+        pass
+
+# Keep your existing "arrow + whose turn" messaging
+if cfg is None:
+    cfg = GameConfig(skill_level=5, move_time_ms=2000, human_is_white=True)
+handoff_next_turn(link, display, board, mode, cfg, uci)
 
 # -------------------- Unified play loop --------------------
 
@@ -581,10 +590,31 @@ def play_game(link: BoardLink, display: Display, ctx: EngineContext, state: Runt
 # -------------------- Online placeholder --------------------
 
 def run_online_mode(link: BoardLink, display: Display) -> None:
-    display.send("Online mode not implemented\nUse Stockfish/Local")
-    link.sendtoboard("error_online_unimplemented")
-    # Bounce to mode select
-    raise GoToModeSelect()
+    """Online (Lichess) manual-start mode.
+
+    For testing: start/accept a game on Lichess (browser/phone). The Pi will
+    auto-attach via the event stream and relay moves.
+    Requires env var LICHESS_TOKEN with scope board:play.
+    """
+    from app.lichess_client import LichessClient
+    from app.lichess_opponent import LichessOpponent
+    from app.game_controller import GameController, LoopDeps
+    from app.stockfish_opponent import StockfishOpponent
+
+    # We reuse StockfishOpponent only as a dependency for existing hint/capture utilities,
+    # but hints are disabled online by the controller.
+    sf = StockfishOpponent()
+    deps = LoopDeps(link=link, display=display, opponent=sf)
+
+    client = LichessClient()
+    lichess = LichessOpponent(client)
+
+    try:
+        controller = GameController(deps, human_is_white=True)
+        controller.play_online(lichess=lichess)
+    finally:
+        lichess.stop()
+
 
 # -------------------- Dispatcher --------------------
 
