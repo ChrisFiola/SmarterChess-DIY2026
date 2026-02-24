@@ -73,14 +73,59 @@ class OnlineController:
             time.sleep(2)
             raise self.d.GoToModeSelect()
 
-        display.send("Connected\nAttaching...")
+        display.send("Connecting...\nLoading game")
 
         stream = self.client.stream_game(game_id)
 
         board = chess.Board()
         last_move_count = 0
-        you_are_white = None
+        you_are_white: Optional[bool] = None
 
+        # ---- helpers ----
+        def uci_to_oled(uci: str) -> str:
+            u = (uci or "").strip()
+            if len(u) < 4:
+                return u.upper()
+            return f"{u[0].upper()}{u[1]} -> {u[2].upper()}{u[3]}"
+
+        def send_turn():
+            link.sendtoboard(
+                "turn_white" if board.turn == chess.WHITE else "turn_black"
+            )
+
+        def show_to_move():
+            side = "WHITE" if board.turn == chess.WHITE else "BLACK"
+            display.send(f"{side} to move")
+
+        # Apply moves AND for any newly-seen move: show it like vs-computer
+        def apply_new_moves(move_list, announce_new: bool = True):
+            nonlocal last_move_count
+            for uci in move_list[last_move_count:]:
+                try:
+                    mv = chess.Move.from_uci(uci)
+                except Exception:
+                    last_move_count += 1
+                    continue
+
+                # Determine capture BEFORE pushing
+                is_cap = board.is_capture(mv)
+
+                # Push move to our local board
+                board.push(mv)
+                last_move_count += 1
+
+                # Always tell Pico to display the move trail (this triggers OK-ack UX on Pico)
+                link.sendtoboard(f"m{uci}{'_cap' if is_cap else ''}")
+
+                # Update turn on Pico (Pico uses this after OK is pressed)
+                send_turn()
+
+                # OLED: show "C7 -> C6" + "WHITE to move" style
+                if announce_new:
+                    side_to_move = "WHITE" if board.turn == chess.WHITE else "BLACK"
+                    display.send(f"{uci_to_oled(uci)}\n{side_to_move} to move")
+
+        # ---- attach to game stream ----
         try:
             first = next(stream)
         except Exception:
@@ -98,42 +143,25 @@ class OnlineController:
             you_are_white = False
         elif u and w and u == w:
             you_are_white = True
-        # else: keep default True (fallback)
-
-        display.send(f"Connected\nYou are {'WHITE' if you_are_white else 'BLACK'}")
-
-        def apply_new_moves(move_list):
-            nonlocal last_move_count
-            for uci in move_list[last_move_count:]:
-                try:
-                    mv = chess.Move.from_uci(uci)
-                except Exception:
-                    last_move_count += 1
-                    continue
-
-                is_cap = board.is_capture(mv)
-                link.sendtoboard(f"m{uci}{'_cap' if is_cap else ''}")
-                board.push(mv)
-                last_move_count += 1
-
-        apply_new_moves(extract_moves(first))
-
-        def send_turn():
-            link.sendtoboard(
-                "turn_white" if board.turn == chess.WHITE else "turn_black"
-            )
-
-        send_turn()
+        else:
+            you_are_white = True  # fallback
 
         your_color = chess.WHITE if you_are_white else chess.BLACK
+
+        # Don't flash wrong color; show once we know it
+        display.send(f"Connected\nYou are {'WHITE' if you_are_white else 'BLACK'}")
+
+        # Apply any existing moves from the initial gameFull without "announcing"
+        apply_new_moves(extract_moves(first), announce_new=False)
+        send_turn()
+
         prompted_for_this_turn = False
+        last_wait_banner_ms = 0
 
         while True:
-
-            # --- Non blocking handling ---
+            # --- Non blocking handling (buttons from Pico) ---
             peek = link.getboard_nonblocking()
             if peek:
-
                 if peek == "shutdown":
                     self.d.shutdown_pi(link, display)
                     return
@@ -149,6 +177,7 @@ class OnlineController:
                         cap = False
                     link.sendtoboard(f"capr_{1 if cap else 0}")
 
+                # OK+HINT => resign
                 if peek in ("n", "new", "in", "newgame", "btn_new"):
                     display.send("Resigning...")
                     try:
@@ -157,6 +186,7 @@ class OnlineController:
                         pass
                     raise self.d.GoToModeSelect()
 
+                # Hint hold => offer draw
                 if peek in ("draw", "btn_draw"):
                     display.send("Offering draw...")
                     try:
@@ -171,10 +201,13 @@ class OnlineController:
                 self.d.report_game_over(link, display, board)
                 raise self.d.GoToModeSelect()
 
-            # --- Opponent turn ---
+            # --- Opponent turn: block on stream until a new move arrives ---
             if board.turn != your_color:
-
-                display.send("Waiting\nfor opponent...")
+                # Show waiting banner occasionally (not spamming)
+                now = int(time.time() * 1000)
+                if now - last_wait_banner_ms > 1500:
+                    display.send("Waiting\nfor opponent...")
+                    last_wait_banner_ms = now
 
                 try:
                     while True:
@@ -182,7 +215,8 @@ class OnlineController:
                         move_list = extract_moves(payload)
 
                         if len(move_list) > last_move_count:
-                            apply_new_moves(move_list)
+                            # announce_new=True will display move + "to move" and send m<uci>
+                            apply_new_moves(move_list, announce_new=True)
                             break
 
                         status = extract_status(payload)
@@ -208,14 +242,17 @@ class OnlineController:
                     time.sleep(3)
                     raise self.d.GoToModeSelect()
 
-                send_turn()
+                # After opponent move arrives, Pico is now in OK-ack mode.
+                # When you press OK, Pico will enter move input on its own.
                 prompted_for_this_turn = False
                 continue
 
             # --- Your turn ---
             send_turn()
             if not prompted_for_this_turn:
-                display.prompt_move("WHITE" if your_color == chess.WHITE else "BLACK")
+                # Match vs-computer feel: show whose turn
+                side = "WHITE" if your_color == chess.WHITE else "BLACK"
+                display.prompt_move(side)
                 prompted_for_this_turn = True
 
             msg = link.getboard()
@@ -239,6 +276,7 @@ class OnlineController:
                 link.sendtoboard(f"capr_{1 if cap else 0}")
                 continue
 
+            # OK+HINT => resign
             if msg in ("n", "new", "in", "newgame", "btn_new"):
                 display.send("Resigning...")
                 try:
@@ -247,7 +285,8 @@ class OnlineController:
                     pass
                 raise self.d.GoToModeSelect()
 
-            if peek in ("draw", "btn_draw"):
+            # Hint hold => offer draw  (BUGFIX: this must check msg, not peek)
+            if msg in ("draw", "btn_draw"):
                 display.send("Offering draw...")
                 try:
                     self.client.offer_draw(game_id)
@@ -297,6 +336,8 @@ class OnlineController:
                 time.sleep(2)
                 continue
 
+            # After we successfully play our move, update local state
             board.push(move)
             last_move_count += 1
+            send_turn()
             prompted_for_this_turn = False
