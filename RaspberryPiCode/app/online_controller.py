@@ -142,7 +142,19 @@ class OnlineController:
                     link.sendtoboard(f"capr_{1 if cap else 0}")
 
                 if peek in ("n", "new", "in", "newgame", "btn_new"):
+                    display.send("Resigning...")
+                    try:
+                        self.client.resign_game(game_id)
+                    except Exception:
+                        pass
                     raise self.d.GoToModeSelect()
+
+                if peek in ("draw", "btn_draw"):
+                    display.send("Offering draw...")
+                    try:
+                        self.client.offer_draw(game_id)
+                    except Exception:
+                        pass
 
                 if peek in ("hint", "btn_hint"):
                     display.send("Online mode\nHints disabled")
@@ -220,7 +232,20 @@ class OnlineController:
                 continue
 
             if msg in ("n", "new", "in", "newgame", "btn_new"):
+                display.send("Resigning...")
+                try:
+                    self.client.resign_game(game_id)
+                except Exception:
+                    pass
                 raise self.d.GoToModeSelect()
+
+            if peek in ("draw", "btn_draw"):
+                display.send("Offering draw...")
+                try:
+                    self.client.offer_draw(game_id)
+                except Exception:
+                    pass
+                continue
 
             if msg in ("hint", "btn_hint"):
                 display.send("Online mode\nHints disabled")

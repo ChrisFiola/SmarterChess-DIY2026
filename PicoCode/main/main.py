@@ -34,6 +34,8 @@ HINT_BUTTON_INDEX = 9  # Button 10
 SHUTDOWN_BTN_INDEX = 7  # 0-based index into BUTTON_PINS -> button "8" (H/8)
 SHUTDOWN_HOLD_MS = 2000
 
+HINT_HOLD_DRAW_MS = 2000
+
 # NeoPixels
 CONTROL_PANEL_LED_PIN = 16
 CONTROL_PANEL_LED_COUNT = 22
@@ -799,10 +801,13 @@ def shutdown_pico():
 
 def clear_persistent_trail():
     global persistent_trail_active, persistent_trail_type, persistent_trail_move
+    was_hint = persistent_trail_type == "hint"
     persistent_trail_active = False
     persistent_trail_type = None
     persistent_trail_move = None
     ui_board.overlay_clear()
+    if was_hint and game_state == GAME_RUNNING and not engine_ack_pending:
+        cp_only_hint_and_coords_for_input()
 
 
 def show_persistent_trail(move_uci, color, trail_type, end_color=None):
@@ -812,6 +817,9 @@ def show_persistent_trail(move_uci, color, trail_type, end_color=None):
     persistent_trail_move = move_uci
     cap = (end_color == MAGENTA) if end_color is not None else False
     role = "engine" if trail_type == "engine" else "hint"
+    if trail_type == "hint":
+        # Hint received => only OK lit (green) until user dismisses overlay
+        cp_only_ok(True)
     ui_board.overlay_show(
         role, move_uci, cap=cap, color_override=color, end_color=end_color
     )
@@ -863,6 +871,17 @@ def process_hint_irq():
 
     if game_state != GAME_RUNNING:
         return None
+
+    # Detect hold-vs-tap on Hint:
+    # - Tap => normal hint request ("btn_hint")
+    # - Hold (>= HINT_HOLD_DRAW_MS) => draw offer token ("btn_draw") for online mode
+    if BTN_HINT.value() == 0:
+        t0 = time.ticks_ms()
+        while BTN_HINT.value() == 0:
+            if time.ticks_diff(time.ticks_ms(), t0) >= HINT_HOLD_DRAW_MS:
+                send_to_pi("btn_draw")
+                return "draw"
+            time.sleep_ms(10)
 
     send_to_pi("btn_hint")
     return "hint"
@@ -1433,7 +1452,7 @@ def handle_puzzle_setup_cmd(msg):
         disable_hint_irq()
         buttons.reset()
         ok_last_val = BTN_OK.value()
-        cp_bars_dim_on()
+        cp_only_ok(True)
         ui_board.markings()
         return True
 
@@ -1502,6 +1521,17 @@ def main_loop():
             msg_setup = read_from_pi()
             if msg_setup:
                 handle_puzzle_setup_cmd(msg_setup)
+
+            # Allow OK + Hint to cancel puzzle setup and return to mode select
+            if BTN_OK.value() == 0 and BTN_HINT.value() == 0:
+                send_to_pi("n")
+                puzzle_setup_active = False
+                cp_only_ok(False)
+                enable_hint_irq()
+                buttons.reset()
+                ui_board.opening()
+                time.sleep_ms(50)
+                continue
 
             b = buttons.detect_press()
             if b == (OK_BUTTON_INDEX + 1):

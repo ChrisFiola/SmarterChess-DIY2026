@@ -12,6 +12,7 @@ from requests.exceptions import RequestException
 
 LICHESS_BASE = "https://lichess.org"
 
+
 def _iter_ndjson(resp) -> Iterator[Dict[str, Any]]:
     for line in resp.iter_lines(decode_unicode=True):
         if not line:
@@ -21,34 +22,81 @@ def _iter_ndjson(resp) -> Iterator[Dict[str, Any]]:
         except Exception:
             continue
 
+
 class LichessClient:
     def __init__(self, token: Optional[str] = None):
         tok = token or os.environ.get("LICHESS_TOKEN")
         if not tok:
-            raise RuntimeError("LICHESS_TOKEN not found in environment. Set in systemd EnvironmentFile.")
+            raise RuntimeError(
+                "LICHESS_TOKEN not found in environment. Set in systemd EnvironmentFile."
+            )
         self.headers = {"Authorization": f"Bearer {tok}"}
 
     def get_account(self) -> Dict[str, Any]:
         try:
-            r = requests.get(f"{LICHESS_BASE}/api/account", headers=self.headers, timeout=10)
+            r = requests.get(
+                f"{LICHESS_BASE}/api/account", headers=self.headers, timeout=10
+            )
             r.raise_for_status()
             return r.json()
         except RequestException as e:
             return {"_error": str(e)}
 
     def stream_events(self) -> Iterator[Dict[str, Any]]:
-        r = requests.get(f"{LICHESS_BASE}/api/stream/event", headers=self.headers, stream=True, timeout=60)
+        r = requests.get(
+            f"{LICHESS_BASE}/api/stream/event",
+            headers=self.headers,
+            stream=True,
+            timeout=60,
+        )
         r.raise_for_status()
         return _iter_ndjson(r)
 
     def stream_game(self, game_id: str) -> Iterator[Dict[str, Any]]:
-        r = requests.get(f"{LICHESS_BASE}/api/board/game/stream/{game_id}", headers=self.headers, stream=True, timeout=60)
+        r = requests.get(
+            f"{LICHESS_BASE}/api/board/game/stream/{game_id}",
+            headers=self.headers,
+            stream=True,
+            timeout=60,
+        )
         r.raise_for_status()
         return _iter_ndjson(r)
 
     def make_move(self, game_id: str, uci: str) -> Dict[str, Any]:
         try:
-            r = requests.post(f"{LICHESS_BASE}/api/board/game/{game_id}/move/{uci}", headers=self.headers, timeout=15)
+            r = requests.post(
+                f"{LICHESS_BASE}/api/board/game/{game_id}/move/{uci}",
+                headers=self.headers,
+                timeout=15,
+            )
+            if r.status_code == 200:
+                return {"ok": True}
+            return {"ok": False, "status": r.status_code, "text": r.text[:200]}
+        except RequestException as e:
+            return {"ok": False, "error": str(e)}
+
+    def resign_game(self, game_id: str) -> Dict[str, Any]:
+        """Resign a running board game."""
+        try:
+            r = requests.post(
+                f"{LICHESS_BASE}/api/board/game/{game_id}/resign",
+                headers=self.headers,
+                timeout=15,
+            )
+            if r.status_code == 200:
+                return {"ok": True}
+            return {"ok": False, "status": r.status_code, "text": r.text[:200]}
+        except RequestException as e:
+            return {"ok": False, "error": str(e)}
+
+    def offer_draw(self, game_id: str) -> Dict[str, Any]:
+        """Offer a draw in a running board game."""
+        try:
+            r = requests.post(
+                f"{LICHESS_BASE}/api/board/game/{game_id}/draw/offer",
+                headers=self.headers,
+                timeout=15,
+            )
             if r.status_code == 200:
                 return {"ok": True}
             return {"ok": False, "status": r.status_code, "text": r.text[:200]}
@@ -60,7 +108,9 @@ class LichessClient:
     def get_daily_puzzle(self) -> Dict[str, Any]:
         """Fetch the current daily puzzle."""
         try:
-            r = requests.get(f"{LICHESS_BASE}/api/puzzle/daily", headers=self.headers, timeout=15)
+            r = requests.get(
+                f"{LICHESS_BASE}/api/puzzle/daily", headers=self.headers, timeout=15
+            )
             r.raise_for_status()
             return r.json()
         except RequestException as e:
@@ -69,7 +119,11 @@ class LichessClient:
     def get_puzzle(self, puzzle_id: str) -> Dict[str, Any]:
         """Fetch a puzzle by its ID."""
         try:
-            r = requests.get(f"{LICHESS_BASE}/api/puzzle/{puzzle_id}", headers=self.headers, timeout=15)
+            r = requests.get(
+                f"{LICHESS_BASE}/api/puzzle/{puzzle_id}",
+                headers=self.headers,
+                timeout=15,
+            )
             r.raise_for_status()
             return r.json()
         except RequestException as e:
