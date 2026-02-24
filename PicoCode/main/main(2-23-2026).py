@@ -4,7 +4,6 @@
 #  + DIY illegal animation + coordinate bars lit (6..21 DIM)
 #  + "New Game" guard to ignore stale messages and never send a move
 #  + Capture blink on destination square (keeps your full trail/logic)
-#  + Hold H/8 to shutdown Pico (signals Pi then powers LEDs off)
 # ============================================================
 
 from machine import Pin, UART
@@ -22,10 +21,6 @@ DEBOUNCE_MS = 300
 # Special role indexes (0-based into BUTTON_PINS)
 OK_BUTTON_INDEX   = 8   # Button 9
 HINT_BUTTON_INDEX = 9   # Button 10
-
-# --- NEW: Shutdown via holding H/8 (button #8) ---
-SHUTDOWN_BTN_INDEX = 7   # 1-based index -> button "8" (H/8)
-SHUTDOWN_HOLD_MS      = 2000
 
 # NeoPixels
 CONTROL_PANEL_LED_PIN   = 16
@@ -95,7 +90,7 @@ buffered_turn_msg = None
 # Was a capture detected for the last previewed move?
 preview_cap_flag = False
 
-# --- Guard to ignore stale messages after "New Game" is requested ---
+# --- NEW: Guard to ignore stale messages after "New Game" is requested ---
 suspend_until_new_game = False
 
 # ============================================================
@@ -240,11 +235,11 @@ class Chessboard:
             return row*self.w + col_index
         else:
             row_top = (self.h - 1) - y
-        if self.zigzag:
-            col_index = x if (row_top % 2 == 0) else (self.w - 1 - x)
-        else:
-            col_index = x
-        return row_top*self.w + col_index
+            if self.zigzag:
+                col_index = x if (row_top % 2 == 0) else (self.w - 1 - x)
+            else:
+                col_index = x
+            return row_top*self.w + col_index
 
     def _raw_set(self, x, y, color, into_cache=False):
         idx = self._xy_to_index(x, y)
@@ -307,7 +302,7 @@ class Chessboard:
                 x += sx; y += sy
             return path
 
-        # Knight: longer leg first (L path)
+        # Knight: longer leg first (L path) — fixed (indent exactly as intended)
         if (adx, ady) in ((1,2), (2,1)):
             sx = self._sgn(dx); sy = self._sgn(dy)
             path.append((fx, fy))
@@ -390,7 +385,7 @@ class Chessboard:
 
         self.show_markings()
 
-    # --- CAPTURE BLINK HELPERS (blink destination only; keep your trail/colors) ---
+    # --- NEW: CAPTURE BLINK HELPERS (blink destination only; keep your trail/colors) ---
 
     def _blink_square_xy(self, x, y, color_on, times=3, on_ms=200, off_ms=200, final_color=None):
         """
@@ -490,27 +485,37 @@ class ChessboardUI:
         if xy:
             self.board.set_square(xy[0], xy[1], GREEN); self.board.write()
 
-    # --- keep your full trail; blink dest if capture ---
+    # --- UPDATED: keep your full trail; blink dest if capture ---
     def preview_trail(self, uci, cap=False):
         self.markings()
         endc = MAGENTA if cap else None
+        # draw full trail/path (unchanged logic)
         self.board.draw_trail(uci, GREEN, end_color=endc)
+        # blink only the destination if capture
         if cap:
             to_sq = uci[2:4]
-            self.board.blink_dest_algebraic(to_sq, color_on=(endc if endc else RED),
-                                            times=3, on_ms=200, off_ms=200, final_color=endc)
+            self.board.blink_dest_algebraic(
+                to_sq,
+                color_on=(endc if endc else RED),
+                times=3, on_ms=200, off_ms=200,
+                final_color=endc
+            )
 
-    # --- keep your full trail; blink dest if capture ---
+    # --- UPDATED: keep your full trail; blink dest if capture ---
     def redraw_final_trail(self, uci, cap=False):
         self.off()
         endc = MAGENTA if cap else None
         self.board.draw_trail(uci, GREEN, end_color=endc)
         if cap:
             to_sq = uci[2:4]
-            self.board.blink_dest_algebraic(to_sq, color_on=(endc if endc else RED),
-                                            times=3, on_ms=200, off_ms=200, final_color=endc)
+            self.board.blink_dest_algebraic(
+                to_sq,
+                color_on=(endc if endc else RED),
+                times=3, on_ms=200, off_ms=200,
+                final_color=endc
+            )
 
-    # --- overlays keep your colors; blink dest if capture ---
+    # --- UPDATED: overlays keep your colors; blink dest if capture ---
     def overlay_show(self, role, move_uci, cap=False, color_override=None, end_color=None):
         self.overlay_active = True
         self.overlay_type = role
@@ -521,8 +526,12 @@ class ChessboardUI:
         self.board.draw_trail(move_uci, col, end_color=endc)
         if cap:
             to_sq = move_uci[2:4]
-            self.board.blink_dest_algebraic(to_sq, color_on=(endc if endc else RED),
-                                            times=3, on_ms=200, off_ms=200, final_color=endc)
+            self.board.blink_dest_algebraic(
+                to_sq,
+                color_on=(endc if endc else RED),
+                times=3, on_ms=200, off_ms=200,
+                final_color=endc
+            )
 
     def overlay_clear(self):
         self.overlay_active = False
@@ -570,7 +579,6 @@ buttons = ButtonManager(BUTTON_PINS)
 
 BTN_OK   = buttons.btn(OK_BUTTON_INDEX)
 BTN_HINT = buttons.btn(HINT_BUTTON_INDEX)
-BTN_SHUT = buttons.btn(SHUTDOWN_BTN_INDEX)  # <- H/8 button pin object
 
 # ============================================================
 # =============== HINT IRQ (EDGE) ============================
@@ -666,46 +674,6 @@ def probe_capture_with_pi(uci, timeout_ms=150):
             return preview_cap_flag
     return False
 
-# --- NEW: Shutdown (hold H/8) helpers ---
-
-def is_shutdown_held(hold_ms=SHUTDOWN_HOLD_MS):
-    """
-    Return True if the H/8 button (button #8) is held continuously for hold_ms.
-    Non-blocking unless the button is actually pressed (then it waits up to hold_ms).
-    """
-    if BTN_SHUT.value() == 0:  # pressed (active-low)
-        t0 = time.ticks_ms()
-        while BTN_SHUT.value() == 0:
-            if time.ticks_diff(time.ticks_ms(), t0) >= hold_ms:
-                return True
-            time.sleep_ms(10)
-    return False
-
-def shutdown_pico():
-    """
-    Signal Pi, show a brief confirmation, turn off LEDs and halt.
-    """
-    # Send shutdown intent to Pi
-    send_to_pi("xshutdown")
-
-    # Quick visual confirm: CP OK green + board cyan blink, then off
-    for _ in range(2):
-        cp_only_ok(True)
-        board.clear(CYAN)
-        time.sleep_ms(180)
-        cp_only_ok(False)
-        board.clear(BLACK)
-        time.sleep_ms(180)
-
-    # Fully turn off LEDs and IRQ
-    cp_all_off()
-    board.clear(BLACK)
-    disable_hint_irq()
-
-    # Halt: idle loop (low CPU). Power remains applied, but Pico is quiet.
-    while True:
-        time.sleep_ms(1000)
-
 # ============================================================
 # =============== PERSISTENT TRAILS (HINT/ENGINE) ============
 # ============================================================
@@ -740,10 +708,6 @@ def process_hint_irq():
     if not hint_irq_flag:
         return None
     hint_irq_flag = False
-
-    # Allow shutdown on IRQ path too (user could be holding H/8)
-    if is_shutdown_held():
-        shutdown_pico()
 
     now = time.ticks_ms()
     if time.ticks_diff(suppress_hints_until_ms, now) > 0:
@@ -797,14 +761,8 @@ def enter_from_square(seed_btn=None):
     if game_state != GAME_RUNNING:
         return None
 
-    # Check shutdown at entry
-    if is_shutdown_held():
-        shutdown_pico()
-
     if persistent_trail_active:
         while True:
-            if is_shutdown_held():
-                shutdown_pico()
             msg = read_from_pi()
             if msg:
                 outcome = _handle_pi_overlay_or_gameover(msg)
@@ -829,9 +787,6 @@ def enter_from_square(seed_btn=None):
             b = seed_btn
             seed_btn = None
         else:
-            if is_shutdown_held():
-                shutdown_pico()
-
             irq = process_hint_irq()
             if irq == "new": return None
 
@@ -856,9 +811,6 @@ def enter_from_square(seed_btn=None):
     while row is None:
         if game_state != GAME_RUNNING:
             return None
-
-        if is_shutdown_held():
-            shutdown_pico()
 
         irq = process_hint_irq()
         if irq == "new": return None
@@ -889,13 +841,8 @@ def enter_to_square(move_from):
     if game_state != GAME_RUNNING:
         return None
 
-    if is_shutdown_held():
-        shutdown_pico()
-
     if persistent_trail_active:
         while True:
-            if is_shutdown_held():
-                shutdown_pico()
             msg = read_from_pi()
             if msg:
                 outcome = _handle_pi_overlay_or_gameover(msg)
@@ -917,9 +864,6 @@ def enter_to_square(move_from):
     while col is None:
         if game_state != GAME_RUNNING:
             return None
-
-        if is_shutdown_held():
-            shutdown_pico()
 
         irq = process_hint_irq()
         if irq == "new": return None
@@ -944,9 +888,6 @@ def enter_to_square(move_from):
     while row is None:
         if game_state != GAME_RUNNING:
             return None
-
-        if is_shutdown_held():
-            shutdown_pico()
 
         irq = process_hint_irq()
         if irq == "new": return None
@@ -991,9 +932,6 @@ def confirm_move(move):
             cp_only_ok(False)
             return None
 
-        if is_shutdown_held():
-            shutdown_pico()
-
         irq = process_hint_irq()
         if irq == "new":
             cp_only_ok(False)
@@ -1027,9 +965,6 @@ def collect_and_send_move():
     try:
         seed = None
         while True:
-            if is_shutdown_held():
-                shutdown_pico()
-
             cp_only_hint_and_coords_for_input()
             buttons.reset()
 
@@ -1081,10 +1016,6 @@ def game_over_wait_ok_and_ack(result_str):
         cp_only_ok(True)
         ui_board.game_over_scene()
 
-        # Allow shutdown in gameover scene
-        if is_shutdown_held():
-            shutdown_pico()
-
         while BTN_OK.value() == 0:
             time.sleep_ms(10)
         time.sleep_ms(200)
@@ -1099,9 +1030,6 @@ def game_over_wait_ok_and_ack(result_str):
                 cp.clear_small_panel()
                 cp.ok(blink)
                 last = now
-
-            if is_shutdown_held():
-                shutdown_pico()
 
             b = buttons.detect_press()
             if b == (OK_BUTTON_INDEX + 1):
@@ -1123,8 +1051,6 @@ def wait_for_mode_request():
     ui_board.opening()
     lit = 0
     while True:
-        if is_shutdown_held():
-            shutdown_pico()
         lit = ui_board.loading_step(lit)
         time.sleep_ms(2000)
         msg = read_from_pi()
@@ -1133,8 +1059,6 @@ def wait_for_mode_request():
         print(f"{msg}")
         if msg.startswith("heyArduinoChooseMode"):
             while lit < (board.w * board.h):
-                if is_shutdown_held():
-                    shutdown_pico()
                 lit = ui_board.loading_step(lit)
                 time.sleep_ms(15)
             ui_board.markings()
@@ -1147,8 +1071,6 @@ def select_game_mode():
     buttons.reset()
     global game_mode
     while True:
-        if is_shutdown_held():
-            shutdown_pico()
         b = buttons.detect_press()
         if b == 1:
             game_mode = MODE_PC
@@ -1167,8 +1089,6 @@ def select_game_mode():
 def select_singlepress(default_value, out_min, out_max):
     buttons.reset()
     while True:
-        if is_shutdown_held():
-            shutdown_pico()
         b = buttons.detect_press()
         if b and 1 <= b <= 8:
             return map_range(b, 1, 8, out_min, out_max)
@@ -1183,8 +1103,6 @@ def select_time_singlepress(default_value):
 def select_color_choice():
     buttons.reset()
     while True:
-        if is_shutdown_held():
-            shutdown_pico()
         b = buttons.detect_press()
         if b == 1: send_to_pi("s1"); return
         if b == 2: send_to_pi("s2"); return
@@ -1196,8 +1114,6 @@ def wait_for_setup():
     in_setup = True
     try:
         while True:
-            if is_shutdown_held():
-                shutdown_pico()
             msg = read_from_pi()
             if not msg:
                 time.sleep_ms(10); continue
@@ -1257,8 +1173,6 @@ def handle_promotion_choice():
     buttons.reset()
     try:
         while True:
-            if is_shutdown_held():
-                shutdown_pico()
             irq = process_hint_irq()
             if irq == "new":
                 return
@@ -1282,10 +1196,6 @@ def main_loop():
     global current_turn, engine_ack_pending, pending_gameover_result, buffered_turn_msg, suspend_until_new_game, game_state
 
     while True:
-        # --- Allow shutdown gesture at top of loop ---
-        if is_shutdown_held():
-            shutdown_pico()
-
         irq = process_hint_irq()
         if irq == "new":
             disable_hint_irq()
@@ -1444,7 +1354,7 @@ def main_loop():
 
 def run():
     global game_state
-    print("Pico Chess Controller Starting (LED UX + DIY illegal + coord bars + capture blink + shutdown hold)")
+    print("Pico Chess Controller Starting (LED UX + DIY illegal + coord bars + capture blink)")
     cp_all_off(); ui_board.off()
     buttons.reset()
 

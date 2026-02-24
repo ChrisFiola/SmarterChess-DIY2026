@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-BoardLink v2 — JSON lines over UART
-- send(kind, dict) -> writes one line JSON {"t": kind, "d": {...}}
-- get() -> returns dict {t, d} or None
+Serial link wrapper for Pico <-> Pi protocol (modular version)
+- Preserves UART protocol strings (heyArduino / heypi / heypixshutdown).
 """
-from typing import Optional, Dict, Any
+from typing import Optional
 import serial  # type: ignore
-import json
 
 SERIAL_PORT: str = "/dev/serial0"
 BAUD: int = 115200
@@ -23,36 +21,56 @@ class BoardLink:
         except Exception:
             pass
 
-    # Send one JSON line
-    def send(self, kind: str, data: Dict[str, Any] | None = None) -> None:
-        if data is None:
-            data = {}
-        msg = {"t": kind, "d": data}
-        s = json.dumps(msg)
-        self.ser.write(s.encode('utf-8') + b"\n")
-        print(f"[-→Board] {s}")
+    # Writes 
+    def send_raw(self, text: str) -> None:
+        self.ser.write(text.encode("utf-8") + b"\n")
 
-    # Non-blocking get (only if bytes waiting)
-    def get_nonblocking(self) -> Optional[Dict[str, Any]]:
-        if self.ser.in_waiting:
-            return self._readline_obj()
-        return None
+    def sendtoboard(self, text: str) -> None:
+        payload = "heyArduino" + text
+        self.ser.write(payload.encode("utf-8") + b"\n")
+        print(f"[-→Board] {payload}")
 
-    def get(self) -> Optional[Dict[str, Any]]:
-        return self._readline_obj()
-
-    def _readline_obj(self) -> Optional[Dict[str, Any]]:
+    # Reads
+    def _readline(self) -> Optional[str]:
         line = self.ser.readline()
         if not line:
             return None
         try:
-            s = line.decode('utf-8').strip()
-            if not s:
-                return None
-            obj = json.loads(s)
-            if isinstance(obj, dict) and 't' in obj:
-                print(f"[Board→] {s}")
-                return obj
-        except Exception:
+            return line.decode("utf-8").strip()
+        except UnicodeDecodeError:
             return None
+
+    def get_raw_from_board(self) -> Optional[str]:
+        raw = self._readline()
+        if raw is None:
+            return None
+        low = raw.lower()
+        if low.startswith("heypixshutdown"):
+            return "heypixshutdown"
+        return low
+
+    def getboard_nonblocking(self) -> Optional[str]:
+        if self.ser.in_waiting:
+            raw = self._readline()
+            if not raw:
+                return None
+            low = raw.lower()
+            if low.startswith("heypixshutdown"):
+                return "shutdown"
+            if low.startswith("heypi"):
+                payload = low[5:]
+                print(f"[Board→] {low}  | payload='{payload}'")
+                return payload
         return None
+
+    def getboard(self) -> Optional[str]:
+        while True:
+            raw = self.get_raw_from_board()
+            if raw is None:
+                return None
+            if raw.startswith("heypixshutdown"):
+                return "shutdown"
+            if raw.startswith("heypi"):
+                payload = raw[5:]
+                print(f"[Board→] {raw}  | payload='{payload}'")
+                return payload
