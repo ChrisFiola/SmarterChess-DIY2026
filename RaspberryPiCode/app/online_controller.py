@@ -93,13 +93,14 @@ class OnlineController:
                 "turn_white" if board.turn == chess.WHITE else "turn_black"
             )
 
-        def show_to_move():
-            side = "WHITE" if board.turn == chess.WHITE else "BLACK"
-            display.send(f"{side} to move")
+        # Flags controlling OLED overwrites
+        awaiting_ok_ack = False  # True after opponent move until user starts input
+        in_move_entry = (
+            False  # True once typing_ starts; prevents prompt_move overwriting
+        )
 
-        # Apply moves AND for any newly-seen move: show it like vs-computer
         def apply_new_moves(move_list, announce_new: bool = True):
-            nonlocal last_move_count, awaiting_ok_ack
+            nonlocal last_move_count, awaiting_ok_ack, in_move_entry
             for uci in move_list[last_move_count:]:
                 try:
                     mv = chess.Move.from_uci(uci)
@@ -107,26 +108,22 @@ class OnlineController:
                     last_move_count += 1
                     continue
 
-                # Determine capture BEFORE pushing
                 is_cap = board.is_capture(mv)
 
-                # Push move to our local board
                 board.push(mv)
                 last_move_count += 1
 
-                # Always tell Pico to display the move trail (this triggers OK-ack UX on Pico)
+                # Pico: show trail + OK-only (engine_ack_pending behavior)
                 link.sendtoboard(f"m{uci}{'_cap' if is_cap else ''}")
-
-                # Update turn on Pico (Pico uses this after OK is pressed)
                 send_turn()
 
-                # OLED: show "C7 -> C6" + "WHITE to move" style
                 if announce_new:
                     side_to_move = "WHITE" if board.turn == chess.WHITE else "BLACK"
                     display.send(f"{uci_to_oled(uci)}\n{side_to_move} to move")
 
-                    # IMPORTANT: keep this message on screen until user starts input
+                    # Hold this message until OK is pressed and user starts input
                     awaiting_ok_ack = True
+                    in_move_entry = False
 
         # ---- attach to game stream ----
         try:
@@ -151,12 +148,8 @@ class OnlineController:
 
         your_color = chess.WHITE if you_are_white else chess.BLACK
 
-        # Don't flash wrong color; show once we know it
         display.send(f"Connected\nYou are {'WHITE' if you_are_white else 'BLACK'}")
 
-        # Apply any existing moves from the initial gameFull without "announcing"
-        # (no need to set awaiting_ok_ack on startup)
-        awaiting_ok_ack = False
         apply_new_moves(extract_moves(first), announce_new=False)
         send_turn()
 
@@ -172,8 +165,9 @@ class OnlineController:
                     return
 
                 if peek.startswith("typing_"):
-                    # User started input => allow prompt_move to show again
+                    # As soon as typing starts, we are in move entry => never show prompt_move this turn
                     awaiting_ok_ack = False
+                    in_move_entry = True
                     self.d.handle_typing_preview(display, peek[7:])
 
                 if peek.startswith("capq_"):
@@ -184,7 +178,6 @@ class OnlineController:
                         cap = False
                     link.sendtoboard(f"capr_{1 if cap else 0}")
 
-                # OK+HINT => resign
                 if peek in ("n", "new", "in", "newgame", "btn_new"):
                     display.send("Resigning...")
                     try:
@@ -193,7 +186,6 @@ class OnlineController:
                         pass
                     raise self.d.GoToModeSelect()
 
-                # Hint hold => offer draw
                 if peek in ("draw", "btn_draw"):
                     display.send("Offering draw...")
                     try:
@@ -208,9 +200,8 @@ class OnlineController:
                 self.d.report_game_over(link, display, board)
                 raise self.d.GoToModeSelect()
 
-            # --- Opponent turn: block on stream until a new move arrives ---
+            # --- Opponent turn ---
             if board.turn != your_color:
-                # Show waiting banner occasionally (not spamming)
                 now = int(time.time() * 1000)
                 if now - last_wait_banner_ms > 1500:
                     display.send("Waiting\nfor opponent...")
@@ -222,7 +213,6 @@ class OnlineController:
                         move_list = extract_moves(payload)
 
                         if len(move_list) > last_move_count:
-                            # announce_new=True will display move + "to move" and send m<uci>
                             apply_new_moves(move_list, announce_new=True)
                             break
 
@@ -249,16 +239,20 @@ class OnlineController:
                     time.sleep(3)
                     raise self.d.GoToModeSelect()
 
-                # After opponent move arrives, Pico is now in OK-ack mode.
-                # When you press OK, Pico will enter move input on its own.
                 prompted_for_this_turn = False
                 continue
 
             # --- Your turn ---
             send_turn()
 
-            # IMPORTANT: don't overwrite the opponent-move message until user starts input
-            if (not prompted_for_this_turn) and (not awaiting_ok_ack):
+            # IMPORTANT:
+            # - If we're awaiting OK ack, keep opponent-move message
+            # - If move entry has started (typing_), do NOT overwrite it with prompt_move
+            if (
+                (not prompted_for_this_turn)
+                and (not awaiting_ok_ack)
+                and (not in_move_entry)
+            ):
                 side = "WHITE" if your_color == chess.WHITE else "BLACK"
                 display.prompt_move(side)
                 prompted_for_this_turn = True
@@ -273,6 +267,7 @@ class OnlineController:
 
             if msg.startswith("typing_"):
                 awaiting_ok_ack = False
+                in_move_entry = True
                 self.d.handle_typing_preview(display, msg[7:])
                 continue
 
@@ -285,7 +280,6 @@ class OnlineController:
                 link.sendtoboard(f"capr_{1 if cap else 0}")
                 continue
 
-            # OK+HINT => resign
             if msg in ("n", "new", "in", "newgame", "btn_new"):
                 display.send("Resigning...")
                 try:
@@ -294,7 +288,6 @@ class OnlineController:
                     pass
                 raise self.d.GoToModeSelect()
 
-            # Hint hold => offer draw
             if msg in ("draw", "btn_draw"):
                 display.send("Offering draw...")
                 try:
@@ -307,8 +300,9 @@ class OnlineController:
                 display.send("Online mode\nHints disabled")
                 continue
 
-            # Any non-typing message that becomes a move means input is happening now
+            # Any move payload means we are in move entry
             awaiting_ok_ack = False
+            in_move_entry = True
 
             uci = self.d.parse_move_payload(msg)
             if not uci:
@@ -348,8 +342,11 @@ class OnlineController:
                 time.sleep(2)
                 continue
 
-            # After we successfully play our move, update local state
             board.push(move)
             last_move_count += 1
             send_turn()
+
+            # Reset for next cycle
             prompted_for_this_turn = False
+            in_move_entry = False
+            awaiting_ok_ack = False
