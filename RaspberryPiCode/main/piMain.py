@@ -1,18 +1,8 @@
-#!/home/king/chessenv/bin/python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-SmarterChess — Modular Main Entrypoint (2026)
-Single-responsibility modules:
-  - mc_display: Display abstraction
-  - mc_serial:  BoardLink (UART)
-  - mc_engine:  EngineContext + bestmove/hint helpers
-  - mc_game:    GameConfig/RuntimeState + setup + unified play loop
-
-Behavior parity with single-file version:
-  - UART protocol preserved
-  - No pre-OK legality/capture preview (Pico side)
-  - Legality validated after OK on Pi
-  - Typing previews shown non-blocking and blocking
+SMARTCHESS — Modular Entrypoint (Protocol v2)
+- Orchestrator-based, Lichess-ready
 """
 import time
 import traceback
@@ -24,20 +14,15 @@ from piGame import GameConfig, RuntimeState, select_mode, mode_dispatch, GoToMod
 import chess  # type: ignore
 
 
-
 def main():
     display = Display()
     display.restart_server()
     display.wait_ready()
 
-    # Splash + engine pre-warm before we open UART / ask for mode
-    display.banner("SMARTCHESS", delay_s=1.2)   # splash
-    display.send("Engine starting...")          # status line prior to mode select
+    display.banner("SMARTCHESS", delay_s=1.0)
+    display.send("Engine starting...")
 
-    ctx = EngineContext()
-    # Synchronous pre-warm: blocks until stockfish is ready with your current ensure()
-    # If stockfish may not be installed, consider Option B below.
-    ctx.ensure("/usr/games/stockfish")
+    ctx = EngineContext(); ctx.ensure("/usr/games/stockfish")
 
     link = BoardLink()
     cfg = GameConfig()
@@ -51,14 +36,12 @@ def main():
         except GoToModeSelect:
             state.board = chess.Board()
             display.send("SMARTCHESS")
-            time.sleep(2.5)
+            time.sleep(1.0)
             continue
         except KeyboardInterrupt:
             break
         except Exception:
-            traceback.print_exc()
-            time.sleep(1)
-            continue
+            traceback.print_exc(); time.sleep(1); continue
 
     try:
         link.close()

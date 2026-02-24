@@ -1,22 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-Display abstraction for SmarterChess (modular version)
-- Communicates with display_server.py through a named pipe.
-- Preserves the same UI messaging style as the single-file version.
+Display abstraction for SMARTCHESS (NDJSON display server)
+- Same interface as before
 """
 import os
 import time
 import subprocess
-from typing import Optional
 
 PIPE_PATH: str = "/tmp/lcdpipe"
 READY_FLAG_PATH: str = "/tmp/display_server_ready"
 DISPLAY_SERVER_SCRIPT: str = "/home/king/SmarterChess-DIY2026/RaspberryPiCode/screen/display_server.py"
 
 class Display:
-    """
-    Minimal abstraction around display_server IPC.
-    """
     def __init__(self, pipe_path: str = PIPE_PATH, ready_flag: str = READY_FLAG_PATH):
         self.pipe_path = pipe_path
         self.ready_flag = ready_flag
@@ -60,29 +55,17 @@ class Display:
             self.send(arrow)
 
     def prompt_move(self, side: str) -> None:
-        # side is human-friendly descriptor: "WHITE" or "BLACK" 
         self.send(f"You are {side.lower()}\nEnter move:")
 
     def show_hint_result(self, uci: str) -> None:
-        """
-        Show hint in the format:
-        Hint received: e2 → e4
-        Falls back gracefully if UCI is shorter than 4.
-        """
         try:
             frm, to = uci[:2], uci[2:4]
             if len(uci) >= 4:
                 self.send(f"Hint received:\n{frm} → {to}")
             else:
-                # Fallback: just show whatever we received
                 self.send(f"Hint received:\n{uci}")
         except Exception:
             self.send(f"Hint received:\n{uci}")
-
-    '''
-        def show_hint_result(self, uci: str) -> None:
-            self.show_arrow(uci)
-    '''
 
     def show_invalid(self, text: str) -> None:
         self.send(f"Invalid\n{text}\nTry again")
@@ -91,7 +74,7 @@ class Display:
         self.send(f"Illegal move!\nEnter new\nmove...")
 
     def show_gameover(self, result: str) -> None:
-        self.send(f"Game Over\nResult {result}\nPress n to start over")
+        self.send(f"Game Over\nResult {result}\nPress OK")
 
     def show_hint_thinking(self) -> None:
         self.send("Hint\nThinking...")

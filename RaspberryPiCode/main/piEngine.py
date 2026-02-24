@@ -1,11 +1,8 @@
 # -*- coding: utf-8 -*-
-"""
-Engine context and helpers (Stockfish) for SmarterChess (modular version).
-"""
 from typing import Optional
 import time
 import chess  # type: ignore
-import chess.engine  # type: ignore  
+import chess.engine  # type: ignore
 
 STOCKFISH_PATH: str = "/usr/games/stockfish"
 
@@ -36,8 +33,9 @@ def engine_bestmove(ctx: EngineContext, brd: chess.Board, ms: int) -> Optional[s
         return None
     engine = ctx.ensure(STOCKFISH_PATH)
     limit = chess.engine.Limit(time=max(0.01, ms / 1000.0))
-    result = engine.play(brd, limit)  # type: ignore 
+    result = engine.play(brd, limit)  # type: ignore
     return result.move.uci() if result.move else None
+
 
 def engine_hint(ctx: EngineContext, brd: chess.Board, ms: int) -> Optional[str]:
     try:
