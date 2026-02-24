@@ -99,7 +99,7 @@ class OnlineController:
 
         # Apply moves AND for any newly-seen move: show it like vs-computer
         def apply_new_moves(move_list, announce_new: bool = True):
-            nonlocal last_move_count
+            nonlocal last_move_count, awaiting_ok_ack
             for uci in move_list[last_move_count:]:
                 try:
                     mv = chess.Move.from_uci(uci)
@@ -124,6 +124,9 @@ class OnlineController:
                 if announce_new:
                     side_to_move = "WHITE" if board.turn == chess.WHITE else "BLACK"
                     display.send(f"{uci_to_oled(uci)}\n{side_to_move} to move")
+
+                    # IMPORTANT: keep this message on screen until user starts input
+                    awaiting_ok_ack = True
 
         # ---- attach to game stream ----
         try:
@@ -152,6 +155,8 @@ class OnlineController:
         display.send(f"Connected\nYou are {'WHITE' if you_are_white else 'BLACK'}")
 
         # Apply any existing moves from the initial gameFull without "announcing"
+        # (no need to set awaiting_ok_ack on startup)
+        awaiting_ok_ack = False
         apply_new_moves(extract_moves(first), announce_new=False)
         send_turn()
 
@@ -167,6 +172,8 @@ class OnlineController:
                     return
 
                 if peek.startswith("typing_"):
+                    # User started input => allow prompt_move to show again
+                    awaiting_ok_ack = False
                     self.d.handle_typing_preview(display, peek[7:])
 
                 if peek.startswith("capq_"):
@@ -249,8 +256,9 @@ class OnlineController:
 
             # --- Your turn ---
             send_turn()
-            if not prompted_for_this_turn:
-                # Match vs-computer feel: show whose turn
+
+            # IMPORTANT: don't overwrite the opponent-move message until user starts input
+            if (not prompted_for_this_turn) and (not awaiting_ok_ack):
                 side = "WHITE" if your_color == chess.WHITE else "BLACK"
                 display.prompt_move(side)
                 prompted_for_this_turn = True
@@ -264,6 +272,7 @@ class OnlineController:
                 return
 
             if msg.startswith("typing_"):
+                awaiting_ok_ack = False
                 self.d.handle_typing_preview(display, msg[7:])
                 continue
 
@@ -285,7 +294,7 @@ class OnlineController:
                     pass
                 raise self.d.GoToModeSelect()
 
-            # Hint hold => offer draw  (BUGFIX: this must check msg, not peek)
+            # Hint hold => offer draw
             if msg in ("draw", "btn_draw"):
                 display.send("Offering draw...")
                 try:
@@ -297,6 +306,9 @@ class OnlineController:
             if msg in ("hint", "btn_hint"):
                 display.send("Online mode\nHints disabled")
                 continue
+
+            # Any non-typing message that becomes a move means input is happening now
+            awaiting_ok_ack = False
 
             uci = self.d.parse_move_payload(msg)
             if not uci:
