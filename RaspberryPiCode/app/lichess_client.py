@@ -54,3 +54,23 @@ class LichessClient:
             return {"ok": False, "status": r.status_code, "text": r.text[:200]}
         except RequestException as e:
             return {"ok": False, "error": str(e)}
+
+    # -------------------- Puzzles --------------------
+
+    def get_daily_puzzle(self) -> Dict[str, Any]:
+        """Fetch the current daily puzzle."""
+        try:
+            r = requests.get(f"{LICHESS_BASE}/api/puzzle/daily", headers=self.headers, timeout=15)
+            r.raise_for_status()
+            return r.json()
+        except RequestException as e:
+            return {"_error": str(e)}
+
+    def get_puzzle(self, puzzle_id: str) -> Dict[str, Any]:
+        """Fetch a puzzle by its ID."""
+        try:
+            r = requests.get(f"{LICHESS_BASE}/api/puzzle/{puzzle_id}", headers=self.headers, timeout=15)
+            r.raise_for_status()
+            return r.json()
+        except RequestException as e:
+            return {"_error": str(e)}

@@ -24,6 +24,10 @@ from piDisplay import Display
 from piSerial import BoardLink
 from piEngine import EngineContext, engine_bestmove, engine_hint
 
+# Phase 1: daily puzzle controller
+from app.lichess_client import LichessClient
+from app.puzzle_controller import DailyPuzzleController
+
 # -------------------- Data classes -------------------- 
 
 @dataclass
@@ -35,7 +39,7 @@ class GameConfig:
 @dataclass
 class RuntimeState:
     board: chess.Board
-    mode: str = "stockfish"  # "stockfish" | "local" | "online" 
+    mode: str = "stockfish"  # "stockfish" | "local" | "online" | "puzzle"
 
 # -------------------- Parsing & helpers --------------------
 
@@ -165,7 +169,7 @@ class GoToModeSelect(Exception):
 
 def select_mode(link: BoardLink, display: Display, state: RuntimeState) -> str:
     link.sendtoboard("ChooseMode")
-    display.send("Choose opponent:\n1) Against PC\n2) Remote human\n3) Local 2-player")
+    display.send("Choose mode:\n1) Against PC\n2) Lichess Online\n3) Local 2-player\n4) Daily puzzle")
     while True:
         msg = link.getboard()
         if msg is None:
@@ -177,6 +181,8 @@ def select_mode(link: BoardLink, display: Display, state: RuntimeState) -> str:
             return "online"
         if m in ("3", "local", "human", "btn_mode_local"):
             return "local"
+        if m in ("4", "puzzle", "daily", "btn_mode_puzzle"):
+            return "puzzle"
         link.sendtoboard("error_unknown_mode")
         display.send("Unknown mode\n" + m + "\nSend again")
 
@@ -602,6 +608,15 @@ def run_online_mode(link: BoardLink, display: Display, cfg: GameConfig) -> None:
     )
     OnlineController(deps).run()
 
+
+def run_puzzle_mode(link: BoardLink, display: Display) -> None:
+    """Daily puzzle mode (Phase 1).
+
+    Fetches the daily puzzle and validates moves locally.
+    """
+    client = LichessClient()
+    DailyPuzzleController(client).run(link, display)
+
 def mode_dispatch(link: BoardLink, display: Display, ctx: EngineContext, state: RuntimeState, cfg: GameConfig) -> None:
     if state.mode == "stockfish":
         setup_stockfish(link, display, cfg)
@@ -616,6 +631,10 @@ def mode_dispatch(link: BoardLink, display: Display, ctx: EngineContext, state: 
         setup_local(link, display, cfg)
         link.sendtoboard("SetupComplete")
         play_game(link, display, ctx, state, cfg)
+    elif state.mode == "puzzle":
+        # No Pico setup screens for puzzle yet.
+        run_puzzle_mode(link, display)
+        raise GoToModeSelect()
     else:
         run_online_mode(link, display, cfg)
 
