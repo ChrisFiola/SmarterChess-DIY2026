@@ -252,8 +252,6 @@ class DailyPuzzleController:
             forward=10,
         )
 
-        # If nothing matches even 1 move, still proceed, but you’ll likely see “Try again”.
-        # This usually means PGN parsing mismatch or an unexpected puzzle payload.
         fen = start_board.fen()
         return (
             PuzzleState(puzzle_id=puzzle_id, fen_start=fen, solution=sol, idx=0),
@@ -322,10 +320,12 @@ class DailyPuzzleController:
 
         # 3) Load board state
         board = chess.Board(st.fen_start)
+
+        # You always play the side-to-move at the puzzle start position
+        player_color = "WHITE" if board.turn == chess.WHITE else "BLACK"
+
         link.sendtoboard(f"turn_{'white' if board.turn == chess.WHITE else 'black'}")
-        display.send(
-            f"Daily Puzzle\n{'WHITE' if board.turn else 'BLACK'} to move\nEnter move"
-        )
+        display.send(f"Daily Puzzle\nYou are {player_color}\nEnter move:")
 
         # 4) Main solve loop
         awaiting_ack_after_opponent = False
@@ -335,7 +335,7 @@ class DailyPuzzleController:
                 display.send("Puzzle solved!\nOK = menu")
                 link.sendtoboard("GameOver:1-0")
 
-                # Wait for OK before returning (match Pico protocol)
+                # Wait for OK before returning
                 while True:
                     msg2 = link.getboard()
                     if msg2 is None:
@@ -365,27 +365,26 @@ class DailyPuzzleController:
             # If we just showed "Opponent played... OK = continue", keep that screen
             # until the Pico actually starts a new input (typing_...) or sends a move/capq/hint.
             if awaiting_ack_after_opponent:
-                # Ignore random chatter; only "unlock" once the Pico begins new interaction
                 if msg in ("shutdown", "n", "new", "in", "newgame", "btn_new"):
                     # allow exits immediately
                     pass
-                elif (
-                    msg.startswith("typing_")
-                    or msg.startswith("capq_")
-                    or msg in ("hint", "btn_hint")
-                ):
+                elif msg.startswith("typing_") or msg.startswith("capq_"):
                     awaiting_ack_after_opponent = False
+                    display.send(f"You are {player_color}\nEnter move:")
+                    # fall through and process msg normally
+                elif msg in ("hint", "btn_hint"):
+                    awaiting_ack_after_opponent = False
+                    display.send(f"You are {player_color}\nEnter move:")
                     # fall through and process msg normally
                 else:
-                    # if it's not a real next-step signal, keep waiting
-                    # (important: DO NOT overwrite the LCD prompt)
-                    # Also: if msg is a move UCI, unlock and process it:
+                    # if msg is a move UCI, unlock and process it
                     u = msg.strip().lower()
                     if u.startswith("m"):
                         u = u[1:]
                     u = "".join(ch for ch in u if ch.isalnum())
                     if len(u) in (4, 5):
                         awaiting_ack_after_opponent = False
+                        display.send(f"You are {player_color}\nEnter move:")
                         # fall through and process
                     else:
                         continue
@@ -400,19 +399,15 @@ class DailyPuzzleController:
                 return
 
             # Capture probe from Pico (used for user-move blinking capture UX)
-            # Pico sends: heypicapq_<uci>
-            # Pico expects: heyArduinocapr_1 or heyArduinocapr_0
             if msg.startswith("capq_"):
                 q = msg[len("capq_") :].strip().lower()
                 q = "".join(ch for ch in q if ch.isalnum())
                 cap_flag = 0
                 try:
                     mvq = chess.Move.from_uci(q)
-                    # is_capture works even for some illegal moves, but we keep it safe:
                     cap_flag = 1 if board.is_capture(mvq) else 0
                 except Exception:
                     cap_flag = 0
-
                 link.sendtoboard(f"capr_{cap_flag}")
                 continue
 
@@ -453,7 +448,6 @@ class DailyPuzzleController:
                     wrong = True
 
             if wrong:
-                # Pico restarts input only when it receives "heyArduinoerror..."
                 link.sendtoboard(f"error_wrong_{uci}")
                 display.send("Try again\nEnter move")
                 continue
@@ -475,7 +469,6 @@ class DailyPuzzleController:
             display.send("Correct")
             __import__("time").sleep(2)
 
-            mover = "WHITE" if board.turn == chess.WHITE else "BLACK"
             board.push(mv)
             st.idx += 1
 
@@ -490,30 +483,22 @@ class DailyPuzzleController:
                     return
 
                 if rmv in board.legal_moves:
-                    # Opponent is the side that is ABOUT to move now (before pushing rmv)
                     opp = "WHITE" if board.turn == chess.WHITE else "BLACK"
                     cap = board.is_capture(rmv)
 
-                    # Show opponent move on LCD and WAIT for OK acknowledgement
                     display.send(
                         f"{opp} played:\n{reply[:2]} → {reply[2:4]}\nOK = continue"
                     )
-
-                    # LEDs/trail on Pico (this also triggers Pico's engine_ack_pending flow)
                     link.sendtoboard(f"m{reply}{'_cap' if cap else ''}")
 
                     board.push(rmv)
                     st.idx += 1
 
-                    # IMPORTANT: do NOT immediately overwrite LCD with "to move"
-                    # Hold this screen until typing_/move arrives.
                     awaiting_ack_after_opponent = True
 
-            # Next prompt
+            # Next prompt (only if we are not holding the opponent screen)
             link.sendtoboard(
                 f"turn_{'white' if board.turn == chess.WHITE else 'black'}"
             )
             if not awaiting_ack_after_opponent:
-                display.send(
-                    f"{'WHITE' if board.turn else 'BLACK'} to move\nEnter move"
-                )
+                display.send(f"You are {player_color}\nEnter move:")
