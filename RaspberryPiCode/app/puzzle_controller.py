@@ -146,6 +146,79 @@ def _is_cap(board: chess.Board, uci: str) -> bool:
         return False
 
 
+def _play_solution_prefix_len(b: chess.Board, sol: List[str]) -> int:
+    """Return how many initial moves from sol are legal when played sequentially."""
+    tmp = b.copy()
+    n = 0
+    for u in sol:
+        try:
+            mv = chess.Move.from_uci(u)
+        except Exception:
+            break
+        if mv not in tmp.legal_moves:
+            break
+        tmp.push(mv)
+        n += 1
+    return n
+
+
+def _find_best_start_board_from_pgn(
+    pgn: str,
+    initial_ply: int,
+    sol: List[str],
+    back: int = 6,
+    forward: int = 10,
+) -> Tuple[chess.Board, int, int]:
+    """
+    Search plies around initial_ply and return (best_board, best_ply, matched_len).
+
+    Heuristic:
+      - maximize consecutive legal moves from solution starting at solution[0]
+      - tie-break: closest ply to initial_ply (abs delta)
+      - tie-break: lower ply (earlier) for stability
+    """
+    best_board = _board_from_pgn_at_ply(pgn, max(0, initial_ply))
+    best_ply = max(0, initial_ply)
+    best_len = _play_solution_prefix_len(best_board, sol)
+
+    candidates: List[int] = []
+    for d in range(0, max(back, forward) + 1):
+        # try 0, +1, -1, +2, -2, ...
+        if d == 0:
+            candidates.append(initial_ply)
+        else:
+            candidates.append(initial_ply + d)
+            candidates.append(initial_ply - d)
+
+    seen = set()
+    for ply_try in candidates:
+        if ply_try in seen:
+            continue
+        seen.add(ply_try)
+        if ply_try < 0:
+            continue
+        if ply_try < initial_ply - back or ply_try > initial_ply + forward:
+            continue
+
+        b = _board_from_pgn_at_ply(pgn, ply_try)
+        mlen = _play_solution_prefix_len(b, sol)
+
+        if mlen > best_len:
+            best_board, best_ply, best_len = b, ply_try, mlen
+            continue
+
+        if mlen == best_len:
+            # tie-break: closest to initial_ply
+            if abs(ply_try - initial_ply) < abs(best_ply - initial_ply):
+                best_board, best_ply = b, ply_try
+            elif abs(ply_try - initial_ply) == abs(best_ply - initial_ply):
+                # tie-break: earlier ply
+                if ply_try < best_ply:
+                    best_board, best_ply = b, ply_try
+
+    return best_board, best_ply, best_len
+
+
 class DailyPuzzleController:
     """Run the daily puzzle loop using the Pico for input and LEDs."""
 
@@ -159,6 +232,7 @@ class DailyPuzzleController:
 
         puzzle = payload.get("puzzle") or {}
         game = payload.get("game") or {}
+
         puzzle_id = str(puzzle.get("id") or "")
         pgn = str(game.get("pgn") or "")
         initial_ply = int(puzzle.get("initialPly") or 0)
@@ -167,10 +241,22 @@ class DailyPuzzleController:
         if not puzzle_id or not pgn or not solution:
             return None, "Daily puzzle response missing required fields"
 
-        board = _board_from_pgn_at_ply(pgn, initial_ply)
-        fen = board.fen()
         sol = [str(m) for m in solution]
-        return PuzzleState(puzzle_id=puzzle_id, fen_start=fen, solution=sol), None
+
+        # --- Generic alignment: pick the ply where the solution actually fits ---
+        start_board, used_ply, matched = _find_best_start_board_from_pgn(
+            pgn=pgn,
+            initial_ply=initial_ply,
+            sol=sol,
+            back=6,
+            forward=10,
+        )
+
+        fen = start_board.fen()
+        return (
+            PuzzleState(puzzle_id=puzzle_id, fen_start=fen, solution=sol, idx=0),
+            None,
+        )
 
     def run(self, link: BoardLink, display: Display) -> None:
         # 1) Fetch puzzle
@@ -234,16 +320,49 @@ class DailyPuzzleController:
 
         # 3) Load board state
         board = chess.Board(st.fen_start)
+
+        # You always play the side-to-move at the puzzle start position
+        player_color = "WHITE" if board.turn == chess.WHITE else "BLACK"
+
         link.sendtoboard(f"turn_{'white' if board.turn == chess.WHITE else 'black'}")
-        display.send(
-            f"Daily Puzzle\n{'WHITE' if board.turn else 'BLACK'} to move\nEnter move"
-        )
+        display.send(f"Daily Puzzle\nYou are {player_color}\nEnter move:")
+
+        # Helper: wait for OK acknowledgement coming from Pico (requires Pico patch above)
+        def _wait_ack_ok() -> bool:
+            while True:
+                m = link.getboard()
+                if m is None:
+                    continue
+
+                if m == "shutdown":
+                    from piGame import shutdown_pi
+
+                    shutdown_pi(link, display)
+                    return False
+
+                if m in ("n", "new", "in", "newgame", "btn_new"):
+                    return False
+
+                if m in ("btn_ok", "ok"):
+                    return True
+
+                # ignore everything else while waiting for OK
+                if (
+                    m.startswith("typing_")
+                    or m.startswith("capq_")
+                    or m in ("hint", "btn_hint")
+                ):
+                    continue
 
         # 4) Main solve loop
         while True:
+            # solved
             if st.idx >= len(st.solution):
-                display.send("Puzzle solved!\nNice.")
+                display.send("Puzzle solved!\nOK = menu")
                 link.sendtoboard("GameOver:1-0")
+                # Wait for OK before returning
+                if _wait_ack_ok():
+                    return
                 return
 
             expected = st.solution[st.idx]
@@ -261,6 +380,19 @@ class DailyPuzzleController:
             if msg in ("n", "new", "in", "newgame", "btn_new"):
                 return
 
+            # Capture probe from Pico (user-move capture blink UX)
+            if msg.startswith("capq_"):
+                q = msg[len("capq_") :].strip().lower()
+                q = "".join(ch for ch in q if ch.isalnum())
+                cap_flag = 0
+                try:
+                    mvq = chess.Move.from_uci(q)
+                    cap_flag = 1 if board.is_capture(mvq) else 0
+                except Exception:
+                    cap_flag = 0
+                link.sendtoboard(f"capr_{cap_flag}")
+                continue
+
             # Hint
             if msg in ("hint", "btn_hint"):
                 link.sendtoboard(
@@ -269,16 +401,13 @@ class DailyPuzzleController:
                 display.send("Hint:\n" + f"{expected[:2]} → {expected[2:4]}")
                 continue
 
-            # --- Show typing on LCD just like other modes ---
+            # Typing preview
             if msg.startswith("typing_"):
-                # typing_from_a, typing_from_e2, typing_to_e2 → a, typing_confirm_e2 → e4, etc.
-                # reuse existing display logic if present
                 try:
                     from piGame import handle_typing_preview
 
                     handle_typing_preview(display, msg[len("typing_") :])
                 except Exception:
-                    # fallback: show raw typing text
                     display.send(msg.replace("typing_", ""))
                 continue
 
@@ -288,11 +417,10 @@ class DailyPuzzleController:
                 uci = uci[1:]
             uci = "".join(ch for ch in uci if ch.isalnum())
 
-            # Ignore incomplete input silently (single square / partial)
             if len(uci) not in (4, 5):
                 continue
 
-            # Check expected match (puzzle solution)
+            # Check expected match
             wrong = False
             if uci[:4] != expected[:4]:
                 wrong = True
@@ -301,14 +429,11 @@ class DailyPuzzleController:
                     wrong = True
 
             if wrong:
-                # CRITICAL: your Pico only restarts move entry when it receives "heyArduinoerror..."
-                link.sendtoboard(
-                    f"error_wrong_{uci}"
-                )  # -> Pico sees heyArduinoerror_wrong_...
+                link.sendtoboard(f"error_wrong_{uci}")
                 display.send("Try again\nEnter move")
                 continue
 
-            # Must be legal in the local position too
+            # Must be legal in local position too
             try:
                 mv = chess.Move.from_uci(expected)
             except Exception:
@@ -321,8 +446,10 @@ class DailyPuzzleController:
                 display.send("Try again\nEnter move")
                 continue
 
-            # Correct
+            # Correct player move
             display.send("Correct")
+            __import__("time").sleep(2)
+
             board.push(mv)
             st.idx += 1
 
@@ -337,13 +464,28 @@ class DailyPuzzleController:
                     return
 
                 if rmv in board.legal_moves:
+                    opp = "WHITE" if board.turn == chess.WHITE else "BLACK"
                     cap = board.is_capture(rmv)
+
+                    display.send(
+                        f"{opp} played:\n{reply[:2]} → {reply[2:4]}\nOK = continue"
+                    )
                     link.sendtoboard(f"m{reply}{'_cap' if cap else ''}")
+
                     board.push(rmv)
                     st.idx += 1
 
-            # Next prompt
+                    # Wait for OK ack (NOW Pico will send btn_ok after the Pico patch)
+                    ok = _wait_ack_ok()
+                    if not ok:
+                        return
+
+                    # Immediately show prompt BEFORE user starts typing
+                    display.send(f"You are {player_color}\nEnter move:")
+
+            # Next prompt for normal flow (if there was no opponent move)
             link.sendtoboard(
                 f"turn_{'white' if board.turn == chess.WHITE else 'black'}"
             )
-            display.send(f"{'WHITE' if board.turn else 'BLACK'} to move\nEnter move")
+            # Keep consistent prompt text
+            display.send(f"You are {player_color}\nEnter move:")
