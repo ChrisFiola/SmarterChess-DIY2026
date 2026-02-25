@@ -88,7 +88,16 @@ class OnlineController:
                 return u.upper()
             return f"{u[0].upper()}{u[1]} -> {u[2].upper()}{u[3]}"
 
-        def send_turn():
+        def send_turn_if_human():
+            """Tell Pico to start/continue move entry ONLY when it's the human's turn.
+
+            In this firmware, receiving `heyArduinoturn_*` immediately transitions the Pico UI
+            into move-collection (lights CP coords + waits for OK). If we send turn updates
+            for the opponent's turn, the CP will look like it's waiting for a human move
+            when it shouldn't.
+            """
+            if board.turn != your_color:
+                return
             link.sendtoboard(
                 "turn_white" if board.turn == chess.WHITE else "turn_black"
             )
@@ -115,7 +124,7 @@ class OnlineController:
 
                 # Pico: show trail + OK-only (engine_ack_pending behavior)
                 link.sendtoboard(f"m{uci}{'_cap' if is_cap else ''}")
-                send_turn()
+                send_turn_if_human()
 
                 if announce_new:
                     side_to_move = "WHITE" if board.turn == chess.WHITE else "BLACK"
@@ -151,7 +160,7 @@ class OnlineController:
         display.send(f"Connected\nYou are {'WHITE' if you_are_white else 'BLACK'}")
 
         apply_new_moves(extract_moves(first), announce_new=False)
-        send_turn()
+        send_turn_if_human()
 
         prompted_for_this_turn = False
         last_wait_banner_ms = 0
@@ -243,7 +252,7 @@ class OnlineController:
                 continue
 
             # --- Your turn ---
-            send_turn()
+            send_turn_if_human()
 
             # IMPORTANT:
             # - If we're awaiting OK ack, keep opponent-move message
@@ -344,7 +353,7 @@ class OnlineController:
 
             board.push(move)
             last_move_count += 1
-            send_turn()
+            send_turn_if_human()
 
             # Reset for next cycle
             prompted_for_this_turn = False
