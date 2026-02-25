@@ -124,6 +124,9 @@ class OnlineController:
 
                 # Pico: show trail + OK-only (engine_ack_pending behavior)
                 link.sendtoboard(f"m{uci}{'_cap' if is_cap else ''}")
+                time.sleep(
+                    0.3
+                )  # give Pico time to show the move before we potentially overwrite with prompt_move
                 send_turn_if_human()
 
                 if announce_new:
