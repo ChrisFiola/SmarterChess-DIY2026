@@ -26,6 +26,9 @@ import neopixel
 BUTTON_PINS = [2, 3, 4, 5, 10, 8, 7, 6, 9, 11]  # 1–8=coords, 9=A1(OK), 11=Hint IRQ
 DEBOUNCE_MS = 300
 
+
+# OK long-hold threshold for backspace during move entry
+LONG_PRESS_MS = 500
 # Special role indexes (0-based into BUTTON_PINS)
 OK_BUTTON_INDEX = 8  # Button 9
 HINT_BUTTON_INDEX = 9  # Button 10
@@ -669,6 +672,38 @@ BTN_SHUT = buttons.btn(SHUTDOWN_BTN_INDEX)  # <- H/8 button pin object
 
 ok_last_val = 1  # edge detector for OK in puzzle setup
 
+# --- OK long-hold backspace (single-shot, fires while still held) ---
+_ok_press_ms = None
+_ok_fired = False
+
+
+def reset_ok_hold_state():
+    global _ok_press_ms, _ok_fired
+    _ok_press_ms = None
+    _ok_fired = False
+
+
+def ok_long_hold_fired(hold_ms=LONG_PRESS_MS):
+    """Return True once when OK has been held for hold_ms.
+    Non-blocking: call frequently inside move-entry loops.
+    Resets on release. Single-shot (no repeat while held).
+    """
+    global _ok_press_ms, _ok_fired
+    if BTN_OK.value() == 0:  # pressed (active-low)
+        if _ok_press_ms is None:
+            _ok_press_ms = time.ticks_ms()
+            _ok_fired = False
+        if (not _ok_fired) and time.ticks_diff(
+            time.ticks_ms(), _ok_press_ms
+        ) >= hold_ms:
+            _ok_fired = True
+            return True
+        return False
+    _ok_press_ms = None
+    _ok_fired = False
+    return False
+
+
 # ============================================================
 # =============== HINT IRQ (EDGE) ============================
 # ============================================================
@@ -714,6 +749,9 @@ def cp_only_hint_and_coords_for_input():
     cp.clear_small_panel()
     cp.coord(WHITE)
     cp.hint(True, YELLOW)
+    # OK is RED during entry (hold OK to delete last character)
+    cp.set(CP_OK_PIX, RED)
+    cp_bars_dim_on()
 
 
 def cp_show_coords_top(COLOR):
@@ -934,9 +972,11 @@ def _send_confirm_preview(move):
 # ============================================================
 
 
-def enter_from_square(seed_btn=None):
+def enter_from_square(seed_btn=None, preset_col=None):
     if game_state != GAME_RUNNING:
         return None
+
+    reset_ok_hold_state()
 
     if is_shutdown_held():
         shutdown_pico()
@@ -963,6 +1003,13 @@ def enter_from_square(seed_btn=None):
 
     col = None
     row = None
+
+    # If caller provided a preset file letter (after backspace), keep original LCD behavior:
+    # show the single-letter "from" preview and continue by asking for the rank.
+    if preset_col is not None:
+        col = preset_col
+        _send_from_preview(col)
+
     while col is None:
         if game_state != GAME_RUNNING:
             return None
@@ -1004,6 +1051,12 @@ def enter_from_square(seed_btn=None):
         if is_shutdown_held():
             shutdown_pico()
 
+        # Backspace during FROM rank entry: hold OK deletes the file (last char) and returns to file selection
+        if ok_long_hold_fired():
+            _send_from_preview("")
+            ui_board.markings()
+            return ("back_from", None)
+
         irq = process_hint_irq()
         if irq == "new":
             return None
@@ -1031,9 +1084,11 @@ def enter_from_square(seed_btn=None):
     return frm
 
 
-def enter_to_square(move_from):
+def enter_to_square(move_from, preset_col=None):
     if game_state != GAME_RUNNING:
         return None
+
+    reset_ok_hold_state()
 
     if is_shutdown_held():
         shutdown_pico()
@@ -1062,12 +1117,28 @@ def enter_to_square(move_from):
     col = None
     row = None
 
+    if preset_col is not None:
+        # Only accept a real file letter preset (a..h). Ignore "" or invalid.
+        if (
+            isinstance(preset_col, str)
+            and len(preset_col) == 1
+            and ("a" <= preset_col <= "h")
+        ):
+            col = preset_col
+            _send_to_preview(move_from, col)
     while col is None:
         if game_state != GAME_RUNNING:
             return None
 
         if is_shutdown_held():
             shutdown_pico()
+
+        # Backspace before TO file chosen: delete last FROM char (rank) and go back to FROM rank entry
+        if ok_long_hold_fired():
+            # We are deleting FROM rank (e2 -> e). Show remaining FROM buffer on LCD.
+            _send_from_preview(move_from[0])
+            ui_board.markings()
+            return ("back_to_from_rank", move_from[0])
 
         irq = process_hint_irq()
         if irq == "new":
@@ -1097,6 +1168,12 @@ def enter_to_square(move_from):
 
         if is_shutdown_held():
             shutdown_pico()
+
+        # Backspace during TO rank entry: delete the TO file and restart TO file selection
+        if ok_long_hold_fired():
+            _send_to_preview(move_from, "")
+            ui_board.preview_from(move_from)
+            return ("back_to_to_file", move_from)
 
         irq = process_hint_irq()
         if irq == "new":
@@ -1164,8 +1241,59 @@ def confirm_move(move):
             continue
 
         if b == (OK_BUTTON_INDEX + 1):
-            cp_only_ok(False)
-            return "ok"
+            # OK at confirm stage:
+            # - Short press (release < LONG_PRESS_MS): CONFIRM
+            # - Long hold (>= LONG_PRESS_MS): DELETE last character immediately (single-shot) and return to TO-rank entry
+            t0 = time.ticks_ms()
+            fired = False
+
+            while BTN_OK.value() == 0:
+                if is_shutdown_held():
+                    shutdown_pico()
+
+                irq = process_hint_irq()
+                if irq == "new":
+                    cp_only_ok(False)
+                    return None
+
+                # Fire delete once at threshold (while still held)
+                if (not fired) and time.ticks_diff(
+                    time.ticks_ms(), t0
+                ) >= LONG_PRESS_MS:
+                    fired = True
+                    # move is full UCI (len 4). Delete last char => len 3 (keep TO file)
+                    partial = move[:-1]  # could be len 3 or len 2
+                    frm = partial[:2]
+
+                    if len(partial) == 3:
+                        # e2e : show "e2 → e"
+                        _send_to_preview(frm, partial[2])
+                    else:
+                        # e2 : show "e2 →" (TO empty)
+                        _send_to_preview(frm, "")
+                    ui_board.preview_from(frm)
+                    cp_only_hint_and_coords_for_input()
+                    # Wait for release so we don't immediately treat it as a new press
+                    # (but do not block other critical actions)
+                time.sleep_ms(10)
+
+            held_ms = time.ticks_diff(time.ticks_ms(), t0)
+            reset_ok_hold_state()
+
+            if fired:
+                cp_only_ok(False)
+                reset_ok_hold_state()
+                return ("backspace_confirm", move[:-1])
+
+            # Short press confirms on release
+            if held_ms < LONG_PRESS_MS:
+                cp_only_ok(False)
+                return "ok"
+
+            # Long hold but somehow didn't fire (edge): ignore
+            buttons.reset()
+            continue
+
         else:
             cp_only_ok(False)
             ui_board.markings()
@@ -1177,6 +1305,8 @@ def collect_and_send_move():
     in_input = True
     try:
         seed = None
+        preset_from_col = None
+
         while True:
             if is_shutdown_held():
                 shutdown_pico()
@@ -1184,7 +1314,13 @@ def collect_and_send_move():
             cp_only_hint_and_coords_for_input()
             buttons.reset()
 
-            move_from = enter_from_square(seed_btn=seed)
+            move_from = enter_from_square(seed_btn=seed, preset_col=preset_from_col)
+            preset_from_col = None
+
+            if isinstance(move_from, tuple) and move_from[0] == "back_from":
+                seed = None
+                continue
+
             if move_from is None:
                 if persistent_trail_active:
                     seed = None
@@ -1193,6 +1329,27 @@ def collect_and_send_move():
             seed = None
 
             move_to = enter_to_square(move_from)
+
+            if isinstance(move_to, tuple):
+                tag = move_to[0]
+                if tag == "back_to_from_rank":
+                    preset_from_col = move_to[1]
+                    continue
+                if tag == "back_to_to_file":
+                    # redo TO entry (FROM already selected)
+                    cp_only_hint_and_coords_for_input()
+                    buttons.reset()
+                    move_to2 = enter_to_square(move_from)
+                    if (
+                        isinstance(move_to2, tuple)
+                        and move_to2[0] == "back_to_from_rank"
+                    ):
+                        preset_from_col = move_to2[1]
+                        continue
+                    if move_to2 is None or isinstance(move_to2, tuple):
+                        continue
+                    move_to = move_to2
+
             if move_to is None:
                 if persistent_trail_active:
                     seed = None
@@ -1207,6 +1364,88 @@ def collect_and_send_move():
                     seed = None
                     continue
                 return
+
+            # Keep handling confirm-backspaces until user actually confirms or cancels
+            while isinstance(res, tuple) and res[0] == "backspace_confirm":
+                partial = res[1]  # can be len 3,2,1,0
+
+                ui_board.markings()
+
+                if len(partial) == 3:
+                    # e2e -> keep FROM=e2, preset TO file='e', re-enter TO rank
+                    frm = partial[:2]
+                    to_file = partial[2]
+
+                    cp_only_hint_and_coords_for_input()
+                    buttons.reset()
+                    reset_ok_hold_state()
+
+                    move_to = enter_to_square(frm, preset_col=to_file)
+                    if isinstance(move_to, tuple):
+                        if move_to[0] == "back_to_from_rank":
+                            preset_from_col = move_to[1]
+                            res = ("restart_from", None)
+                            break
+                        if move_to[0] == "back_to_to_file":
+                            # user backspaced TO file again, just retry loop
+                            res = ("backspace_confirm", frm)  # treat like len==2 next
+                            continue
+                    if move_to is None:
+                        res = ("restart_from", None)
+                        break
+
+                    move = frm + move_to
+                    res = confirm_move(move)
+                    if res is None:
+                        res = ("restart_from", None)
+                        break
+                    continue
+
+                if len(partial) == 2:
+                    # e2 -> keep FROM=e2, re-enter TO file selection
+                    frm = partial
+
+                    cp_only_hint_and_coords_for_input()
+                    buttons.reset()
+                    reset_ok_hold_state()
+
+                    move_to = enter_to_square(frm, preset_col=None)
+                    if isinstance(move_to, tuple):
+                        if move_to[0] == "back_to_from_rank":
+                            preset_from_col = move_to[1]
+                            res = ("restart_from", None)
+                            break
+                        if move_to[0] == "back_to_to_file":
+                            # retry TO file select
+                            res = ("backspace_confirm", frm)
+                            continue
+                    if move_to is None:
+                        res = ("restart_from", None)
+                        break
+
+                    move = frm + move_to
+                    res = confirm_move(move)
+                    if res is None:
+                        res = ("restart_from", None)
+                        break
+                    continue
+
+                if len(partial) == 1:
+                    # e -> go back to FROM rank entry with preset file='e'
+                    preset_from_col = partial[0]
+                    seed = None
+                    res = ("restart_from", None)
+                    break
+
+                # "" -> restart completely
+                preset_from_col = None
+                seed = None
+                res = ("restart_from", None)
+                break
+
+            # If we broke out to restart FROM entry, do it without losing preset state
+            if isinstance(res, tuple) and res[0] == "restart_from":
+                continue
 
             if res == "ok":
                 ui_board.redraw_final_trail(move, cap=preview_cap_flag)
