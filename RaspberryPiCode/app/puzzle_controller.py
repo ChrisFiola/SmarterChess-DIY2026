@@ -294,12 +294,19 @@ class DailyPuzzleController:
 
             # Moves arrive as UCI from Pico
             uci = msg.strip().lower()
+
+            # Ignore typing chatter entirely
+            if uci.startswith("typing_"):
+                continue
+
+            # Strip Pico move prefix
             if uci.startswith("m"):
                 uci = uci[1:]
+
             uci = "".join(ch for ch in uci if ch.isalnum())
 
+            # Ignore incomplete moves silently
             if len(uci) not in (4, 5):
-                display.send("Try again")
                 continue
 
             # Check expected match
@@ -307,6 +314,10 @@ class DailyPuzzleController:
                 len(expected) == 5 and (len(uci) != 5 or uci[4] != expected[4])
             ):
                 display.send("Try again")
+                __import__("time").sleep(0.8)
+                display.send(
+                    f"{'WHITE' if board.turn else 'BLACK'} to move\nEnter move"
+                )
                 continue
 
             # Must be legal
