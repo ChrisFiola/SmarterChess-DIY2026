@@ -159,18 +159,52 @@ class DailyPuzzleController:
 
         puzzle = payload.get("puzzle") or {}
         game = payload.get("game") or {}
+
         puzzle_id = str(puzzle.get("id") or "")
         pgn = str(game.get("pgn") or "")
         initial_ply = int(puzzle.get("initialPly") or 0)
         solution = puzzle.get("solution") or []
 
+        # Lichess provides which side the user is supposed to play
+        # Usually puzzle["color"] is "white" or "black"
+        puzzle_color_raw = str(puzzle.get("color") or "").strip().lower()
+
         if not puzzle_id or not pgn or not solution:
             return None, "Daily puzzle response missing required fields"
 
-        board = _board_from_pgn_at_ply(pgn, initial_ply)
-        fen = board.fen()
+        base_board = _board_from_pgn_at_ply(pgn, initial_ply)
         sol = [str(m) for m in solution]
-        return PuzzleState(puzzle_id=puzzle_id, fen_start=fen, solution=sol), None
+
+        # --- IMPORTANT FIX ---
+        # If Lichess expects the user to play a given color, but the PGN board turn
+        # doesn't match, Lichess UI auto-plays the first solution move(s).
+        # We replicate that so your physical setup matches Lichess.
+        desired_turn = None
+        if puzzle_color_raw in ("white", "w"):
+            desired_turn = chess.WHITE
+        elif puzzle_color_raw in ("black", "b"):
+            desired_turn = chess.BLACK
+
+        pre_idx = 0
+        if desired_turn is not None:
+            # apply solution plies until it's the user's side to move
+            while base_board.turn != desired_turn and pre_idx < len(sol):
+                try:
+                    premv = chess.Move.from_uci(sol[pre_idx])
+                except Exception:
+                    return None, "Puzzle solution contains invalid UCI"
+
+                if premv not in base_board.legal_moves:
+                    # If this happens, PGN/initialPly mismatch or parsing mismatch
+                    return None, "Puzzle pre-move is not legal in starting position"
+
+                base_board.push(premv)
+                pre_idx += 1
+
+        fen = base_board.fen()
+        # Start expecting moves AFTER the auto-applied pre-moves
+        st = PuzzleState(puzzle_id=puzzle_id, fen_start=fen, solution=sol, idx=pre_idx)
+        return st, None
 
     def run(self, link: BoardLink, display: Display) -> None:
         # 1) Fetch puzzle
