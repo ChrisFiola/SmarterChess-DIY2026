@@ -312,6 +312,16 @@ class OnlineController:
                 display.send("Online mode\nHints disabled")
                 continue
 
+            if msg in ("ok", "btnok", "btn_ok"):
+                # OK is used as an acknowledgement / 'enter move' trigger.
+                # Do not treat it as a move payload.
+                awaiting_ok_ack = False
+                in_move_entry = False
+                side = "WHITE" if your_color == chess.WHITE else "BLACK"
+                display.prompt_move(side)
+                prompted_for_this_turn = True
+                continue
+
             # Any move payload means we are in move entry
             awaiting_ok_ack = False
             in_move_entry = True
