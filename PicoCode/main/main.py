@@ -764,14 +764,36 @@ def probe_capture_with_pi(uci, timeout_ms=150):
 
 # --- NEW: Shutdown (hold H/8) helpers ---
 
+# Non-blocking hold-tracking state for the shutdown button.
+_shutdown_press_ms = None
+_shutdown_fired = False
+
 
 def is_shutdown_held(hold_ms=SHUTDOWN_HOLD_MS):
+    """Non-blocking hold detector for the H/8 shutdown button.
+
+    The previous implementation blocked while the button was held, which
+    starved the main loop and caused short H/8 presses to be missed during
+    move entry (you'd have to press multiple times).
+
+    This version records the press timestamp and returns True once when the
+    hold threshold is reached. It resets on release.
+    """
+    global _shutdown_press_ms, _shutdown_fired
+
     if BTN_SHUT.value() == 0:  # pressed (active-low)
-        t0 = time.ticks_ms()
-        while BTN_SHUT.value() == 0:
-            if time.ticks_diff(time.ticks_ms(), t0) >= hold_ms:
-                return True
-            time.sleep_ms(10)
+        if _shutdown_press_ms is None:
+            _shutdown_press_ms = time.ticks_ms()
+            _shutdown_fired = False
+
+        if (not _shutdown_fired) and time.ticks_diff(time.ticks_ms(), _shutdown_press_ms) >= hold_ms:
+            _shutdown_fired = True
+            return True
+        return False
+
+    # released
+    _shutdown_press_ms = None
+    _shutdown_fired = False
     return False
 
 
