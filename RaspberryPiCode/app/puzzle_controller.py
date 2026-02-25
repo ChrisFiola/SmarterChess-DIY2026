@@ -473,7 +473,7 @@ class DailyPuzzleController:
 
             # Correct player move
             display.send("Correct")
-            __import__("time").sleep(0.5)
+            __import__("time").sleep(2)
 
             mover = "WHITE" if board.turn == chess.WHITE else "BLACK"
             board.push(mv)
