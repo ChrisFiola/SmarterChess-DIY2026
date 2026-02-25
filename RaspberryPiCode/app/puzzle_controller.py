@@ -327,67 +327,49 @@ class DailyPuzzleController:
         link.sendtoboard(f"turn_{'white' if board.turn == chess.WHITE else 'black'}")
         display.send(f"Daily Puzzle\nYou are {player_color}\nEnter move:")
 
+        # Helper: wait for OK acknowledgement coming from Pico (requires Pico patch above)
+        def _wait_ack_ok() -> bool:
+            while True:
+                m = link.getboard()
+                if m is None:
+                    continue
+
+                if m == "shutdown":
+                    from piGame import shutdown_pi
+
+                    shutdown_pi(link, display)
+                    return False
+
+                if m in ("n", "new", "in", "newgame", "btn_new"):
+                    return False
+
+                if m in ("btn_ok", "ok"):
+                    return True
+
+                # ignore everything else while waiting for OK
+                if (
+                    m.startswith("typing_")
+                    or m.startswith("capq_")
+                    or m in ("hint", "btn_hint")
+                ):
+                    continue
+
         # 4) Main solve loop
-        awaiting_ack_after_opponent = False
         while True:
             # solved
             if st.idx >= len(st.solution):
                 display.send("Puzzle solved!\nOK = menu")
                 link.sendtoboard("GameOver:1-0")
-
                 # Wait for OK before returning
-                while True:
-                    msg2 = link.getboard()
-                    if msg2 is None:
-                        continue
-
-                    if msg2 == "shutdown":
-                        from piGame import shutdown_pi
-
-                        shutdown_pi(link, display)
-                        return
-
-                    if msg2 in ("btn_ok", "ok"):
-                        return
-
-                    if msg2 in ("n", "new", "in", "newgame", "btn_new"):
-                        return
-
-                    if msg2.startswith("typing_") or msg2 in ("hint", "btn_hint"):
-                        continue
+                if _wait_ack_ok():
+                    return
+                return
 
             expected = st.solution[st.idx]
 
             msg = link.getboard()
             if msg is None:
                 continue
-
-            # If we just showed "Opponent played... OK = continue", keep that screen
-            # until the Pico actually starts a new input (typing_...) or sends a move/capq/hint.
-            if awaiting_ack_after_opponent:
-                if msg in ("shutdown", "n", "new", "in", "newgame", "btn_new"):
-                    # allow exits immediately
-                    pass
-                elif msg.startswith("typing_") or msg.startswith("capq_"):
-                    awaiting_ack_after_opponent = False
-                    display.send(f"You are {player_color}\nEnter move:")
-                    # fall through and process msg normally
-                elif msg in ("hint", "btn_hint"):
-                    awaiting_ack_after_opponent = False
-                    display.send(f"You are {player_color}\nEnter move:")
-                    # fall through and process msg normally
-                else:
-                    # if msg is a move UCI, unlock and process it
-                    u = msg.strip().lower()
-                    if u.startswith("m"):
-                        u = u[1:]
-                    u = "".join(ch for ch in u if ch.isalnum())
-                    if len(u) in (4, 5):
-                        awaiting_ack_after_opponent = False
-                        display.send(f"You are {player_color}\nEnter move:")
-                        # fall through and process
-                    else:
-                        continue
 
             if msg == "shutdown":
                 from piGame import shutdown_pi
@@ -398,7 +380,7 @@ class DailyPuzzleController:
             if msg in ("n", "new", "in", "newgame", "btn_new"):
                 return
 
-            # Capture probe from Pico (used for user-move blinking capture UX)
+            # Capture probe from Pico (user-move capture blink UX)
             if msg.startswith("capq_"):
                 q = msg[len("capq_") :].strip().lower()
                 q = "".join(ch for ch in q if ch.isalnum())
@@ -419,7 +401,7 @@ class DailyPuzzleController:
                 display.send("Hint:\n" + f"{expected[:2]} → {expected[2:4]}")
                 continue
 
-            # Show typing on LCD (same UX as other modes)
+            # Typing preview
             if msg.startswith("typing_"):
                 try:
                     from piGame import handle_typing_preview
@@ -435,7 +417,6 @@ class DailyPuzzleController:
                 uci = uci[1:]
             uci = "".join(ch for ch in uci if ch.isalnum())
 
-            # Ignore incomplete input silently
             if len(uci) not in (4, 5):
                 continue
 
@@ -494,11 +475,17 @@ class DailyPuzzleController:
                     board.push(rmv)
                     st.idx += 1
 
-                    awaiting_ack_after_opponent = True
+                    # Wait for OK ack (NOW Pico will send btn_ok after the Pico patch)
+                    ok = _wait_ack_ok()
+                    if not ok:
+                        return
 
-            # Next prompt (only if we are not holding the opponent screen)
+                    # Immediately show prompt BEFORE user starts typing
+                    display.send(f"You are {player_color}\nEnter move:")
+
+            # Next prompt for normal flow (if there was no opponent move)
             link.sendtoboard(
                 f"turn_{'white' if board.turn == chess.WHITE else 'black'}"
             )
-            if not awaiting_ack_after_opponent:
-                display.send(f"You are {player_color}\nEnter move:")
+            # Keep consistent prompt text
+            display.send(f"You are {player_color}\nEnter move:")

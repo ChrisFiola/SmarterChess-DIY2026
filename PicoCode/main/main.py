@@ -786,7 +786,9 @@ def is_shutdown_held(hold_ms=SHUTDOWN_HOLD_MS):
             _shutdown_press_ms = time.ticks_ms()
             _shutdown_fired = False
 
-        if (not _shutdown_fired) and time.ticks_diff(time.ticks_ms(), _shutdown_press_ms) >= hold_ms:
+        if (not _shutdown_fired) and time.ticks_diff(
+            time.ticks_ms(), _shutdown_press_ms
+        ) >= hold_ms:
             _shutdown_fired = True
             return True
         return False
@@ -1599,6 +1601,8 @@ def main_loop():
 
             b = buttons.detect_press()
             if b == (OK_BUTTON_INDEX + 1):
+                send_to_pi("btn_ok")
+
                 engine_ack_pending = False
                 cp_only_ok(False)
                 clear_persistent_trail()
