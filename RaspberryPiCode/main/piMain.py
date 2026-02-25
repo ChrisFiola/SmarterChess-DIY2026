@@ -51,8 +51,15 @@ def main():
 
     while True:
         try:
-            selected = select_mode(link, display, state)
-            state.mode = selected
+            forced = (os.environ.get("SMARTCHESS_FORCE_MODE") or "").strip().lower()
+            if forced:
+                # Useful for testing modes not yet selectable from the Pico UI.
+                state.mode = forced
+                display.send(f"Mode forced:\n{forced}")
+                time.sleep(1.0)
+            else:
+                selected = select_mode(link, display, state)
+                state.mode = selected
             mode_dispatch(link, display, ctx, state, cfg)
         except GoToModeSelect:
             state.board = chess.Board()

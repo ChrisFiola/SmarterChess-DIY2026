@@ -73,29 +73,43 @@ class OnlineController:
             time.sleep(2)
             raise self.d.GoToModeSelect()
 
-        display.send("Connected\nAttaching...")
+        display.send("Connecting...\nLoading game")
 
         stream = self.client.stream_game(game_id)
 
         board = chess.Board()
         last_move_count = 0
-        you_are_white = True
+        you_are_white: Optional[bool] = None
 
-        try:
-            first = next(stream)
-        except Exception:
-            display.send("Lichess error\nGame stream")
-            time.sleep(3)
-            raise self.d.GoToModeSelect()
+        # ---- helpers ----
+        def uci_to_oled(uci: str) -> str:
+            u = (uci or "").strip()
+            if len(u) < 4:
+                return u.upper()
+            return f"{u[0].upper()}{u[1]} -> {u[2].upper()}{u[3]}"
 
-        white_name, black_name = extract_players(first)
-        if white_name and username:
-            you_are_white = white_name.strip().lower() == username
+        def send_turn_if_human():
+            """Tell Pico to start/continue move entry ONLY when it's the human's turn.
 
-        display.send(f"Connected\nYou are {'WHITE' if you_are_white else 'BLACK'}")
+            In this firmware, receiving `heyArduinoturn_*` immediately transitions the Pico UI
+            into move-collection (lights CP coords + waits for OK). If we send turn updates
+            for the opponent's turn, the CP will look like it's waiting for a human move
+            when it shouldn't.
+            """
+            if board.turn != your_color:
+                return
+            link.sendtoboard(
+                "turn_white" if board.turn == chess.WHITE else "turn_black"
+            )
 
-        def apply_new_moves(move_list):
-            nonlocal last_move_count
+        # Flags controlling OLED overwrites
+        awaiting_ok_ack = False  # True after opponent move until user starts input
+        in_move_entry = (
+            False  # True once typing_ starts; prevents prompt_move overwriting
+        )
+
+        def apply_new_moves(move_list, announce_new: bool = True):
+            nonlocal last_move_count, awaiting_ok_ack, in_move_entry
             for uci in move_list[last_move_count:]:
                 try:
                     mv = chess.Move.from_uci(uci)
@@ -104,33 +118,68 @@ class OnlineController:
                     continue
 
                 is_cap = board.is_capture(mv)
-                link.sendtoboard(f"m{uci}{'_cap' if is_cap else ''}")
+
                 board.push(mv)
                 last_move_count += 1
 
-        apply_new_moves(extract_moves(first))
+                # Pico: show trail + OK-only (engine_ack_pending behavior)
+                link.sendtoboard(f"m{uci}{'_cap' if is_cap else ''}")
+                time.sleep(
+                    0.3
+                )  # give Pico time to show the move before we potentially overwrite with prompt_move
+                send_turn_if_human()
 
-        def send_turn():
-            link.sendtoboard(
-                "turn_white" if board.turn == chess.WHITE else "turn_black"
-            )
+                if announce_new:
+                    side_to_move = "WHITE" if board.turn == chess.WHITE else "BLACK"
+                    display.send(f"{uci_to_oled(uci)}\n{side_to_move} to move")
 
-        send_turn()
+                    # Hold this message until OK is pressed and user starts input
+                    awaiting_ok_ack = True
+                    in_move_entry = False
+
+        # ---- attach to game stream ----
+        try:
+            first = next(stream)
+        except Exception:
+            display.send("Lichess error\nGame stream")
+            time.sleep(3)
+            raise self.d.GoToModeSelect()
+
+        white_name, black_name = extract_players(first)
+
+        w = (white_name or "").strip().lower()
+        b = (black_name or "").strip().lower()
+        u = (username or "").strip().lower()
+
+        if u and b and u == b:
+            you_are_white = False
+        elif u and w and u == w:
+            you_are_white = True
+        else:
+            you_are_white = True  # fallback
 
         your_color = chess.WHITE if you_are_white else chess.BLACK
+
+        display.send(f"Connected\nYou are {'WHITE' if you_are_white else 'BLACK'}")
+
+        apply_new_moves(extract_moves(first), announce_new=False)
+        send_turn_if_human()
+
         prompted_for_this_turn = False
+        last_wait_banner_ms = 0
 
         while True:
-
-            # --- Non blocking handling ---
+            # --- Non blocking handling (buttons from Pico) ---
             peek = link.getboard_nonblocking()
             if peek:
-
                 if peek == "shutdown":
                     self.d.shutdown_pi(link, display)
                     return
 
                 if peek.startswith("typing_"):
+                    # As soon as typing starts, we are in move entry => never show prompt_move this turn
+                    awaiting_ok_ack = False
+                    in_move_entry = True
                     self.d.handle_typing_preview(display, peek[7:])
 
                 if peek.startswith("capq_"):
@@ -142,7 +191,19 @@ class OnlineController:
                     link.sendtoboard(f"capr_{1 if cap else 0}")
 
                 if peek in ("n", "new", "in", "newgame", "btn_new"):
+                    display.send("Resigning...")
+                    try:
+                        self.client.resign_game(game_id)
+                    except Exception:
+                        pass
                     raise self.d.GoToModeSelect()
+
+                if peek in ("draw", "btn_draw"):
+                    display.send("Offering draw...")
+                    try:
+                        self.client.offer_draw(game_id)
+                    except Exception:
+                        pass
 
                 if peek in ("hint", "btn_hint"):
                     display.send("Online mode\nHints disabled")
@@ -153,8 +214,10 @@ class OnlineController:
 
             # --- Opponent turn ---
             if board.turn != your_color:
-
-                display.send("Waiting\nfor opponent...")
+                now = int(time.time() * 1000)
+                if now - last_wait_banner_ms > 1500:
+                    display.send("Waiting\nfor opponent...")
+                    last_wait_banner_ms = now
 
                 try:
                     while True:
@@ -162,7 +225,7 @@ class OnlineController:
                         move_list = extract_moves(payload)
 
                         if len(move_list) > last_move_count:
-                            apply_new_moves(move_list)
+                            apply_new_moves(move_list, announce_new=True)
                             break
 
                         status = extract_status(payload)
@@ -188,14 +251,22 @@ class OnlineController:
                     time.sleep(3)
                     raise self.d.GoToModeSelect()
 
-                send_turn()
                 prompted_for_this_turn = False
                 continue
 
             # --- Your turn ---
-            send_turn()
-            if not prompted_for_this_turn:
-                display.prompt_move("WHITE" if your_color == chess.WHITE else "BLACK")
+            send_turn_if_human()
+
+            # IMPORTANT:
+            # - If we're awaiting OK ack, keep opponent-move message
+            # - If move entry has started (typing_), do NOT overwrite it with prompt_move
+            if (
+                (not prompted_for_this_turn)
+                and (not awaiting_ok_ack)
+                and (not in_move_entry)
+            ):
+                side = "WHITE" if your_color == chess.WHITE else "BLACK"
+                display.prompt_move(side)
                 prompted_for_this_turn = True
 
             msg = link.getboard()
@@ -207,6 +278,8 @@ class OnlineController:
                 return
 
             if msg.startswith("typing_"):
+                awaiting_ok_ack = False
+                in_move_entry = True
                 self.d.handle_typing_preview(display, msg[7:])
                 continue
 
@@ -220,11 +293,28 @@ class OnlineController:
                 continue
 
             if msg in ("n", "new", "in", "newgame", "btn_new"):
+                display.send("Resigning...")
+                try:
+                    self.client.resign_game(game_id)
+                except Exception:
+                    pass
                 raise self.d.GoToModeSelect()
+
+            if msg in ("draw", "btn_draw"):
+                display.send("Offering draw...")
+                try:
+                    self.client.offer_draw(game_id)
+                except Exception:
+                    pass
+                continue
 
             if msg in ("hint", "btn_hint"):
                 display.send("Online mode\nHints disabled")
                 continue
+
+            # Any move payload means we are in move entry
+            awaiting_ok_ack = False
+            in_move_entry = True
 
             uci = self.d.parse_move_payload(msg)
             if not uci:
@@ -266,4 +356,9 @@ class OnlineController:
 
             board.push(move)
             last_move_count += 1
+            send_turn_if_human()
+
+            # Reset for next cycle
             prompted_for_this_turn = False
+            in_move_entry = False
+            awaiting_ok_ack = False
