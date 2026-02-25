@@ -370,6 +370,23 @@ class DailyPuzzleController:
             if msg in ("n", "new", "in", "newgame", "btn_new"):
                 return
 
+            # Capture probe from Pico (used for user-move blinking capture UX)
+            # Pico sends: heypicapq_<uci>
+            # Pico expects: heyArduinocapr_1 or heyArduinocapr_0
+            if msg.startswith("capq_"):
+                q = msg[len("capq_") :].strip().lower()
+                q = "".join(ch for ch in q if ch.isalnum())
+                cap_flag = 0
+                try:
+                    mvq = chess.Move.from_uci(q)
+                    # is_capture works even for some illegal moves, but we keep it safe:
+                    cap_flag = 1 if board.is_capture(mvq) else 0
+                except Exception:
+                    cap_flag = 0
+
+                link.sendtoboard(f"capr_{cap_flag}")
+                continue
+
             # Hint
             if msg in ("hint", "btn_hint"):
                 link.sendtoboard(
@@ -444,16 +461,40 @@ class DailyPuzzleController:
                     return
 
                 if rmv in board.legal_moves:
-                    # The opponent is the side that is ABOUT to move now (before pushing rmv)
+                    # Opponent is the side that is ABOUT to move now (before pushing rmv)
                     opp = "WHITE" if board.turn == chess.WHITE else "BLACK"
                     cap = board.is_capture(rmv)
 
-                    # Show opponent move on LCD (consistent with other modes)
-                    display.send(f"{opp} played:\n{reply[:2]} → {reply[2:4]}")
-                    __import__("time").sleep(0.8)
+                    # Show opponent move on LCD and WAIT for OK acknowledgement
+                    display.send(
+                        f"{opp} played:\n{reply[:2]} → {reply[2:4]}\nOK = continue"
+                    )
 
-                    # LEDs/trail on Pico
+                    # LEDs/trail on Pico (this also triggers Pico's engine_ack_pending flow)
                     link.sendtoboard(f"m{reply}{'_cap' if cap else ''}")
+
+                    # Wait for OK from Pico before continuing (do not overwrite LCD)
+                    while True:
+                        ack = link.getboard()
+                        if ack is None:
+                            continue
+
+                        if ack == "shutdown":
+                            from piGame import shutdown_pi
+
+                            shutdown_pi(link, display)
+                            return
+
+                        if ack in ("btn_ok", "ok"):
+                            break
+
+                        # Allow abort/newgame if you want
+                        if ack in ("n", "new", "in", "newgame", "btn_new"):
+                            return
+
+                        # Ignore typing/hint chatter
+                        if ack.startswith("typing_") or ack in ("hint", "btn_hint"):
+                            continue
 
                     board.push(rmv)
                     st.idx += 1
