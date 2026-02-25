@@ -165,46 +165,57 @@ class DailyPuzzleController:
         initial_ply = int(puzzle.get("initialPly") or 0)
         solution = puzzle.get("solution") or []
 
-        # Lichess provides which side the user is supposed to play
-        # Usually puzzle["color"] is "white" or "black"
-        puzzle_color_raw = str(puzzle.get("color") or "").strip().lower()
-
         if not puzzle_id or not pgn or not solution:
             return None, "Daily puzzle response missing required fields"
 
-        base_board = _board_from_pgn_at_ply(pgn, initial_ply)
         sol = [str(m) for m in solution]
 
-        # --- IMPORTANT FIX ---
-        # If Lichess expects the user to play a given color, but the PGN board turn
-        # doesn't match, Lichess UI auto-plays the first solution move(s).
-        # We replicate that so your physical setup matches Lichess.
-        desired_turn = None
-        if puzzle_color_raw in ("white", "w"):
-            desired_turn = chess.WHITE
-        elif puzzle_color_raw in ("black", "b"):
-            desired_turn = chess.BLACK
+        # Base board at initialPly
+        board = _board_from_pgn_at_ply(pgn, initial_ply)
 
-        pre_idx = 0
-        if desired_turn is not None:
-            # apply solution plies until it's the user's side to move
-            while base_board.turn != desired_turn and pre_idx < len(sol):
-                try:
-                    premv = chess.Move.from_uci(sol[pre_idx])
-                except Exception:
-                    return None, "Puzzle solution contains invalid UCI"
+        # DAILY PUZZLE FIX:
+        # Lichess daily puzzles often start AFTER the first two solution plies.
+        # We detect if applying the first two moves produces a position where
+        # solution[2] is legal. If so, that is the true starting position.
 
-                if premv not in base_board.legal_moves:
-                    # If this happens, PGN/initialPly mismatch or parsing mismatch
-                    return None, "Puzzle pre-move is not legal in starting position"
+        try:
+            m0 = chess.Move.from_uci(sol[0])
+            m1 = chess.Move.from_uci(sol[1]) if len(sol) > 1 else None
+        except Exception:
+            return None, "Invalid UCI in puzzle solution"
 
-                base_board.push(premv)
-                pre_idx += 1
+        test_board = board.copy()
 
-        fen = base_board.fen()
-        # Start expecting moves AFTER the auto-applied pre-moves
-        st = PuzzleState(puzzle_id=puzzle_id, fen_start=fen, solution=sol, idx=pre_idx)
-        return st, None
+        if m0 in test_board.legal_moves:
+            test_board.push(m0)
+            if m1 and m1 in test_board.legal_moves:
+                test_board.push(m1)
+
+                # If next solution move is legal here, this is the real start
+                if len(sol) > 2:
+                    m2 = chess.Move.from_uci(sol[2])
+                    if m2 in test_board.legal_moves:
+                        # Start AFTER first two plies
+                        return (
+                            PuzzleState(
+                                puzzle_id=puzzle_id,
+                                fen_start=test_board.fen(),
+                                solution=sol,
+                                idx=2,
+                            ),
+                            None,
+                        )
+
+        # Fallback (normal puzzles)
+        return (
+            PuzzleState(
+                puzzle_id=puzzle_id,
+                fen_start=board.fen(),
+                solution=sol,
+                idx=0,
+            ),
+            None,
+        )
 
     def run(self, link: BoardLink, display: Display) -> None:
         # 1) Fetch puzzle
