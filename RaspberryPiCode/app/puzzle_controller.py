@@ -329,10 +329,31 @@ class DailyPuzzleController:
 
         # 4) Main solve loop
         while True:
+            # solved
             if st.idx >= len(st.solution):
-                display.send("Puzzle solved!\nNice.")
+                display.send("Puzzle solved!\nOK = menu")
                 link.sendtoboard("GameOver:1-0")
-                return
+
+                # Wait for OK before returning (match Pico protocol)
+                while True:
+                    msg2 = link.getboard()
+                    if msg2 is None:
+                        continue
+
+                    if msg2 == "shutdown":
+                        from piGame import shutdown_pi
+
+                        shutdown_pi(link, display)
+                        return
+
+                    if msg2 in ("btn_ok", "ok"):
+                        return
+
+                    if msg2 in ("n", "new", "in", "newgame", "btn_new"):
+                        return
+
+                    if msg2.startswith("typing_") or msg2 in ("hint", "btn_hint"):
+                        continue
 
             expected = st.solution[st.idx]
 
@@ -357,16 +378,13 @@ class DailyPuzzleController:
                 display.send("Hint:\n" + f"{expected[:2]} → {expected[2:4]}")
                 continue
 
-            # --- Show typing on LCD just like other modes ---
+            # Show typing on LCD (same UX as other modes)
             if msg.startswith("typing_"):
-                # typing_from_a, typing_from_e2, typing_to_e2 → a, typing_confirm_e2 → e4, etc.
-                # reuse existing display logic if present
                 try:
                     from piGame import handle_typing_preview
 
                     handle_typing_preview(display, msg[len("typing_") :])
                 except Exception:
-                    # fallback: show raw typing text
                     display.send(msg.replace("typing_", ""))
                 continue
 
@@ -376,11 +394,11 @@ class DailyPuzzleController:
                 uci = uci[1:]
             uci = "".join(ch for ch in uci if ch.isalnum())
 
-            # Ignore incomplete input silently (single square / partial)
+            # Ignore incomplete input silently
             if len(uci) not in (4, 5):
                 continue
 
-            # Check expected match (puzzle solution)
+            # Check expected match
             wrong = False
             if uci[:4] != expected[:4]:
                 wrong = True
@@ -389,14 +407,12 @@ class DailyPuzzleController:
                     wrong = True
 
             if wrong:
-                # CRITICAL: your Pico only restarts move entry when it receives "heyArduinoerror..."
-                link.sendtoboard(
-                    f"error_wrong_{uci}"
-                )  # -> Pico sees heyArduinoerror_wrong_...
+                # Pico restarts input only when it receives "heyArduinoerror..."
+                link.sendtoboard(f"error_wrong_{uci}")
                 display.send("Try again\nEnter move")
                 continue
 
-            # Must be legal in the local position too
+            # Must be legal in local position too
             try:
                 mv = chess.Move.from_uci(expected)
             except Exception:
@@ -409,8 +425,11 @@ class DailyPuzzleController:
                 display.send("Try again\nEnter move")
                 continue
 
-            # Correct
+            # Correct player move
             display.send("Correct")
+            __import__("time").sleep(0.5)
+
+            mover = "WHITE" if board.turn == chess.WHITE else "BLACK"
             board.push(mv)
             st.idx += 1
 
@@ -425,8 +444,17 @@ class DailyPuzzleController:
                     return
 
                 if rmv in board.legal_moves:
+                    # The opponent is the side that is ABOUT to move now (before pushing rmv)
+                    opp = "WHITE" if board.turn == chess.WHITE else "BLACK"
                     cap = board.is_capture(rmv)
+
+                    # Show opponent move on LCD (consistent with other modes)
+                    display.send(f"{opp} played:\n{reply[:2]} → {reply[2:4]}")
+                    __import__("time").sleep(0.8)
+
+                    # LEDs/trail on Pico
                     link.sendtoboard(f"m{reply}{'_cap' if cap else ''}")
+
                     board.push(rmv)
                     st.idx += 1
 
