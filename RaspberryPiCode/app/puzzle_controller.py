@@ -146,6 +146,79 @@ def _is_cap(board: chess.Board, uci: str) -> bool:
         return False
 
 
+def _play_solution_prefix_len(b: chess.Board, sol: List[str]) -> int:
+    """Return how many initial moves from sol are legal when played sequentially."""
+    tmp = b.copy()
+    n = 0
+    for u in sol:
+        try:
+            mv = chess.Move.from_uci(u)
+        except Exception:
+            break
+        if mv not in tmp.legal_moves:
+            break
+        tmp.push(mv)
+        n += 1
+    return n
+
+
+def _find_best_start_board_from_pgn(
+    pgn: str,
+    initial_ply: int,
+    sol: List[str],
+    back: int = 6,
+    forward: int = 10,
+) -> Tuple[chess.Board, int, int]:
+    """
+    Search plies around initial_ply and return (best_board, best_ply, matched_len).
+
+    Heuristic:
+      - maximize consecutive legal moves from solution starting at solution[0]
+      - tie-break: closest ply to initial_ply (abs delta)
+      - tie-break: lower ply (earlier) for stability
+    """
+    best_board = _board_from_pgn_at_ply(pgn, max(0, initial_ply))
+    best_ply = max(0, initial_ply)
+    best_len = _play_solution_prefix_len(best_board, sol)
+
+    candidates: List[int] = []
+    for d in range(0, max(back, forward) + 1):
+        # try 0, +1, -1, +2, -2, ...
+        if d == 0:
+            candidates.append(initial_ply)
+        else:
+            candidates.append(initial_ply + d)
+            candidates.append(initial_ply - d)
+
+    seen = set()
+    for ply_try in candidates:
+        if ply_try in seen:
+            continue
+        seen.add(ply_try)
+        if ply_try < 0:
+            continue
+        if ply_try < initial_ply - back or ply_try > initial_ply + forward:
+            continue
+
+        b = _board_from_pgn_at_ply(pgn, ply_try)
+        mlen = _play_solution_prefix_len(b, sol)
+
+        if mlen > best_len:
+            best_board, best_ply, best_len = b, ply_try, mlen
+            continue
+
+        if mlen == best_len:
+            # tie-break: closest to initial_ply
+            if abs(ply_try - initial_ply) < abs(best_ply - initial_ply):
+                best_board, best_ply = b, ply_try
+            elif abs(ply_try - initial_ply) == abs(best_ply - initial_ply):
+                # tie-break: earlier ply
+                if ply_try < best_ply:
+                    best_board, best_ply = b, ply_try
+
+    return best_board, best_ply, best_len
+
+
 class DailyPuzzleController:
     """Run the daily puzzle loop using the Pico for input and LEDs."""
 
@@ -170,50 +243,20 @@ class DailyPuzzleController:
 
         sol = [str(m) for m in solution]
 
-        # Base board at initialPly
-        board = _board_from_pgn_at_ply(pgn, initial_ply)
+        # --- Generic alignment: pick the ply where the solution actually fits ---
+        start_board, used_ply, matched = _find_best_start_board_from_pgn(
+            pgn=pgn,
+            initial_ply=initial_ply,
+            sol=sol,
+            back=6,
+            forward=10,
+        )
 
-        # DAILY PUZZLE FIX:
-        # Lichess daily puzzles often start AFTER the first two solution plies.
-        # We detect if applying the first two moves produces a position where
-        # solution[2] is legal. If so, that is the true starting position.
-
-        try:
-            m0 = chess.Move.from_uci(sol[0])
-            m1 = chess.Move.from_uci(sol[1]) if len(sol) > 1 else None
-        except Exception:
-            return None, "Invalid UCI in puzzle solution"
-
-        test_board = board.copy()
-
-        if m0 in test_board.legal_moves:
-            test_board.push(m0)
-            if m1 and m1 in test_board.legal_moves:
-                test_board.push(m1)
-
-                # If next solution move is legal here, this is the real start
-                if len(sol) > 2:
-                    m2 = chess.Move.from_uci(sol[2])
-                    if m2 in test_board.legal_moves:
-                        # Start AFTER first two plies
-                        return (
-                            PuzzleState(
-                                puzzle_id=puzzle_id,
-                                fen_start=test_board.fen(),
-                                solution=sol,
-                                idx=2,
-                            ),
-                            None,
-                        )
-
-        # Fallback (normal puzzles)
+        # If nothing matches even 1 move, still proceed, but you’ll likely see “Try again”.
+        # This usually means PGN parsing mismatch or an unexpected puzzle payload.
+        fen = start_board.fen()
         return (
-            PuzzleState(
-                puzzle_id=puzzle_id,
-                fen_start=board.fen(),
-                solution=sol,
-                idx=0,
-            ),
+            PuzzleState(puzzle_id=puzzle_id, fen_start=fen, solution=sol, idx=0),
             None,
         )
 
