@@ -328,6 +328,7 @@ class DailyPuzzleController:
         )
 
         # 4) Main solve loop
+        awaiting_ack_after_opponent = False
         while True:
             # solved
             if st.idx >= len(st.solution):
@@ -360,6 +361,34 @@ class DailyPuzzleController:
             msg = link.getboard()
             if msg is None:
                 continue
+
+            # If we just showed "Opponent played... OK = continue", keep that screen
+            # until the Pico actually starts a new input (typing_...) or sends a move/capq/hint.
+            if awaiting_ack_after_opponent:
+                # Ignore random chatter; only "unlock" once the Pico begins new interaction
+                if msg in ("shutdown", "n", "new", "in", "newgame", "btn_new"):
+                    # allow exits immediately
+                    pass
+                elif (
+                    msg.startswith("typing_")
+                    or msg.startswith("capq_")
+                    or msg in ("hint", "btn_hint")
+                ):
+                    awaiting_ack_after_opponent = False
+                    # fall through and process msg normally
+                else:
+                    # if it's not a real next-step signal, keep waiting
+                    # (important: DO NOT overwrite the LCD prompt)
+                    # Also: if msg is a move UCI, unlock and process it:
+                    u = msg.strip().lower()
+                    if u.startswith("m"):
+                        u = u[1:]
+                    u = "".join(ch for ch in u if ch.isalnum())
+                    if len(u) in (4, 5):
+                        awaiting_ack_after_opponent = False
+                        # fall through and process
+                    else:
+                        continue
 
             if msg == "shutdown":
                 from piGame import shutdown_pi
@@ -473,34 +502,18 @@ class DailyPuzzleController:
                     # LEDs/trail on Pico (this also triggers Pico's engine_ack_pending flow)
                     link.sendtoboard(f"m{reply}{'_cap' if cap else ''}")
 
-                    # Wait for OK from Pico before continuing (do not overwrite LCD)
-                    while True:
-                        ack = link.getboard()
-                        if ack is None:
-                            continue
-
-                        if ack == "shutdown":
-                            from piGame import shutdown_pi
-
-                            shutdown_pi(link, display)
-                            return
-
-                        if ack in ("btn_ok", "ok"):
-                            break
-
-                        # Allow abort/newgame if you want
-                        if ack in ("n", "new", "in", "newgame", "btn_new"):
-                            return
-
-                        # Ignore typing/hint chatter
-                        if ack.startswith("typing_") or ack in ("hint", "btn_hint"):
-                            continue
-
                     board.push(rmv)
                     st.idx += 1
+
+                    # IMPORTANT: do NOT immediately overwrite LCD with "to move"
+                    # Hold this screen until typing_/move arrives.
+                    awaiting_ack_after_opponent = True
 
             # Next prompt
             link.sendtoboard(
                 f"turn_{'white' if board.turn == chess.WHITE else 'black'}"
             )
-            display.send(f"{'WHITE' if board.turn else 'BLACK'} to move\nEnter move")
+            if not awaiting_ack_after_opponent:
+                display.send(
+                    f"{'WHITE' if board.turn else 'BLACK'} to move\nEnter move"
+                )
