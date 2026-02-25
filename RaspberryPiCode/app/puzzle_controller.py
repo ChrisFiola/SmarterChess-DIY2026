@@ -13,9 +13,8 @@ This intentionally does NOT submit results back to Lichess yet.
 from __future__ import annotations
 
 from dataclasses import dataclass
-
-# from os import link
 from typing import List, Optional, Tuple
+from collections import defaultdict
 
 import chess  # type: ignore
 import chess.pgn  # type: ignore
@@ -26,7 +25,6 @@ from .lichess_client import LichessClient
 
 
 # -------------------- LED-guided physical setup helpers --------------------
-from collections import defaultdict
 
 
 def _dist(a: str, b: str) -> int:
@@ -140,22 +138,6 @@ def _board_from_pgn_at_ply(pgn_text: str, initial_ply: int) -> chess.Board:
     return board
 
 
-def _fen_to_lines(fen: str, width: int = 22) -> List[str]:
-    """Split a long FEN string into LCD-friendly lines."""
-    fen = (fen or "").strip()
-    if not fen:
-        return ["(no FEN)"]
-    out: List[str] = []
-    i = 0
-    while i < len(fen) and len(out) < 4:
-        out.append(fen[i : i + width])
-        i += width
-    if i < len(fen) and out:
-        # indicate truncation
-        out[-1] = out[-1][: max(0, width - 1)] + "…"
-    return out
-
-
 def _is_cap(board: chess.Board, uci: str) -> bool:
     try:
         mv = chess.Move.from_uci(uci)
@@ -202,24 +184,20 @@ class DailyPuzzleController:
         # 2) LED-guided setup from standard starting position
         actions = _compute_setup_actions_from_start(st.fen_start)
 
-        # Put Pico in setup guidance mode (disables hint IRQ + forwards OK presses)
         link.sendtoboard("puzzle_setup_begin")
         try:
             display.send("DAILY PUZZLE\nSetup position\nOK = next")
             __import__("time").sleep(1.0)
 
-            # Optional: clear any stale setup drawing
             link.sendtoboard("setup_clear")
 
             for act in actions:
-                # Draw ONE instruction on LEDs + LCD
                 if act[0] == "remove":
                     _, side, frm, _, sym = act
                     display.send(
                         f"REMOVE {('BLACK' if side=='b' else 'WHITE')}\n{_piece_name(sym)} {frm}\nOK = next"
                     )
                     link.sendtoboard(f"setup_remove_{frm}")
-
                 else:
                     _, side, frm, to, sym = act
                     display.send(
@@ -227,47 +205,42 @@ class DailyPuzzleController:
                     )
                     link.sendtoboard(f"setup_move_{frm}{to}_{side}")
 
-                # WAIT for OK *after each step*
+                # wait for OK after each step
                 while True:
                     msg = link.getboard()
                     if msg is None:
                         continue
 
                     if msg == "shutdown":
-                        # avoid circular import hell; keep it local
                         from piGame import shutdown_pi
 
                         shutdown_pi(link, display)
                         return
 
-                    # allow abort
                     if msg in ("n", "new", "in", "newgame", "btn_new"):
                         return
 
-                    # OK advances
                     if msg in ("btn_ok", "ok"):
                         break
 
-                    # ignore other chatter
+                    # ignore chatter
                     if msg.startswith("typing_") or msg in ("hint", "btn_hint"):
                         continue
 
             display.send("SETUP DONE\nPuzzle begins")
             __import__("time").sleep(0.8)
-
         finally:
             link.sendtoboard("puzzle_setup_done")
 
         # 3) Load board state
         board = chess.Board(st.fen_start)
-
-        # Tell Pico it’s the side-to-move (so it keeps normal UX flow)
         link.sendtoboard(f"turn_{'white' if board.turn == chess.WHITE else 'black'}")
-        display.send(f"Daily Puzzle\n{'WHITE' if board.turn else 'BLACK'} to move")
+        display.send(
+            f"Daily Puzzle\n{'WHITE' if board.turn else 'BLACK'} to move\nEnter move"
+        )
 
         # 4) Main solve loop
         while True:
-            # puzzle solved
             if st.idx >= len(st.solution):
                 display.send("Puzzle solved!\nNice.")
                 link.sendtoboard("GameOver:1-0")
@@ -280,11 +253,15 @@ class DailyPuzzleController:
                 continue
 
             if msg == "shutdown":
+                from piGame import shutdown_pi
+
+                shutdown_pi(link, display)
                 return
 
             if msg in ("n", "new", "in", "newgame", "btn_new"):
                 return
 
+            # Hint
             if msg in ("hint", "btn_hint"):
                 link.sendtoboard(
                     f"hint_{expected}{'_cap' if _is_cap(board, expected) else ''}"
@@ -292,43 +269,56 @@ class DailyPuzzleController:
                 display.send("Hint:\n" + f"{expected[:2]} → {expected[2:4]}")
                 continue
 
-            # Moves arrive as UCI from Pico
-            uci = msg.strip().lower()
+            # --- Show typing on LCD just like other modes ---
+            if msg.startswith("typing_"):
+                # typing_from_a, typing_from_e2, typing_to_e2 → a, typing_confirm_e2 → e4, etc.
+                # reuse existing display logic if present
+                try:
+                    from piGame import handle_typing_preview
 
-            # Ignore typing chatter entirely
-            if uci.startswith("typing_"):
+                    handle_typing_preview(display, msg[len("typing_") :])
+                except Exception:
+                    # fallback: show raw typing text
+                    display.send(msg.replace("typing_", ""))
                 continue
 
-            # Strip Pico move prefix
+            # Moves arrive as UCI from Pico: "e2e4" (or sometimes "me2e4")
+            uci = msg.strip().lower()
             if uci.startswith("m"):
                 uci = uci[1:]
-
             uci = "".join(ch for ch in uci if ch.isalnum())
 
-            # Ignore incomplete moves silently
+            # Ignore incomplete input silently (single square / partial)
             if len(uci) not in (4, 5):
                 continue
 
-            # Check expected match
-            if uci[:4] != expected[:4] or (
-                len(expected) == 5 and (len(uci) != 5 or uci[4] != expected[4])
-            ):
-                display.send("Try again")
-                __import__("time").sleep(0.8)
-                display.send(
-                    f"{'WHITE' if board.turn else 'BLACK'} to move\nEnter move"
-                )
+            # Check expected match (puzzle solution)
+            wrong = False
+            if uci[:4] != expected[:4]:
+                wrong = True
+            elif len(expected) == 5:
+                if len(uci) != 5 or uci[4] != expected[4]:
+                    wrong = True
+
+            if wrong:
+                # CRITICAL: your Pico only restarts move entry when it receives "heyArduinoerror..."
+                link.sendtoboard(
+                    f"error_wrong_{uci}"
+                )  # -> Pico sees heyArduinoerror_wrong_...
+                display.send("Try again\nEnter move")
                 continue
 
-            # Must be legal
+            # Must be legal in the local position too
             try:
                 mv = chess.Move.from_uci(expected)
             except Exception:
                 display.send("Puzzle error")
+                link.sendtoboard("error_puzzle_parse")
                 return
 
             if mv not in board.legal_moves:
-                display.send("Try again")
+                link.sendtoboard(f"error_illegal_{expected}")
+                display.send("Try again\nEnter move")
                 continue
 
             # Correct
@@ -343,6 +333,7 @@ class DailyPuzzleController:
                     rmv = chess.Move.from_uci(reply)
                 except Exception:
                     display.send("Puzzle error")
+                    link.sendtoboard("error_puzzle_parse")
                     return
 
                 if rmv in board.legal_moves:
