@@ -89,6 +89,14 @@ class GameController:
             handle_typing_preview(self.deps.display, payload)
             return
 
+        if typ == EventType.OK:
+            # OK is used as an acknowledgement / "enter move" trigger from the Pico UI.
+            # It should NEVER be treated as a move payload.
+            side = "WHITE" if self.board.turn == chess.WHITE else "BLACK"
+            self.deps.display.prompt_move(side)
+            return
+
+
         if typ == EventType.CAPTURE_QUERY:
             from piGame import compute_capture_preview
             try:

@@ -21,6 +21,7 @@ class EventType(str, Enum):
     SHUTDOWN = "shutdown"
     TYPING = "typing"
     CAPTURE_QUERY = "capture_query"
+    OK = "ok"
     UNKNOWN = "unknown"
 
 
@@ -32,6 +33,7 @@ class Event:
 
 NEW_GAME_TOKENS = {"n", "new", "in", "newgame", "btn_new"}
 HINT_TOKENS = {"hint", "btn_hint"}
+OK_TOKENS = {"ok", "btnok", "btn_ok"}
 
 
 def parse_payload(payload: str) -> Event:
@@ -47,6 +49,8 @@ def parse_payload(payload: str) -> Event:
         return Event(EventType.NEW_GAME, low)
     if low in HINT_TOKENS:
         return Event(EventType.HINT, low)
+    if low in OK_TOKENS:
+        return Event(EventType.OK, low)
 
     if low.startswith("typing_"):
         return Event(EventType.TYPING, low[len("typing_"):])
@@ -61,6 +65,9 @@ def parse_payload(payload: str) -> Event:
     return Event(EventType.UNKNOWN, p)
 
 
+RESERVED_NON_MOVES = NEW_GAME_TOKENS | HINT_TOKENS | OK_TOKENS | {"draw", "btn_draw"}
+
+
 def _parse_uci_like(s: str) -> Optional[str]:
     s = (s or "").strip().lower()
     if not s:
@@ -69,6 +76,8 @@ def _parse_uci_like(s: str) -> Optional[str]:
         s = s[1:].strip()
     cleaned = "".join(ch for ch in s if ch.isalnum())
     if 4 <= len(cleaned) <= 5 and cleaned.isalnum():
+        if cleaned in RESERVED_NON_MOVES:
+            return None
         return cleaned
     return None
 

@@ -48,6 +48,9 @@ class RuntimeState:
 # -------------------- Parsing & helpers --------------------
 
 
+RESERVED_NON_MOVES = {"ok", "btnok", "btn_ok", "draw", "btn_draw", "hint", "btn_hint", "n", "new", "in", "newgame", "btn_new"}
+
+
 def parse_move_payload(payload: str) -> Optional[str]:
     if not payload:
         return None
@@ -56,6 +59,8 @@ def parse_move_payload(payload: str) -> Optional[str]:
         p = p[1:].strip()
     cleaned = "".join(ch for ch in p if ch.isalnum())
     if 4 <= len(cleaned) <= 5 and cleaned.isalnum():
+        if cleaned in RESERVED_NON_MOVES:
+            return None
         return cleaned
     return None
 
@@ -580,6 +585,12 @@ def play_game(
         # 6) Hint request
         if msg in ("hint", "btn_hint"):
             send_hint_to_board(link, display, ctx, state, cfg)
+            continue
+
+        # 7) OK acknowledgement / 'enter move' trigger (Pico sends this before typing_ begins)
+        if msg in ("ok", "btnok", "btn_ok"):
+            # Keep OLED aligned with Pico's UX: OK takes you to the move entry prompt.
+            display.prompt_move("WHITE" if state.board.turn == chess.WHITE else "BLACK")
             continue
 
         # 7) Try parsing a move
