@@ -73,6 +73,7 @@ class StockfishOpponent(Opponent):
                         "UCI_Elo": elo,
                     }
                 )
+                print(engine.options)
             else:
                 engine.configure(
                     {
@@ -80,6 +81,7 @@ class StockfishOpponent(Opponent):
                         "Skill Level": self.skill_level,
                     }
                 )
+                print(engine.options)
         except Exception:
             # If engine does not support the option, fail silently
             pass
