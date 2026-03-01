@@ -1,0 +1,3 @@
+# Optional: one Lichess puzzle ID per line for Mix & Match mode.
+# Example:
+# 00sJp

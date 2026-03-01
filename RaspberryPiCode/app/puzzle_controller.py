@@ -45,6 +45,32 @@ def _pieces_by_type_and_color(brd: chess.Board):
     return buckets
 
 
+
+def _compute_place_steps_from_fen(target_fen: str):
+    """Return a simple list of placement steps for an *empty* physical board.
+
+    Each step: (side_char, square, piece_symbol)
+      side_char: 'w' or 'b'
+      square: 'e4'
+      piece_symbol: like 'P','n', etc (case per chess lib)
+    """
+    brd = chess.Board(target_fen)
+    steps = []
+    for sq in chess.SQUARES:
+        p = brd.piece_at(sq)
+        if not p:
+            continue
+        side = "w" if p.color == chess.WHITE else "b"
+        steps.append((side, chess.square_name(sq), p.symbol()))
+    # Order: White then Black, then piece type, then square
+    order_pt = {chess.KING: 0, chess.QUEEN: 1, chess.ROOK: 2, chess.BISHOP: 3, chess.KNIGHT: 4, chess.PAWN: 5}
+    def key(t):
+        side, square, sym = t
+        ptype = chess.Piece.from_symbol(sym).piece_type
+        return (0 if side=="w" else 1, order_pt.get(ptype, 9), square)
+    steps.sort(key=key)
+    return steps
+
 def _compute_setup_actions_from_start(target_fen: str):
     """Compute physical actions to reach target_fen from standard start.
 
@@ -222,8 +248,9 @@ def _find_best_start_board_from_pgn(
 class DailyPuzzleController:
     """Run the daily puzzle loop using the Pico for input and LEDs."""
 
-    def __init__(self, client: LichessClient):
+    def __init__(self, client: LichessClient, mode: str = "daily"):
         self.client = client
+        self.mode = (mode or "daily").strip().lower()
 
     def fetch_daily(self) -> Tuple[Optional[PuzzleState], Optional[str]]:
         payload = self.client.get_daily_puzzle()
@@ -259,39 +286,50 @@ class DailyPuzzleController:
         )
 
     def run(self, link: BoardLink, display: Display) -> None:
-        # 1) Fetch puzzle
-        display.send("Daily puzzle\nLoading…")
-        st, err = self.fetch_daily()
+        # 1) Fetch puzzle (daily or mix)
+        display.send("Puzzle\nLoading…")
+        if self.mode == "mix":
+            st, err = self.fetch_mix()
+        else:
+            st, err = self.fetch_daily()
+
         if err or st is None:
             display.send("Puzzle error\n" + (err or "unknown"))
             link.sendtoboard("error_puzzle_fetch")
             return
 
-        # 2) LED-guided setup from standard starting position
-        actions = _compute_setup_actions_from_start(st.fen_start)
+        # 2) Guided setup on an EMPTY board (fast)
+        steps = _compute_place_steps_from_fen(st.fen_start)
 
         link.sendtoboard("puzzle_setup_begin")
         try:
-            display.send("DAILY PUZZLE\nSetup position\nOK = next")
-            __import__("time").sleep(1.0)
-
+            display.send("PUZZLE SETUP\nClear board\nOK = next")
+            __import__("time").sleep(0.8)
             link.sendtoboard("setup_clear")
 
-            for act in actions:
-                if act[0] == "remove":
-                    _, side, frm, _, sym = act
-                    display.send(
-                        f"REMOVE {('BLACK' if side=='b' else 'WHITE')}\n{_piece_name(sym)} {frm}\nOK = next"
-                    )
-                    link.sendtoboard(f"setup_remove_{frm}")
-                else:
-                    _, side, frm, to, sym = act
-                    display.send(
-                        f"MOVE {('BLACK' if side=='b' else 'WHITE')}\n{_piece_name(sym)}\n{frm} -> {to}\nOK = next"
-                    )
-                    link.sendtoboard(f"setup_move_{frm}{to}_{side}")
+            # Wait for OK after clearing
+            while True:
+                msg = link.getboard()
+                if msg is None:
+                    continue
 
-                # wait for OK after each step
+                if msg == "shutdown":
+                    from piGame import shutdown_pi
+                    shutdown_pi(link, display)
+                    return
+
+                if msg in ("n", "new", "in", "newgame", "btn_new"):
+                    return
+
+                if msg in ("btn_ok", "ok"):
+                    break
+
+            for (side, sq, sym) in steps:
+                display.send(
+                    f"PLACE {('WHITE' if side=='w' else 'BLACK')}\n{_piece_name(sym)} {sq}\nOK = next"
+                )
+                link.sendtoboard(f"setup_place_{sq}_{side}")
+
                 while True:
                     msg = link.getboard()
                     if msg is None:
@@ -299,7 +337,6 @@ class DailyPuzzleController:
 
                     if msg == "shutdown":
                         from piGame import shutdown_pi
-
                         shutdown_pi(link, display)
                         return
 
@@ -318,7 +355,7 @@ class DailyPuzzleController:
         finally:
             link.sendtoboard("puzzle_setup_done")
 
-        # 3) Load board state
+# 3) Load board state
         board = chess.Board(st.fen_start)
 
         # You always play the side-to-move at the puzzle start position
@@ -406,7 +443,7 @@ class DailyPuzzleController:
                 try:
                     from piGame import handle_typing_preview
 
-                    handle_typing_preview(display, msg[len("typing_") :])
+                    handle_typing_preview(display, msg[len("typing_") :], board)
                 except Exception:
                     display.send(msg.replace("typing_", ""))
                 continue

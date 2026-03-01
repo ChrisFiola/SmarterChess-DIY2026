@@ -83,15 +83,41 @@ class Display:
         def show_hint_result(self, uci: str) -> None:
             self.show_arrow(uci)
     '''
-
     def show_invalid(self, text: str) -> None:
         self.send(f"Invalid\n{text}\nTry again")
 
     def show_illegal(self, uci: str, side_name: str) -> None:
-        self.send(f"Illegal move!\nEnter new\nmove...")
+        """Show illegal move feedback + which square to return to.
 
-    def show_gameover(self, result: str) -> None:
-        self.send(f"Game Over\nResult {result}\nPress n to start over")
+        Assumption: the piece was lifted from uci[:2] and needs to go back there.
+        """
+        try:
+            frm = (uci or "")[:2]
+            if len(frm) == 2 and frm[0].isalpha() and frm[1].isdigit():
+                self.send(f"Illegal move!\nReturn to {frm}\nTry again")
+            else:
+                self.send("Illegal move!\nTry again")
+        except Exception:
+            self.send("Illegal move!\nTry again")
 
-    def show_hint_thinking(self) -> None:
-        self.send("Hint\nThinking...")
+    def show_promotion(self, who: str, promo_letter: str) -> None:
+        """Display a short promotion banner.
+
+        who: "Computer" | "Opponent" | "You"
+        promo_letter: one of q r b n
+        """
+        name = {
+            "q": "QUEEN",
+            "r": "ROOK",
+            "b": "BISHOP",
+            "n": "KNIGHT",
+        }.get((promo_letter or "").lower(), (promo_letter or "").upper())
+        self.send(f"{who} promoted\nto {name}")
+
+    def show_draw(self, reason: str, move_no: int) -> None:
+        """Display draw reason. move_no is full move count (approx)."""
+        # Keep it short for 3-line LCD
+        if reason:
+            self.send(f"DRAW\n{reason}\nMove {move_no}")
+        else:
+            self.send(f"DRAW\nMove {move_no}")

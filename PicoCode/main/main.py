@@ -1732,6 +1732,29 @@ def handle_puzzle_setup_cmd(msg):
         ui_board.markings()
         return True
 
+    if msg.startswith("heyArduinosetup_place_"):
+        # Format: setup_place_<sq>_<side>
+        tail = msg[len("heyArduinosetup_place_") :].strip()
+        parts = tail.split("_")
+        sq = parts[0].strip() if parts else ""
+        side = parts[1].strip().lower() if len(parts) > 1 else "w"
+        color = GREEN if side.startswith("w") else ENGINE_COLOR
+        ui_board.markings()
+        xy = board.algebraic_to_xy(sq)
+        if xy:
+            x, y = xy
+            for _ in range(2):
+                board.set_square(x, y, color)
+                board.write()
+                time.sleep_ms(200)
+                board.set_square(x, y, BLACK)
+                board.write()
+                time.sleep_ms(200)
+            # leave lit when done
+            board.set_square(x, y, color)
+            board.write()
+        return True
+
     if msg.startswith("heyArduinosetup_remove_"):
         sq = msg.split("_")[-1].strip()
         ui_board.markings()

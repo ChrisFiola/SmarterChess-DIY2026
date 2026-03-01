@@ -86,7 +86,7 @@ class GameController:
 
         if typ == EventType.TYPING:
             from piGame import handle_typing_preview
-            handle_typing_preview(self.deps.display, payload)
+            handle_typing_preview(self.deps.display, payload, self.board)
             return
 
         if typ == EventType.OK:

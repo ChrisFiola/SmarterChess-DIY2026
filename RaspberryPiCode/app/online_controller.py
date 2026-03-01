@@ -27,7 +27,7 @@ class OnlineDeps:
     compute_capture_preview: Callable[[chess.Board, str], bool]
     ask_promotion_piece: Callable[[object, object], str]
     side_name_from_board: Callable[[chess.Board], str]
-    handle_typing_preview: Callable[[object, str], None]
+    handle_typing_preview: Callable[[object, str, Optional[chess.Board]], None]
     report_game_over: Callable[[object, object, chess.Board], str]
     shutdown_pi: Callable[[object, object], None]
     GoToModeSelect: type
@@ -122,6 +122,13 @@ class OnlineController:
                 board.push(mv)
                 last_move_count += 1
 
+                if mv.promotion:
+                    try:
+                        display.show_promotion("Opponent", chess.piece_symbol(mv.promotion))
+                        time.sleep(0.8)
+                    except Exception:
+                        pass
+
                 # Pico: show trail + OK-only (engine_ack_pending behavior)
                 link.sendtoboard(f"m{uci}{'_cap' if is_cap else ''}")
                 time.sleep(
@@ -180,7 +187,7 @@ class OnlineController:
                     # As soon as typing starts, we are in move entry => never show prompt_move this turn
                     awaiting_ok_ack = False
                     in_move_entry = True
-                    self.d.handle_typing_preview(display, peek[7:])
+                    self.d.handle_typing_preview(display, peek[7:], board)
 
                 if peek.startswith("capq_"):
                     uciq = peek[5:].strip()
@@ -280,7 +287,7 @@ class OnlineController:
             if msg.startswith("typing_"):
                 awaiting_ok_ack = False
                 in_move_entry = True
-                self.d.handle_typing_preview(display, msg[7:])
+                self.d.handle_typing_preview(display, msg[7:], board)
                 continue
 
             if msg.startswith("capq_"):
