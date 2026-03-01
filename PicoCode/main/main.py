@@ -1559,6 +1559,38 @@ def select_game_mode():
         time.sleep_ms(5)
 
 
+def select_puzzle_variant():
+    """Submenu for puzzle mode.
+
+    The Raspberry Pi shows:
+      1) Daily
+      2) Mix & Match
+      (n=back)
+
+    Map CP buttons:
+      1 -> send "1"
+      2 -> send "2"
+      4 -> send "n" (back)
+    """
+    buttons.reset()
+    while True:
+        if is_shutdown_held():
+            shutdown_pico()
+        b = buttons.detect_press()
+        if not b:
+            time.sleep_ms(5)
+            continue
+        if b == 1:
+            send_to_pi("1")
+            return
+        if b == 2:
+            send_to_pi("2")
+            return
+        if b == 4:
+            send_to_pi("n")
+            return
+
+
 def select_singlepress(default_value, out_min, out_max):
     buttons.reset()
     while True:
@@ -1918,6 +1950,18 @@ def main_loop():
             select_game_mode()
             while game_state == GAME_SETUP:
                 wait_for_setup()
+            continue
+
+        # Puzzle submenu (Daily / Mix)
+        if msg.startswith("heyArduinoChoosePuzzle"):
+            # Keep the board display in a neutral state and let CP buttons choose.
+            disable_hint_irq()
+            buttons.reset()
+            ui_board.markings()
+            cp_show_coords_top(WHITE)
+            select_puzzle_variant()
+            ui_board.markings()
+            enable_hint_irq()
             continue
 
         if msg.startswith("heyArduinoGameStart"):
