@@ -121,14 +121,6 @@ class OnlineController:
 
                 board.push(mv)
                 last_move_count += 1
-
-                if mv.promotion:
-                    try:
-                        display.show_promotion("Opponent", chess.piece_symbol(mv.promotion))
-                        time.sleep(0.8)
-                    except Exception:
-                        pass
-
                 # Pico: show trail + OK-only (engine_ack_pending behavior)
                 link.sendtoboard(f"m{uci}{'_cap' if is_cap else ''}")
                 time.sleep(
@@ -138,7 +130,16 @@ class OnlineController:
 
                 if announce_new:
                     side_to_move = "WHITE" if board.turn == chess.WHITE else "BLACK"
-                    display.send(f"{uci_to_oled(uci)}\n{side_to_move} to move")
+                    promo_line = ""
+                    if mv.promotion:
+                        promo_letter = chess.piece_symbol(mv.promotion)
+                        promo_name = (
+                            display._promo_name(promo_letter)
+                            if hasattr(display, "_promo_name")
+                            else (promo_letter or "").upper()
+                        )
+                        promo_line = f"Promoted to {promo_name}"
+                    display.send(f"{uci_to_oled(uci)}\n{promo_line}\n{side_to_move} to move" if promo_line else f"{uci_to_oled(uci)}\n{side_to_move} to move")
 
                     # Hold this message until OK is pressed and user starts input
                     awaiting_ok_ack = True

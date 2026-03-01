@@ -11,27 +11,38 @@ from typing import Optional
 
 PIPE_PATH: str = "/tmp/lcdpipe"
 READY_FLAG_PATH: str = "/tmp/display_server_ready"
-DISPLAY_SERVER_SCRIPT: str = "/home/king/SmarterChess-DIY2026/RaspberryPiCode/screen/display_server.py"
+DISPLAY_SERVER_SCRIPT: str = (
+    "/home/king/SmarterChess-DIY2026/RaspberryPiCode/screen/display_server.py"
+)
+
 
 class Display:
     """
     Minimal abstraction around display_server IPC.
     """
+
     def __init__(self, pipe_path: str = PIPE_PATH, ready_flag: str = READY_FLAG_PATH):
         self.pipe_path = pipe_path
         self.ready_flag = ready_flag
 
     def restart_server(self) -> None:
-        subprocess.Popen("pkill -f display_server.py", shell=True,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.Popen(
+            "pkill -f display_server.py",
+            shell=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
         time.sleep(0.2)
         if not os.path.exists(self.pipe_path):
             try:
                 os.mkfifo(self.pipe_path)
             except FileExistsError:
                 pass
-        subprocess.Popen(["python3", DISPLAY_SERVER_SCRIPT],
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.Popen(
+            ["python3", DISPLAY_SERVER_SCRIPT],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
 
     def wait_ready(self, timeout_s: float = 10.0) -> None:
         start = time.time()
@@ -60,7 +71,7 @@ class Display:
             self.send(arrow)
 
     def prompt_move(self, side: str) -> None:
-        # side is human-friendly descriptor: "WHITE" or "BLACK" 
+        # side is human-friendly descriptor: "WHITE" or "BLACK"
         self.send(f"You are {side.lower()}\nEnter move:")
 
     def show_hint_result(self, uci: str) -> None:
@@ -79,10 +90,11 @@ class Display:
         except Exception:
             self.send(f"Hint received:\n{uci}")
 
-    '''
+    """
         def show_hint_result(self, uci: str) -> None:
             self.show_arrow(uci)
-    '''
+    """
+
     def show_invalid(self, text: str) -> None:
         self.send(f"Invalid\n{text}\nTry again")
 
@@ -100,18 +112,21 @@ class Display:
         except Exception:
             self.send("Illegal move!\nTry again")
 
+    def _promo_name(self, promo_letter: str) -> str:
+        return {
+            "q": "QUEEN",
+            "r": "ROOK",
+            "b": "BISHOP",
+            "n": "KNIGHT",
+        }.get((promo_letter or "").lower(), (promo_letter or "").upper())
+
     def show_promotion(self, who: str, promo_letter: str) -> None:
         """Display a short promotion banner.
 
         who: "Computer" | "Opponent" | "You"
         promo_letter: one of q r b n
         """
-        name = {
-            "q": "QUEEN",
-            "r": "ROOK",
-            "b": "BISHOP",
-            "n": "KNIGHT",
-        }.get((promo_letter or "").lower(), (promo_letter or "").upper())
+        name = self._promo_name(promo_letter)
         self.send(f"{who} promoted\nto {name}")
 
     def show_draw(self, reason: str, move_no: int) -> None:

@@ -48,7 +48,20 @@ class RuntimeState:
 # -------------------- Parsing & helpers --------------------
 
 
-RESERVED_NON_MOVES = {"ok", "btnok", "btn_ok", "draw", "btn_draw", "hint", "btn_hint", "n", "new", "in", "newgame", "btn_new"}
+RESERVED_NON_MOVES = {
+    "ok",
+    "btnok",
+    "btn_ok",
+    "draw",
+    "btn_draw",
+    "hint",
+    "btn_hint",
+    "n",
+    "new",
+    "in",
+    "newgame",
+    "btn_new",
+}
 
 
 def parse_move_payload(payload: str) -> Optional[str]:
@@ -189,7 +202,6 @@ def report_game_over(link: BoardLink, display: Display, brd: chess.Board) -> str
     link.sendtoboard(f"GameOver:{result}")
     display.send(f"GAME OVER\n{winner}\nStart new game?")
     return result
-
 
 
 def _auto_draw_reason(brd: chess.Board) -> Optional[str]:
@@ -395,9 +407,24 @@ def handoff_next_turn(
     )
     if human_to_move:
         link.sendtoboard(f"turn_{'white' if brd.turn == chess.WHITE else 'black'}")
+        # If last move was a promotion (UCI like e7e8q), show it alongside the usual "to move" prompt.
+        promo_letter = (
+            last_uci[4].lower()
+            if isinstance(last_uci, str) and len(last_uci) >= 5
+            else ""
+        )
+        promo_line = ""
+        if promo_letter in ("q", "r", "b", "n"):
+            promo_name = (
+                display._promo_name(promo_letter)
+                if hasattr(display, "_promo_name")
+                else promo_letter.upper()
+            )
+            promo_line = f"Promoted to {promo_name}\n"
+
         display.show_arrow(
             last_uci,
-            suffix=f"{'WHITE' if brd.turn == chess.WHITE else 'BLACK'} to move",
+            suffix=f"{promo_line}{'WHITE' if brd.turn == chess.WHITE else 'BLACK'} to move",
         )
     else:
         display.show_arrow(last_uci, suffix="ENGINE thinking")
@@ -421,18 +448,9 @@ def engine_move_and_send(
     # Send with _cap if capture, then push
     link.sendtoboard(f"m{reply}{'_cap' if is_cap else ''}")
     state.board.push(mv)
-    # Promotion banner (engine)
-    if mv.promotion:
-        try:
-            display.show_promotion("Computer", chess.piece_symbol(mv.promotion))
-            time.sleep(0.8)
-        except Exception:
-            pass
-
     # Auto-draw after engine move
     if _handle_auto_draw(link, display, state.board):
         raise GoToModeSelect()
-
 
     if state.board.is_game_over():
         _res = report_game_over(link, display, state.board)
@@ -498,7 +516,9 @@ def _piece_label_from_square(board: Optional["chess.Board"], sq: str) -> Optiona
         return None
 
 
-def handle_typing_preview(display: Display, payload: str, board: Optional["chess.Board"] = None) -> None:
+def handle_typing_preview(
+    display: Display, payload: str, board: Optional["chess.Board"] = None
+) -> None:
     """
     payload is the '<after heypityping_...>' part, e.g.:
       'from_e'
@@ -875,11 +895,11 @@ def mode_dispatch(
         from app.stockfish_opponent import StockfishOpponent
 
         opponent = StockfishOpponent(
-    ctx,
-    move_time_ms=cfg.move_time_ms,
-    skill_level=cfg.skill_level,
-    use_elo=False,   # <-- turn on Elo limiting
-)
+            ctx,
+            move_time_ms=cfg.move_time_ms,
+            skill_level=cfg.skill_level,
+            use_elo=False,  # <-- turn on Elo limiting
+        )
         controller = GameController(
             LoopDeps(link=link, display=display, opponent=opponent),
             human_is_white=cfg.human_is_white,
