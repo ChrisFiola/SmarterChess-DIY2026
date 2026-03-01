@@ -717,7 +717,7 @@ def mode_dispatch(
     ctx,
     move_time_ms=cfg.move_time_ms,
     skill_level=cfg.skill_level,
-    use_elo=True,   # <-- turn on Elo limiting
+    use_elo=False,   # <-- turn on Elo limiting
 )
         controller = GameController(
             LoopDeps(link=link, display=display, opponent=opponent),

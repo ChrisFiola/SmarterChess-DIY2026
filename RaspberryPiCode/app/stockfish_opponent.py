@@ -29,6 +29,18 @@ def map_skill_to_elo(skill_level: int) -> int:
     elo_steps = [650, 850, 1050, 1250, 1450, 1650, 1850, 2050]
     return elo_steps[clamp(idx, 0, 7)]
 
+def map_raw_skill_to_beginner_skill(raw_0_20: int) -> int:
+    """
+    raw_0_20 comes from Pico (mapped 1..8 -> 1..20).
+    Convert to 8-step beginner-friendly Stockfish Skill Level 0..20.
+    """
+    s = clamp(int(raw_0_20), 0, 20)
+    idx = int(round((s / 20.0) * 7))  # 0..7
+
+    # Beginner-friendly curve (tweakable)
+    steps = [0, 1, 2, 4, 6, 9, 13, 18]
+    return steps[clamp(idx, 0, 7)]
+
 
 class StockfishOpponent(Opponent):
     def __init__(
@@ -36,7 +48,7 @@ class StockfishOpponent(Opponent):
         ctx: EngineContext,
         move_time_ms: int,
         skill_level: int = 5,
-        use_elo: bool = True,
+        use_elo: bool = False,
     ):
         self.ctx = ctx
         self.move_time_ms = move_time_ms
@@ -76,9 +88,14 @@ class StockfishOpponent(Opponent):
 
                 print("[ENGINE CONFIG] configure OK (elo)", file=sys.stderr, flush=True)
             else:
-                print(f"[ENGINE CONFIG] requesting Skill Level={self.skill_level}", file=sys.stderr, flush=True)
+                mapped = map_raw_skill_to_beginner_skill(self.skill_level)
+                print(
+                    f"[ENGINE CONFIG] requesting Skill Level={mapped} (raw={self.skill_level})",
+                    file=sys.stderr,
+                    flush=True,
+                )
 
-                engine.configure({"UCI_LimitStrength": False, "Skill Level": self.skill_level})
+                engine.configure({"UCI_LimitStrength": False, "Skill Level": mapped})
 
                 print("[ENGINE CONFIG] configure OK (skill)", file=sys.stderr, flush=True)
 
