@@ -9,6 +9,7 @@ import chess  # type: ignore
 from .opponent import Opponent
 from piEngine import EngineContext, engine_bestmove
 
+print("LOADED StockfishOpponent from:", __file__, flush=True)
 
 def clamp(n: int, lo: int, hi: int) -> int:
     return lo if n < lo else hi if n > hi else n
