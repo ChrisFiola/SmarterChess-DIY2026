@@ -91,5 +91,7 @@ class StockfishOpponent(Opponent):
         self._last_skill = self.skill_level
 
     def get_move(self, board: chess.Board) -> Optional[str]:
+        import sys
+        print("[DEBUG] StockfishOpponent.get_move called", file=sys.stderr, flush=True)
         self._ensure_configured()
         return engine_bestmove(self.ctx, board, self.move_time_ms)
