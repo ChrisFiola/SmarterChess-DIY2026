@@ -56,37 +56,40 @@ class StockfishOpponent(Opponent):
             self._configured = False  # force reconfigure next move
 
     def _ensure_configured(self) -> None:
-        """
-        Apply UCI config only if needed.
-        Avoids spamming setoption every move.
-        """
         if self._configured and self._last_skill == self.skill_level:
             return
 
+        import sys, traceback
+
         engine = self.ctx.ensure()
+
+        # Print BEFORE we try anything
+        print(f"[ENGINE CONFIG] about to configure. skill={self.skill_level} use_elo={self.use_elo}",
+            file=sys.stderr, flush=True)
 
         try:
             if self.use_elo:
                 elo = map_skill_to_elo(self.skill_level)
-                engine.configure(
-                    {
-                        "UCI_LimitStrength": True,
-                        "UCI_Elo": elo,
-                    }
-                )
-                print(engine.options)
-            else:
-                engine.configure(
-                    {
-                        "UCI_LimitStrength": False,
-                        "Skill Level": self.skill_level,
-                    }
-                )
-                print(engine.options)
-        except Exception:
-            # If engine does not support the option, fail silently
-            pass
+                print(f"[ENGINE CONFIG] requesting UCI_Elo={elo}", file=sys.stderr, flush=True)
 
+                engine.configure({"UCI_LimitStrength": True, "UCI_Elo": elo})
+
+                print("[ENGINE CONFIG] configure OK (elo)", file=sys.stderr, flush=True)
+            else:
+                print(f"[ENGINE CONFIG] requesting Skill Level={self.skill_level}", file=sys.stderr, flush=True)
+
+                engine.configure({"UCI_LimitStrength": False, "Skill Level": self.skill_level})
+
+                print("[ENGINE CONFIG] configure OK (skill)", file=sys.stderr, flush=True)
+
+        except Exception as e:
+            print("[ENGINE CONFIG ERROR]", repr(e), file=sys.stderr, flush=True)
+            traceback.print_exc()
+            # IMPORTANT: still mark configured so you don't spam errors every move?
+            # For debugging, DON'T mark configured on error:
+            return
+
+        # If we reached here, config succeeded
         self._configured = True
         self._last_skill = self.skill_level
 
