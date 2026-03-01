@@ -713,7 +713,12 @@ def mode_dispatch(
         from app.game_controller import GameController, LoopDeps
         from app.stockfish_opponent import StockfishOpponent
 
-        opponent = StockfishOpponent(ctx, move_time_ms=cfg.move_time_ms)
+        opponent = StockfishOpponent(
+    ctx,
+    move_time_ms=cfg.move_time_ms,
+    skill_level=cfg.skill_level,
+    use_elo=False,   # <-- turn on Elo limiting
+)
         controller = GameController(
             LoopDeps(link=link, display=display, opponent=opponent),
             human_is_white=cfg.human_is_white,
