@@ -92,7 +92,7 @@ class Display:
         try:
             frm, to = uci[:2], uci[2:4]
             if len(uci) >= 4:
-                self.send(f"Hint received:\n{frm} → {to}")
+                self.send(f"Hint received:\n{frm} → {to}\nPress OK")
             else:
                 # Fallback: just show whatever we received
                 self.send(f"Hint received:\n{uci}")
@@ -115,7 +115,7 @@ class Display:
         try:
             frm = (uci or "")[:2]
             if len(frm) == 2 and frm[0].isalpha() and frm[1].isdigit():
-                self.send(f"Illegal move!\nReturn to {frm}\nTry again")
+                self.send(f"Illegal move!\nReturn to {frm}\nPress OK")
             else:
                 self.send("Illegal move!\nTry again")
         except Exception:

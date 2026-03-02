@@ -53,34 +53,50 @@ class OnlineController:
         # Connect phase (with retries + OK=back)
         # ------------------------------------------------------------
 
-        display.send("Lichess connecting...\nOK = back")
+        # Tell the Pico that OK should act as "Back" while we are connecting / waiting.
+        # (Without this, the Pico may ignore OK unless it's in a move-entry state.)
+        link.sendtoboard("ok_back_enable")
+
+        display.send("Lichess connecting...\nOK = cancel")
 
         # If we're in AP mode, immediately show a QR to configure WiFi.
         # (In AP mode, online play won't work until STA credentials are set.)
         if is_ap_mode():
             url = wifi_config_url() or "http://192.168.4.1/"
             if hasattr(display, "show_qr"):
-                display.show_qr(url, "Scan to setup WiFi", "OK = back")
+                display.show_qr(url, "Scan to setup WiFi", "OK = cancel")
             else:
-                display.send(f"AP mode\nOpen:\n{url}\nOK = back")
+                display.send(f"AP mode\nOpen:\n{url}\nOK = cancel")
             # Wait for user to go back
             while True:
                 m = link.getboard()
                 if not m:
                     continue
                 if m in ("ok", "btn_ok", "btnok"):
+                    link.sendtoboard("ok_back_disable")
                     raise self.d.GoToModeSelect()
                 if m == "shutdown":
                     self.d.shutdown_pi(link, display)
                     return
                 if m in ("n", "new", "in", "newgame", "btn_new"):
+                    link.sendtoboard("ok_back_disable")
                     raise self.d.GoToModeSelect()
 
         acct = None
         for attempt in range(1, 4):
             # Allow immediate back while we are looping/retrying
             peek = link.getboard_nonblocking()
-            if peek in ("ok", "btn_ok", "btnok", "n", "new", "in", "newgame", "btn_new"):
+            if peek in (
+                "ok",
+                "btn_ok",
+                "btnok",
+                "n",
+                "new",
+                "in",
+                "newgame",
+                "btn_new",
+            ):
+                link.sendtoboard("ok_back_disable")
                 raise self.d.GoToModeSelect()
             if peek == "shutdown":
                 self.d.shutdown_pi(link, display)
@@ -95,7 +111,7 @@ class OnlineController:
 
         if not acct or acct.get("_error"):
             # After 3 attempts, show a sticky error until OK to go back
-            display.send("Lichess offline\nWiFi/DNS error\nOK = back")
+            display.send("Lichess offline\nWiFi/DNS error\nOK = Menu")
             while True:
                 m = link.getboard()
                 if not m:
@@ -103,11 +119,21 @@ class OnlineController:
                 if m == "shutdown":
                     self.d.shutdown_pi(link, display)
                     return
-                if m in ("ok", "btn_ok", "btnok", "n", "new", "in", "newgame", "btn_new"):
+                if m in (
+                    "ok",
+                    "btn_ok",
+                    "btnok",
+                    "n",
+                    "new",
+                    "in",
+                    "newgame",
+                    "btn_new",
+                ):
+                    link.sendtoboard("ok_back_disable")
                     raise self.d.GoToModeSelect()
 
         username = (acct.get("username") or acct.get("id") or "").strip().lower()
-        display.send("Lichess online\nStart a game\non lichess.org\nOK = back")
+        display.send("Lichess online\nStart a game\non lichess.org\nOK = cancel")
 
         # Wait for gameStart (pollable stream so OK can back out)
         game_id = None
@@ -118,13 +144,23 @@ class OnlineController:
             if peek == "shutdown":
                 self.d.shutdown_pi(link, display)
                 return
-            if peek in ("ok", "btn_ok", "btnok", "n", "new", "in", "newgame", "btn_new"):
+            if peek in (
+                "ok",
+                "btn_ok",
+                "btnok",
+                "n",
+                "new",
+                "in",
+                "newgame",
+                "btn_new",
+            ):
+                link.sendtoboard("ok_back_disable")
                 raise self.d.GoToModeSelect()
 
             # Re-affirm banner occasionally (some users see a delay)
             now = int(time.time() * 1000)
             if now - last_banner_ms > 1500:
-                display.send("Lichess online\nWaiting for game...\nOK = back")
+                display.send("Lichess online\nWaiting for game...\nOK = cancel")
                 last_banner_ms = now
 
             try:
@@ -135,7 +171,17 @@ class OnlineController:
                         break
                     # Allow back between events
                     peek2 = link.getboard_nonblocking()
-                    if peek2 in ("ok", "btn_ok", "btnok", "n", "new", "in", "newgame", "btn_new"):
+                    if peek2 in (
+                        "ok",
+                        "btn_ok",
+                        "btnok",
+                        "n",
+                        "new",
+                        "in",
+                        "newgame",
+                        "btn_new",
+                    ):
+                        link.sendtoboard("ok_back_disable")
                         raise self.d.GoToModeSelect()
                     if peek2 == "shutdown":
                         self.d.shutdown_pi(link, display)
@@ -151,9 +197,13 @@ class OnlineController:
         if not game_id:
             display.send("No game found\nTry again")
             time.sleep(2)
+            link.sendtoboard("ok_back_disable")
             raise self.d.GoToModeSelect()
 
         display.send("Lichess connecting...\nLoading game")
+
+        # From here on, OK should no longer be treated as "Back" on the Pico.
+        link.sendtoboard("ok_back_disable")
 
         stream = self.client.stream_game(game_id)
 
@@ -219,7 +269,11 @@ class OnlineController:
                             else (promo_letter or "").upper()
                         )
                         promo_line = f"Promoted to {promo_name}"
-                    display.send(f"{uci_to_oled(uci)}\n{promo_line}\n{side_to_move} to move" if promo_line else f"{uci_to_oled(uci)}\n{side_to_move} to move")
+                    display.send(
+                        f"{uci_to_oled(uci)}\n{promo_line}\n{side_to_move} to move"
+                        if promo_line
+                        else f"{uci_to_oled(uci)}\n{side_to_move} to move"
+                    )
 
                     # Hold this message until OK is pressed and user starts input
                     awaiting_ok_ack = True
@@ -326,7 +380,7 @@ class OnlineController:
                                 result = "0-1"
 
                             link.sendtoboard(f"GameOver:{result}")
-                            display.send(f"GAME OVER\nResult {result}\nStart new game?")
+                            display.send(f"GAME OVER\nResult {result}\nOK = Menu")
                             raise self.d.GoToModeSelect()
 
                 except StopIteration:

@@ -105,6 +105,9 @@ preview_cap_flag = False
 
 # --- Guard to ignore stale messages after "New Game" is requested ---
 suspend_until_new_game = False
+# When True, OK is treated as "back" even while we're otherwise idle (e.g. Lichess
+# online waiting for a game). Enabled/disabled by the Pi via heyArduinook_back_*.
+ok_back_enabled = False
 
 # --- Puzzle setup mode (Pi-driven LED guidance) ---
 puzzle_setup_active = False
@@ -1555,6 +1558,40 @@ def select_game_mode():
         time.sleep_ms(5)
 
 
+# ============================================================
+# SETUP BACK CLEANUP (prevents stuck LEDs / frozen input)
+# ============================================================
+
+
+def _setup_back_cleanup():
+    global game_state, in_setup, suspend_until_new_game
+
+    # Leave setup state completely so main_loop can see heyArduinoChooseMode again
+    in_setup = False
+    game_state = GAME_IDLE
+    suspend_until_new_game = False
+
+    # Clear control panel LEDs and restore baseline menu look
+    try:
+        cp_all_off()
+    except Exception:
+        pass
+    try:
+        cp_bars_dim_on()
+    except Exception:
+        pass
+
+    # Restore board markings and reset button edge detection
+    try:
+        ui_board.markings()
+    except Exception:
+        pass
+    try:
+        buttons.reset()
+    except Exception:
+        pass
+
+
 def select_puzzle_variant():
     """Submenu for puzzle mode.
 
@@ -1579,6 +1616,7 @@ def select_puzzle_variant():
         # OK = back (Pi interprets as submenu back while setup is active)
         if b == (OK_BUTTON_INDEX + 1):
             send_to_pi("btn_ok")
+            _setup_back_cleanup()
             return
         if b == 1:
             send_to_pi("1")
@@ -1600,6 +1638,7 @@ def select_singlepress(default_value, out_min, out_max):
         # OK = back
         if b == (OK_BUTTON_INDEX + 1):
             send_to_pi("btn_ok")
+            _setup_back_cleanup()
             return None
         if b and 1 <= b <= 8:
             return map_range(b, 1, 8, out_min, out_max)
@@ -1623,6 +1662,7 @@ def select_color_choice():
         # OK = back
         if b == (OK_BUTTON_INDEX + 1):
             send_to_pi("btn_ok")
+            _setup_back_cleanup()
             return
         if b == 1:
             send_to_pi("s1")
@@ -1645,10 +1685,11 @@ def wait_for_setup():
                 shutdown_pico()
 
             # OK = back even while we're just waiting for the Pi to prompt.
-            # This fixes "OK doesn't do anything" in setup submenus.
+            # When used as "back", we must fully exit setup on the Pico too.
             b = buttons.detect_press()
             if b == (OK_BUTTON_INDEX + 1):
                 send_to_pi("btn_ok")
+                _setup_back_cleanup()
                 return
 
             msg = read_from_pi()
@@ -1845,11 +1886,23 @@ def handle_puzzle_setup_cmd(msg):
 
 
 def main_loop():
-    global current_turn, engine_ack_pending, pending_gameover_result, buffered_turn_msg, suspend_until_new_game, game_state, ok_last_val, puzzle_setup_active
+    global current_turn, engine_ack_pending, pending_gameover_result, buffered_turn_msg, suspend_until_new_game, game_state, ok_last_val, puzzle_setup_active, ok_back_enabled
 
     while True:
         if is_shutdown_held():
             shutdown_pico()
+
+        # If the Pi enabled OK-as-back (used for Lichess "waiting for game"),
+        # handle the OK press even when we're otherwise idle and not receiving
+        # any serial traffic.
+        if ok_back_enabled and not puzzle_setup_active and not engine_ack_pending:
+            b0 = buttons.detect_press()
+            if b0 == (OK_BUTTON_INDEX + 1):
+                send_to_pi("btn_ok")
+                ok_back_enabled = False
+                _setup_back_cleanup()
+                time.sleep_ms(50)
+                continue
 
         # During puzzle setup:
         #  - Pi sends setup_move/setup_remove messages => handled here
@@ -1943,6 +1996,24 @@ def main_loop():
 
         if not msg:
             time.sleep_ms(10)
+            continue
+
+        # Enable/disable OK-as-back (Pi-controlled)
+        if msg.startswith("heyArduinook_back_enable"):
+            ok_back_enabled = True
+            # Make OK visually obvious while waiting
+            try:
+                cp_only_ok(True)
+            except Exception:
+                pass
+            continue
+
+        if msg.startswith("heyArduinook_back_disable"):
+            ok_back_enabled = False
+            try:
+                cp_only_ok(False)
+            except Exception:
+                pass
             continue
 
         if suspend_until_new_game or game_state != GAME_RUNNING:
