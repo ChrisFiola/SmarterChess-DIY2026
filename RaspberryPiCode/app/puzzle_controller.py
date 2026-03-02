@@ -445,8 +445,64 @@ class DailyPuzzleController:
         # You always play the side-to-move at the puzzle start position
         player_color = "WHITE" if board.turn == chess.WHITE else "BLACK"
 
+        side_prefix = f"You are {player_color}"
+
+        def _show_prompt_enter_move() -> None:
+            display.send(f"{side_prefix}\nEnter move:")
+
+        def _show_try_again() -> None:
+            display.send(f"{side_prefix}\nTry again\nEnter move")
+
+        def _wait_promotion_choice() -> Optional[str]:
+            """Wait for Pico to return btn_q/btn_r/btn_b/btn_n. Returns 'q','r','b','n' or None if canceled."""
+            while True:
+                m = link.getboard()
+                if m is None:
+                    continue
+
+                if m == "shutdown":
+                    from piGame import shutdown_pi
+
+                    shutdown_pi(link, display)
+                    return None
+
+                if m in ("n", "new", "in", "newgame", "btn_new"):
+                    return None
+
+                if m in ("btn_q", "btn_r", "btn_b", "btn_n"):
+                    return m[-1]
+
+                # ignore chatter
+                if (
+                    m.startswith("typing_")
+                    or m.startswith("capq_")
+                    or m in ("hint", "btn_hint")
+                ):
+                    continue
+
+        def _wrong_move_feedback(user_uci: str) -> bool:
+            """Tell user what they moved, show red trail, wait for OK. Returns False if exited."""
+            u = user_uci.strip().lower()
+            if u.startswith("m"):
+                u = u[1:]
+            u = "".join(ch for ch in u if ch.isalnum())
+            frm, to = (u[:2], u[2:4]) if len(u) >= 4 else ("", "")
+            piece_txt = "PIECE"
+            try:
+                p = board.piece_at(chess.parse_square(frm)) if frm else None
+                if p:
+                    piece_txt = _piece_name(p.symbol())
+            except Exception:
+                pass
+
+            display.send(
+                f"{side_prefix}\nWrong: {piece_txt} {frm}->{to}\nPut it back + OK"
+            )
+            link.sendtoboard(f"puzzle_wrong_{frm}{to}")
+            return _wait_ack_ok()
+
         link.sendtoboard(f"turn_{'white' if board.turn == chess.WHITE else 'black'}")
-        display.send(f"Daily Puzzle\nYou are {player_color}\nEnter move:")
+        _show_prompt_enter_move()
 
         # Helper: wait for OK acknowledgement coming from Pico (requires Pico patch above)
         def _wait_ack_ok() -> bool:
@@ -479,7 +535,7 @@ class DailyPuzzleController:
         while True:
             # solved
             if st.idx >= len(st.solution):
-                display.send("Puzzle solved!\nOK = menu")
+                display.send(f"{side_prefix}\nPuzzle solved!\nOK = menu")
                 link.sendtoboard("GameOver:1-0")
                 # Wait for OK before returning
                 if _wait_ack_ok():
@@ -519,7 +575,7 @@ class DailyPuzzleController:
                 link.sendtoboard(
                     f"hint_{expected}{'_cap' if _is_cap(board, expected) else ''}"
                 )
-                display.send("Hint:\n" + f"{expected[:2]} → {expected[2:4]}")
+                display.send(f"{side_prefix}\nHint: {expected[:2]}→{expected[2:4]}")
                 continue
 
             # Typing preview
@@ -541,17 +597,49 @@ class DailyPuzzleController:
             if len(uci) not in (4, 5):
                 continue
 
-            # Check expected match
+            # Handle promotions: Pico typically sends 4-char UCI; puzzle solutions may require 5-char (e.g. e7e8q)
+            if len(uci) == 4:
+                # If any legal move from->to is a promotion, prompt for choice and append letter
+                try:
+                    frm_sq = chess.parse_square(uci[:2])
+                    to_sq = chess.parse_square(uci[2:4])
+                    promo_needed = False
+                    for mvv in board.legal_moves:
+                        if (
+                            mvv.from_square == frm_sq
+                            and mvv.to_square == to_sq
+                            and mvv.promotion is not None
+                        ):
+                            promo_needed = True
+                            break
+                    if promo_needed:
+                        display.send(f"{side_prefix}\nPromotion!\n1Q 2R 3B 4N")
+                        link.sendtoboard("promotion_choice_needed")
+                        pick = _wait_promotion_choice()
+                        if pick is None:
+                            return
+                        uci = uci + pick
+                except Exception:
+                    pass
+
+            # Check expected match (including promotion char if present)
+            expected = st.solution[st.idx]
             wrong = False
             if uci[:4] != expected[:4]:
                 wrong = True
             elif len(expected) == 5:
                 if len(uci) != 5 or uci[4] != expected[4]:
                     wrong = True
+            else:
+                # expected is non-promotion; reject an extra promotion suffix
+                if len(uci) == 5:
+                    wrong = True
 
             if wrong:
-                link.sendtoboard(f"error_wrong_{uci}")
-                display.send("Try again\nEnter move")
+                ok = _wrong_move_feedback(uci)
+                if not ok:
+                    return
+                _show_prompt_enter_move()
                 continue
 
             # Must be legal in local position too
@@ -564,11 +652,11 @@ class DailyPuzzleController:
 
             if mv not in board.legal_moves:
                 link.sendtoboard(f"error_illegal_{expected}")
-                display.send("Try again\nEnter move")
+                _show_try_again()
                 continue
 
             # Correct player move
-            display.send("Correct")
+            display.send(f"{side_prefix}\nCorrect")
             __import__("time").sleep(2)
 
             board.push(mv)
@@ -589,7 +677,7 @@ class DailyPuzzleController:
                     cap = board.is_capture(rmv)
 
                     display.send(
-                        f"{opp} played:\n{reply[:2]} → {reply[2:4]}\nOK = continue"
+                        f"{side_prefix}\n{opp} played {reply[:2]}→{reply[2:4]}\nOK = continue"
                     )
                     link.sendtoboard(f"m{reply}{'_cap' if cap else ''}")
 
@@ -602,11 +690,11 @@ class DailyPuzzleController:
                         return
 
                     # Immediately show prompt BEFORE user starts typing
-                    display.send(f"You are {player_color}\nEnter move:")
+                    _show_prompt_enter_move()
 
             # Next prompt for normal flow (if there was no opponent move)
             link.sendtoboard(
                 f"turn_{'white' if board.turn == chess.WHITE else 'black'}"
             )
             # Keep consistent prompt text
-            display.send(f"You are {player_color}\nEnter move:")
+            _show_prompt_enter_move()
