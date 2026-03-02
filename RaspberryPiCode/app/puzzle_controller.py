@@ -496,6 +496,13 @@ class DailyPuzzleController:
         # 2) Guided setup on an EMPTY board
         steps = _compute_place_steps_from_fen(st.fen_start)
 
+        # Clear any stale button events from menu navigation so they can't
+        # interfere with the first setup prompts / LED commands.
+        try:
+            link.clear_input()
+        except Exception:
+            pass
+
         link.sendtoboard("puzzle_setup_begin")
         try:
             label = _format_puzzle_label(

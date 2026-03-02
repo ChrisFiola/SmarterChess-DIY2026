@@ -1873,24 +1873,38 @@ def handle_puzzle_setup_cmd(msg):
         parts = tail.split("_")
         sq = parts[0].strip() if parts else ""
         side = parts[1].strip().lower() if len(parts) > 1 else "w"
-        # IMPORTANT: During puzzle setup the Pi can stream many setup_* commands
-        # quickly. Long blocking blink animations here can overflow the UART
-        # buffer and make early commands appear "missing" on the board.
-        # So we keep this handler fast and non-blocking: just light the square.
         color = GREEN if side.startswith("w") else ENGINE_COLOR
+        ui_board.markings()
         xy = board.algebraic_to_xy(sq)
         if xy:
             x, y = xy
+            for _ in range(2):
+                board.set_square(x, y, color)
+                board.write()
+                time.sleep_ms(200)
+                board.set_square(x, y, BLACK)
+                board.write()
+                time.sleep_ms(200)
+            # leave lit when done
             board.set_square(x, y, color)
             board.write()
         return True
 
     if msg.startswith("heyArduinosetup_remove_"):
         sq = msg.split("_")[-1].strip()
-        # Non-blocking: light the square red to indicate removal.
+        ui_board.markings()
         xy = board.algebraic_to_xy(sq)
         if xy:
             x, y = xy
+            for _ in range(3):
+                board.set_square(x, y, RED)
+                board.write()
+                time.sleep_ms(200)
+                board.set_square(x, y, BLACK)
+                board.write()
+                time.sleep_ms(200)
+
+            # leave it RED when done blinking
             board.set_square(x, y, RED)
             board.write()
         return True
@@ -1901,8 +1915,7 @@ def handle_puzzle_setup_cmd(msg):
         uci = parts[0].strip() if parts else ""
         side = parts[1].strip().lower() if len(parts) > 1 else "w"
         color = GREEN if side.startswith("w") else ENGINE_COLOR
-        # Draw the move trail on top of markings (fast; no long animation).
-        ui_board.markings()
+        ui_board.off()
         board.draw_trail(uci, color, end_color=None)
         return True
 
@@ -1937,12 +1950,8 @@ def main_loop():
         #  - Pi sends setup_move/setup_remove messages => handled here
         #  - Pico forwards OK press => "heypibtn_ok"
         if puzzle_setup_active:
-            # Drain a few setup commands per tick so we don't fall behind if the
-            # Pi streams actions quickly (prevents UART buffer overrun).
-            for _ in range(8):
-                msg_setup = read_from_pi()
-                if not msg_setup:
-                    break
+            msg_setup = read_from_pi()
+            if msg_setup:
                 handle_puzzle_setup_cmd(msg_setup)
 
             # Allow OK + Hint to cancel puzzle setup and return to mode select
@@ -2093,6 +2102,7 @@ def main_loop():
             buttons.reset()
             ui_board.markings()
             cp_show_menu_choices_1to4()
+            cp_show_coords_top(WHITE)
             select_puzzle_variant()
             ui_board.markings()
             enable_hint_irq()
