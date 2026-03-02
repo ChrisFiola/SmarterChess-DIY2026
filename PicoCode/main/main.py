@@ -2102,7 +2102,6 @@ def main_loop():
             buttons.reset()
             ui_board.markings()
             cp_show_menu_choices_1to4()
-            cp_show_coords_top(WHITE)
             select_puzzle_variant()
             ui_board.markings()
             enable_hint_irq()

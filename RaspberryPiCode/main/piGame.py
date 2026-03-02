@@ -969,16 +969,51 @@ def run_puzzle_mode(link: BoardLink, display: Display) -> None:
         return s if len(s) <= n else (s[: max(0, n - 1)] + "…")
 
     def _render_paged(title: str, page: int, pages: int, items4):
-        # 20x4-friendly: 2 items per line, 4 items total
-        a = _short(items4[0] if len(items4) > 0 else "", 9)
-        b = _short(items4[1] if len(items4) > 1 else "", 9)
-        c = _short(items4[2] if len(items4) > 2 else "", 9)
-        d = _short(items4[3] if len(items4) > 3 else "", 9)
-        line1 = f"{_short(title, 12)} {page+1}/{pages}" if pages > 1 else _short(title, 20)
-        line2 = f"1){a:<9}2){b:<9}".rstrip()
-        line3 = f"3){c:<9}4){d:<9}".rstrip()
-        line4 = "H=next OK=back"
-        return "\n".join([line1[:20], line2[:20], line3[:20], line4[:20]])
+        # 20x4-friendly: one option per line (readable).
+        # We prioritize readability over showing the header/footer at all times.
+        # - Up to 4 options displayed: 1) .. 4) ..
+        # - If <4 options, we use remaining lines for help / page info.
+        def fmt_opt(i: int, s: str) -> str:
+            s = _short(s or "", 18)  # leave room for "1)" prefix
+            return f"{i}) {s}"[:20].rstrip()
+
+        lines = []
+        n = len(items4)
+
+        # If we have a full 4 options, use all 4 lines for options.
+        # Include page info on line 1 suffix when multiple pages.
+        if n >= 4:
+            l1 = fmt_opt(1, items4[0])
+            if pages > 1:
+                # add "p/x" at end if it fits
+                suffix = f" {page+1}/{pages}"
+                if len(l1) + len(suffix) <= 20:
+                    l1 = l1 + suffix
+                else:
+                    l1 = l1[: max(0, 20 - len(suffix))] + suffix
+            lines = [
+                l1,
+                fmt_opt(2, items4[1]),
+                fmt_opt(3, items4[2]),
+                fmt_opt(4, items4[3]),
+            ]
+            return "\n".join([x[:20] for x in lines])
+
+        # Otherwise, show a compact header then one-option-per-line, plus help.
+        header = (
+            f"{_short(title, 14)} {page+1}/{pages}" if pages > 1 else _short(title, 20)
+        )
+        lines.append(header[:20].rstrip())
+        for i, opt in enumerate(items4, start=1):
+            lines.append(fmt_opt(i, opt))
+        # Fill remaining lines with help text
+        while len(lines) < 4:
+            # Put help on the last line
+            if len(lines) == 3:
+                lines.append("H=next OK=back"[:20])
+            else:
+                lines.append("")
+        return "\n".join([x[:20] for x in lines])
 
     from typing import Optional, List
 
@@ -990,6 +1025,13 @@ def run_puzzle_mode(link: BoardLink, display: Display) -> None:
         per_page = 4
         pages = (len(opts) + per_page - 1) // per_page
         page = 0
+
+        # Tell the Pico we are entering a paged menu (1-4 + HINT next + OK back)
+        link.sendtoboard("MenuPaged")
+
+        # Tell the Pico we are entering a paged menu (1-4 + HINT next + OK back)
+        link.sendtoboard("MenuPaged")
+
         while True:
             chunk = opts[page * per_page : page * per_page + per_page]
             display.send(_render_paged(title, page, pages, chunk))
@@ -1007,7 +1049,6 @@ def run_puzzle_mode(link: BoardLink, display: Display) -> None:
                 if idx < len(chunk) and chunk[idx]:
                     return chunk[idx]
                 continue
-
 
     # -------------------- Menu definitions --------------------
 
@@ -1047,7 +1088,7 @@ def run_puzzle_mode(link: BoardLink, display: Display) -> None:
 
     # -------------------- Top-level puzzle menu --------------------
 
-    link.sendtoboard("ChoosePuzzle")
+    # link.sendtoboard("ChoosePuzzle")
     top = _paged_menu("PUZZLES", ["Daily Puzzle", "Mix and match", "Themes"])
     if top is None:
         raise GoToModeSelect()
