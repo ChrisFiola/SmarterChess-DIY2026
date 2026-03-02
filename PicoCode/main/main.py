@@ -1576,6 +1576,10 @@ def select_puzzle_variant():
         if not b:
             time.sleep_ms(5)
             continue
+        # OK = back (Pi interprets as submenu back while setup is active)
+        if b == (OK_BUTTON_INDEX + 1):
+            send_to_pi("btn_ok")
+            return
         if b == 1:
             send_to_pi("1")
             return
@@ -1593,6 +1597,10 @@ def select_singlepress(default_value, out_min, out_max):
         if is_shutdown_held():
             shutdown_pico()
         b = buttons.detect_press()
+        # OK = back
+        if b == (OK_BUTTON_INDEX + 1):
+            send_to_pi("btn_ok")
+            return None
         if b and 1 <= b <= 8:
             return map_range(b, 1, 8, out_min, out_max)
         time.sleep_ms(5)
@@ -1612,6 +1620,10 @@ def select_color_choice():
         if is_shutdown_held():
             shutdown_pico()
         b = buttons.detect_press()
+        # OK = back
+        if b == (OK_BUTTON_INDEX + 1):
+            send_to_pi("btn_ok")
+            return
         if b == 1:
             send_to_pi("s1")
             return
@@ -1631,6 +1643,14 @@ def wait_for_setup():
         while True:
             if is_shutdown_held():
                 shutdown_pico()
+
+            # OK = back even while we're just waiting for the Pi to prompt.
+            # This fixes "OK doesn't do anything" in setup submenus.
+            b = buttons.detect_press()
+            if b == (OK_BUTTON_INDEX + 1):
+                send_to_pi("btn_ok")
+                return
+
             msg = read_from_pi()
             if not msg:
                 time.sleep_ms(10)
@@ -1654,6 +1674,8 @@ def wait_for_setup():
                 cp.coord(MAGENTA)
                 ui_board.prompt_strength()
                 v = select_strength_singlepress(default_strength)
+                if v is None:
+                    return
                 send_to_pi(str(v))
                 time.sleep_ms(120)
                 ui_board.markings()
@@ -1663,6 +1685,8 @@ def wait_for_setup():
                 cp.coord(MAGENTA)
                 ui_board.prompt_time()
                 v = select_time_singlepress(default_move_time)
+                if v is None:
+                    return
                 send_to_pi(str(v))
                 time.sleep_ms(120)
                 ui_board.markings()
@@ -2082,3 +2106,7 @@ def run():
 
 
 run()
+
+# If A–H or 1–8 appear reversed on your panel, flip either/both:
+# CP_FILES_LEDS = list(reversed([6, 7, 8, 9, 10, 11, 12, 13]))
+# CP_RANKS_LEDS = list(reversed([14, 15, 16, 17, 18, 19, 20, 21]))
