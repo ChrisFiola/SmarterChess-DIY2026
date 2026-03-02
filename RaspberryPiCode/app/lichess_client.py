@@ -42,12 +42,12 @@ class LichessClient:
         except RequestException as e:
             return {"_error": str(e)}
 
-    def stream_events(self) -> Iterator[Dict[str, Any]]:
+    def stream_events(self, timeout_s: float = 60) -> Iterator[Dict[str, Any]]:
         r = requests.get(
             f"{LICHESS_BASE}/api/stream/event",
             headers=self.headers,
             stream=True,
-            timeout=60,
+            timeout=timeout_s,
         )
         r.raise_for_status()
         return _iter_ndjson(r)

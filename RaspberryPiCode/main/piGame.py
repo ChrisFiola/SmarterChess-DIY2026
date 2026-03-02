@@ -396,41 +396,41 @@ def setup_stockfish(link: BoardLink, display: Display, cfg: GameConfig) -> None:
     time.sleep(2)
 
     # Difficulty
-    display.send("Choose computer\ndifficulty level:\n(0 -> 8)")
+    display.send("Choose computer\ndifficulty level:\nOK = back")
     link.sendtoboard("EngineStrength")
     link.sendtoboard(f"default_strength_{cfg.skill_level}")
     while True:
         msg = link.getboard()
         if msg is None:
             continue
-        if msg.startswith("n"):
+        if msg in ("ok", "btn_ok", "btnok") or msg.startswith("n"):
             raise GoToModeSelect()
         if msg.isdigit():
             cfg.skill_level = max(0, min(int(msg), 20))
             break
 
     # Move time
-    display.send("Choose computer\nmove time:\n(0 -> 8)")
+    display.send("Choose computer\nmove time:\nOK = back")
     link.sendtoboard("TimeControl")
     link.sendtoboard(f"default_time_{cfg.move_time_ms}")
     while True:
         msg = link.getboard()
         if msg is None:
             continue
-        if msg.startswith("n"):
+        if msg in ("ok", "btn_ok", "btnok") or msg.startswith("n"):
             raise GoToModeSelect()
         if msg.isdigit():
             cfg.move_time_ms = max(10, int(msg))
             break
 
     # Color
-    display.send("Select a colour:\n1 = White/First\n2 = Black/Second\n3 = Random")
+    display.send("Select a colour:\n1=White 2=Black\n3=Random\nOK = back")
     link.sendtoboard("PlayerColor")
     while True:
         msg = link.getboard()
         if msg is None:
             continue
-        if msg.startswith("n"):
+        if msg in ("ok", "btn_ok", "btnok") or msg.startswith("n"):
             raise GoToModeSelect()
         side = parse_side_choice(msg)
         if side is not None:
@@ -961,13 +961,13 @@ def run_puzzle_mode(link: BoardLink, display: Display) -> None:
     client = LichessClient()
 
     link.sendtoboard("ChoosePuzzle")
-    display.send("PUZZLES\n1) Daily\n2) Mix & Match\n(n=back)")
+    display.send("PUZZLES\n1) Daily\n2) Mix & Match\nOK = back")
     while True:
         msg = link.getboard()
         if msg is None:
             continue
         m = msg.strip().lower()
-        if m in ("n", "new", "in", "newgame", "btn_new"):
+        if m in ("ok", "btn_ok", "btnok", "n", "new", "in", "newgame", "btn_new"):
             raise GoToModeSelect()
         if m in ("1", "daily", "btn_puzzle_daily"):
             DailyPuzzleController(client, mode="daily").run(link, display)
@@ -975,7 +975,7 @@ def run_puzzle_mode(link: BoardLink, display: Display) -> None:
         if m in ("2", "mix", "random", "btn_puzzle_mix"):
             DailyPuzzleController(client, mode="mix").run(link, display)
             return
-        display.send("PUZZLES\n1) Daily\n2) Mix & Match\n(n=back)")
+        display.send("PUZZLES\n1) Daily\n2) Mix & Match\nOK = back")
 
 
 def mode_dispatch(

@@ -2,6 +2,15 @@
 import os, sys, time
 from PIL import Image, ImageDraw, ImageFont
 
+# Ensure local imports (e.g. qrgen.py) work regardless of CWD
+sys.path.insert(0, os.path.dirname(__file__))
+
+# Optional QR rendering (pure python, bundled)
+try:
+    from qrgen import encode_text as _qr_encode_text  # type: ignore
+except Exception:
+    _qr_encode_text = None
+
 # Waveshare ST7789 driver
 sys.path.append("/home/king/LCD_Module_RPI_code/RaspberryPi/python")
 from lib.LCD_1inch14 import LCD_1inch14
@@ -123,6 +132,78 @@ def draw_centered_text_auto(lines, min_size=14, max_size=28, vpad=4, spacing=6):
 
 
 # ------------------------------------------------------
+# QR rendering
+# ------------------------------------------------------
+
+
+def draw_qr(data: str, caption_lines):
+    """Draw QR code (data) + optional caption lines."""
+    if not data:
+        draw_centered_text_auto(["QR", "(empty)"])
+        return
+
+    # If QR encoder isn't available for any reason, fall back to text.
+    if _qr_encode_text is None:
+        draw_centered_text_auto(["QR unsupported", data[:18]])
+        return
+
+    try:
+        qr = _qr_encode_text(data, ecl="M")
+        qsz = qr.size
+
+        # Reserve some space for caption (bottom).
+        caption_h = 0
+        if caption_lines:
+            font = get_font(14)
+            draw = ImageDraw.Draw(BLACK_BG)
+            for ln in caption_lines[:3]:
+                if not ln:
+                    continue
+                bbox = draw.textbbox((0, 0), ln, font=font)
+                caption_h += (bbox[3] - bbox[1]) + 4
+            caption_h = min(caption_h + 6, 52)
+
+        pad = 6
+        avail_w = W - 2 * pad
+        avail_h = H - 2 * pad - caption_h
+        scale = max(1, min(avail_w // qsz, avail_h // qsz))
+
+        # Build QR image
+        img = BLACK_BG.copy()
+        draw = ImageDraw.Draw(img)
+
+        qr_px = qsz * scale
+        ox = (W - qr_px) // 2
+        oy = max(pad, (avail_h - qr_px) // 2 + pad)
+
+        # White background for QR for better scan
+        draw.rectangle([ox - 2, oy - 2, ox + qr_px + 1, oy + qr_px + 1], fill="WHITE")
+
+        for y in range(qsz):
+            for x in range(qsz):
+                if qr.get_module(x, y):
+                    x0 = ox + x * scale
+                    y0 = oy + y * scale
+                    draw.rectangle([x0, y0, x0 + scale - 1, y0 + scale - 1], fill="BLACK")
+
+        # Caption under QR
+        if caption_lines:
+            font = get_font(14)
+            ycur = min(H - caption_h + 4, oy + qr_px + 6)
+            for ln in caption_lines[:3]:
+                if not ln:
+                    continue
+                bbox = draw.textbbox((0, 0), ln, font=font)
+                tw = bbox[2] - bbox[0]
+                draw.text(((W - tw) // 2, ycur), ln, font=font, fill="WHITE")
+                ycur += (bbox[3] - bbox[1]) + 4
+
+        disp.ShowImage(img)
+    except Exception:
+        draw_centered_text_auto(["QR error", data[:18]])
+
+
+# ------------------------------------------------------
 # Splash screen
 # ------------------------------------------------------
 def draw_splash():
@@ -199,7 +280,11 @@ while True:
 
     # Decide between fixed size or auto
     try:
-        if raw_size.lower() == "auto":
+        if raw_size.lower() == "qr":
+            qr_data = (lines[0] if lines else "").strip()
+            captions = [ln.strip() for ln in lines[1:]] if len(lines) > 1 else []
+            draw_qr(qr_data, captions)
+        elif raw_size.lower() == "auto":
             draw_centered_text_auto(lines)
         else:
             size = int(raw_size)

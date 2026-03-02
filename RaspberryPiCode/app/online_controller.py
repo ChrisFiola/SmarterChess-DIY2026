@@ -15,6 +15,7 @@ import chess  # type: ignore
 
 from .lichess_client import LichessClient
 from .lichess_game import extract_moves, extract_players, extract_status, extract_winner
+from .net_utils import is_ap_mode, wifi_config_url
 
 
 @dataclass
@@ -48,33 +49,111 @@ class OnlineController:
         link.sendtoboard("SetupComplete")
         link.sendtoboard("GameStart")
 
-        acct = self.client.get_account()
-        if acct.get("_error"):
-            display.send("Lichess offline\nCheck WiFi/DNS")
-            time.sleep(5)
-            raise self.d.GoToModeSelect()
+        # ------------------------------------------------------------
+        # Connect phase (with retries + OK=back)
+        # ------------------------------------------------------------
+
+        display.send("Lichess connecting...\nOK = back")
+
+        # If we're in AP mode, immediately show a QR to configure WiFi.
+        # (In AP mode, online play won't work until STA credentials are set.)
+        if is_ap_mode():
+            url = wifi_config_url() or "http://192.168.4.1/"
+            if hasattr(display, "show_qr"):
+                display.show_qr(url, "Scan to setup WiFi", "OK = back")
+            else:
+                display.send(f"AP mode\nOpen:\n{url}\nOK = back")
+            # Wait for user to go back
+            while True:
+                m = link.getboard()
+                if not m:
+                    continue
+                if m in ("ok", "btn_ok", "btnok"):
+                    raise self.d.GoToModeSelect()
+                if m == "shutdown":
+                    self.d.shutdown_pi(link, display)
+                    return
+                if m in ("n", "new", "in", "newgame", "btn_new"):
+                    raise self.d.GoToModeSelect()
+
+        acct = None
+        for attempt in range(1, 4):
+            # Allow immediate back while we are looping/retrying
+            peek = link.getboard_nonblocking()
+            if peek in ("ok", "btn_ok", "btnok", "n", "new", "in", "newgame", "btn_new"):
+                raise self.d.GoToModeSelect()
+            if peek == "shutdown":
+                self.d.shutdown_pi(link, display)
+                return
+
+            acct = self.client.get_account()
+            if not acct.get("_error"):
+                break
+
+            # Not in AP mode: silently retry while keeping "connecting" on screen.
+            time.sleep(1.0)
+
+        if not acct or acct.get("_error"):
+            # After 3 attempts, show a sticky error until OK to go back
+            display.send("Lichess offline\nWiFi/DNS error\nOK = back")
+            while True:
+                m = link.getboard()
+                if not m:
+                    continue
+                if m == "shutdown":
+                    self.d.shutdown_pi(link, display)
+                    return
+                if m in ("ok", "btn_ok", "btnok", "n", "new", "in", "newgame", "btn_new"):
+                    raise self.d.GoToModeSelect()
 
         username = (acct.get("username") or acct.get("id") or "").strip().lower()
-        display.send("Lichess online\nStart a game\non lichess.org")
+        display.send("Lichess online\nStart a game\non lichess.org\nOK = back")
 
-        # Wait for gameStart
+        # Wait for gameStart (pollable stream so OK can back out)
         game_id = None
-        try:
-            for ev in self.client.stream_events():
-                if ev.get("type") == "gameStart":
-                    game_id = (ev.get("game") or {}).get("id")
-                    break
-        except Exception:
-            display.send("Lichess error\nEvent stream")
-            time.sleep(3)
-            raise self.d.GoToModeSelect()
+        last_banner_ms = 0
+        while not game_id:
+            # Back out of the wait state
+            peek = link.getboard_nonblocking()
+            if peek == "shutdown":
+                self.d.shutdown_pi(link, display)
+                return
+            if peek in ("ok", "btn_ok", "btnok", "n", "new", "in", "newgame", "btn_new"):
+                raise self.d.GoToModeSelect()
+
+            # Re-affirm banner occasionally (some users see a delay)
+            now = int(time.time() * 1000)
+            if now - last_banner_ms > 1500:
+                display.send("Lichess online\nWaiting for game...\nOK = back")
+                last_banner_ms = now
+
+            try:
+                stream = self.client.stream_events(timeout_s=5)
+                for ev in stream:
+                    if ev.get("type") == "gameStart":
+                        game_id = (ev.get("game") or {}).get("id")
+                        break
+                    # Allow back between events
+                    peek2 = link.getboard_nonblocking()
+                    if peek2 in ("ok", "btn_ok", "btnok", "n", "new", "in", "newgame", "btn_new"):
+                        raise self.d.GoToModeSelect()
+                    if peek2 == "shutdown":
+                        self.d.shutdown_pi(link, display)
+                        return
+                    if game_id:
+                        break
+                # If stream ended naturally, loop and reopen
+            except Exception:
+                # Keep showing "connecting" without flashing a failure
+                time.sleep(0.5)
+                continue
 
         if not game_id:
             display.send("No game found\nTry again")
             time.sleep(2)
             raise self.d.GoToModeSelect()
 
-        display.send("Connecting...\nLoading game")
+        display.send("Lichess connecting...\nLoading game")
 
         stream = self.client.stream_game(game_id)
 
