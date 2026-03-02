@@ -273,7 +273,9 @@ def _find_best_start_board_from_pgn(
 class DailyPuzzleController:
     """Run the daily puzzle loop using the Pico for input and LEDs."""
 
-    def __init__(self, client: LichessClient, mode: str = "daily", *, theme: Optional[str] = None):
+    def __init__(
+        self, client: LichessClient, mode: str = "daily", *, theme: Optional[str] = None
+    ):
         self.client = client
         self.mode = (mode or "daily").strip().lower()
         self.theme = (theme or "").strip() or None
@@ -418,10 +420,18 @@ class DailyPuzzleController:
 
         # 2) Fallback path: sample from local ID list
         if not os.path.exists(PUZZLE_IDS_PATH):
-            err = str(payload.get("_error") or "Theme fetch failed") if isinstance(payload, dict) else "Theme fetch failed"
+            err = (
+                str(payload.get("_error") or "Theme fetch failed")
+                if isinstance(payload, dict)
+                else "Theme fetch failed"
+            )
             return None, err
 
-        last_err = str(payload.get("_error") or "Theme fetch failed") if isinstance(payload, dict) else "Theme fetch failed"
+        last_err = (
+            str(payload.get("_error") or "Theme fetch failed")
+            if isinstance(payload, dict)
+            else "Theme fetch failed"
+        )
         for _ in range(35):
             pid = _pick_random_line_seek(PUZZLE_IDS_PATH)
             pid = "".join(ch for ch in (pid or "") if ch.isalnum())
@@ -494,7 +504,11 @@ class DailyPuzzleController:
                 fallback=(
                     "Mix & Match"
                     if self.mode == "mix"
-                    else (THEME_MAP.get(self.theme or "", "Theme") if self.mode == "theme" else "Daily")
+                    else (
+                        THEME_MAP.get(self.theme or "", "Theme")
+                        if self.mode == "theme"
+                        else "Daily"
+                    )
                 ),
             )
             display.send(f"{label}\nSetup position\nOK = next")
@@ -648,9 +662,7 @@ class DailyPuzzleController:
             except Exception:
                 pass
 
-            display.send(
-                f"Illegal {side_prefix} move:\n{piece_txt} {frm}->{to}\nPut it back + OK"
-            )
+            display.send(f"Illegal move:\n{piece_txt} {frm}->{to}\nPut it back + OK")
             # Trail from TO back to FROM so the user knows where to return it
             link.sendtoboard(f"puzzle_wrong_{to}{frm}")
             return _wait_ack_ok()
