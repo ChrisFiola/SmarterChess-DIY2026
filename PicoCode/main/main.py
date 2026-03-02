@@ -190,6 +190,14 @@ def _handle_pi_overlay_or_gameover(msg):
 # ============================================================
 
 
+def _is_alnum(ch: str) -> bool:
+    # MicroPython-safe "isalnum" for single characters
+    if not ch or len(ch) != 1:
+        return False
+    o = ord(ch)
+    return (48 <= o <= 57) or (65 <= o <= 90) or (97 <= o <= 122)  # 0-9  # A-Z  # a-z
+
+
 class ControlPanel:
     def __init__(self, pin, count):
         self.np = neopixel.NeoPixel(Pin(pin, Pin.OUT), count)
@@ -1997,12 +2005,11 @@ def main_loop():
             cancel_user_input_and_restart()
             continue
 
-
         if msg.startswith("heyArduinopuzzle_wrong_"):
             # Wrong-move correction: show RED trail and wait for OK.
             # IMPORTANT: do NOT auto-enter move collection here. The Pi will send the next turn_ prompt.
             raw = msg[len("heyArduinopuzzle_wrong_") :].strip()
-            mv = "".join(ch for ch in raw if ch.isalnum())
+            mv = "".join(ch for ch in raw if _is_alnum(ch))
             if len(mv) >= 4:
                 mv = mv[:4]
                 show_persistent_trail(mv, RED, "wrong", end_color=None)
