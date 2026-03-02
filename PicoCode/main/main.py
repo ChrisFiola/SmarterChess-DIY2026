@@ -2085,17 +2085,6 @@ def main_loop():
                 wait_for_setup()
             continue
 
-        # Puzzle submenu (Daily / Mix)
-        if msg.startswith("heyArduinoMenuPaged"):
-            disable_hint_irq()
-            buttons.reset()
-            ui_board.markings()
-            cp_show_menu_choices_1to4()
-            select_paged_menu_1to4()
-            ui_board.markings()
-            enable_hint_irq()
-            continue
-
         if msg.startswith("heyArduinoChoosePuzzle"):
             # Keep the board display in a neutral state and let CP buttons choose.
             disable_hint_irq()
@@ -2104,6 +2093,17 @@ def main_loop():
             cp_show_menu_choices_1to4()
             cp_show_coords_top(WHITE)
             select_puzzle_variant()
+            ui_board.markings()
+            enable_hint_irq()
+            continue
+
+        # Puzzle submenu (Daily / Mix)
+        if msg.startswith("heyArduinoMenuPaged"):
+            disable_hint_irq()
+            buttons.reset()
+            ui_board.markings()
+            cp_show_menu_choices_1to4()
+            select_paged_menu_1to4()
             ui_board.markings()
             enable_hint_irq()
             continue
