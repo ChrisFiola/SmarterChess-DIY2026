@@ -178,11 +178,59 @@ def _piece_name(sym: str) -> str:
     }.get(u, "PIECE")
 
 
+
+# --- Puzzle theme display mapping (LCD-friendly) ---
+THEME_MAP = {
+    "mateIn1": "Mate in 1",
+    "mateIn2": "Mate in 2",
+    "mateIn3": "Mate in 3",
+    "mateIn4": "Mate in 4",
+    "mateIn5": "Mate in 5",
+    "fork": "Fork",
+    "pin": "Pin",
+    "skewer": "Skewer",
+    "discoveredAttack": "Discovered attack",
+    "doubleCheck": "Double check",
+    "hangingPiece": "Hanging piece",
+    "deflection": "Deflection",
+    "attraction": "Attraction",
+    "interference": "Interference",
+    "xRayAttack": "X-ray attack",
+    "backRankMate": "Back rank mate",
+    "sacrifice": "Sacrifice",
+    "zugzwang": "Zugzwang",
+    "endgame": "Endgame",
+    "opening": "Opening",
+    "middlegame": "Middlegame",
+}
+
+
+def _format_puzzle_label(
+    themes: List[str] | None, rating: Optional[int] | None, fallback: str = "Puzzle"
+) -> str:
+    """Return a short, descriptive label for the LCD."""
+    t = themes or []
+    label = fallback
+    if t:
+        raw = str(t[0])
+        label = THEME_MAP.get(
+            raw, raw.replace("_", " ").replace("-", " ").strip().title()
+        )
+    if rating is not None:
+        try:
+            label = f"{label} • {int(rating)}"
+        except Exception:
+            pass
+    return label[:20]
+
+
 @dataclass
 class PuzzleState:
     puzzle_id: str
     fen_start: str
     solution: List[str]  # UCI moves
+    themes: Optional[List[str]] = None  # Lichess themes (best-effort)
+    rating: Optional[int] = None
     idx: int = 0  # next expected move index
 
 
@@ -301,6 +349,10 @@ class DailyPuzzleController:
         pgn = str(game.get("pgn") or "")
         initial_ply = int(puzzle.get("initialPly") or 0)
         solution = puzzle.get("solution") or []
+        themes = puzzle.get("themes") or []
+        rating = puzzle.get("rating")
+        themes = puzzle.get("themes") or []
+        rating = puzzle.get("rating")
 
         if not puzzle_id or not pgn or not solution:
             return None, "Daily puzzle response missing required fields"
@@ -318,7 +370,14 @@ class DailyPuzzleController:
 
         fen = start_board.fen()
         return (
-            PuzzleState(puzzle_id=puzzle_id, fen_start=fen, solution=sol, idx=0),
+            PuzzleState(
+                puzzle_id=puzzle_id,
+                fen_start=fen,
+                solution=sol,
+                themes=[str(x) for x in (themes or [])],
+                rating=int(rating) if rating is not None else None,
+                idx=0,
+            ),
             None,
         )
 
@@ -363,7 +422,14 @@ class DailyPuzzleController:
 
         fen = start_board.fen()
         return (
-            PuzzleState(puzzle_id=puzzle_id, fen_start=fen, solution=sol, idx=0),
+            PuzzleState(
+                puzzle_id=puzzle_id,
+                fen_start=fen,
+                solution=sol,
+                themes=[str(x) for x in (themes or [])],
+                rating=int(rating) if rating is not None else None,
+                idx=0,
+            ),
             None,
         )
 
@@ -385,7 +451,8 @@ class DailyPuzzleController:
 
         link.sendtoboard("puzzle_setup_begin")
         try:
-            display.send("PUZZLE SETUP\nClear board\nOK = next")
+            label = _format_puzzle_label(st.themes, st.rating, fallback=("Mix & Match" if self.mode=="mix" else "Daily"))
+            display.send(f"{label}\nSetup position\nOK = next")
             __import__("time").sleep(0.8)
             link.sendtoboard("setup_clear")
 
@@ -698,17 +765,3 @@ class DailyPuzzleController:
             )
             # Keep consistent prompt text
             _show_prompt_enter_move()
-
-            piece_txt = "PIECE"
-            try:
-                p = board.piece_at(chess.parse_square(frm)) if frm else None
-                if p:
-                    piece_txt = _piece_name(p.symbol())
-            except Exception:
-                pass
-
-            display.send(
-                f"{side_prefix}\nWrong: {piece_txt} {frm}->{to}\nPut it back + OK"
-            )
-            link.sendtoboard(f"puzzle_wrong_{frm}{to}")
-            return _wait_ack_ok()
