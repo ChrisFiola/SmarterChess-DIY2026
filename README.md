@@ -21,8 +21,10 @@ This updated project uses:
 - Hints display in yellow
 - IRL 1v1 implemented to play face to face with hints enabled. Both players have a green color trail.
 - VS Computer uses green color trail for the user and blue color trail for the computer
-- Invalid move lights the whole board red to indicate a wrong move
+- Invalid move lights the whole board red to indicate a wrong move and shows where to put back the piece before continuing play
 - Updated to work on Python3. Not depending on old libraries like Python2 that caused a headache in setting up the original DIY Machines project
+- Added a Puzzle mode. Daily Puzzle and Mix and match with over 5 million puzzles available fetched from lichess.org database.
+- Added Lichess Online mode. You can start a game on Lichess.org and play it fully from the physical board.
 
 ## Original README
 Play remotely over the internet, or locally against the inbuilt computer.
