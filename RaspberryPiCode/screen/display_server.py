@@ -28,6 +28,11 @@ BLACK_BG = Image.new("RGB", (W, H), "BLACK")
 FONTS = {}
 
 
+def open_fifo_blocking(path: str):
+    fd = os.open(path, os.O_RDONLY)  # blocking until writer connects
+    return os.fdopen(fd, "r", buffering=1)
+
+
 def get_font(size: int):
     if size not in FONTS:
         FONTS[size] = ImageFont.truetype(FONT_PATH, size)
@@ -147,7 +152,7 @@ with open(READY_FLAG, "w") as f:
 # ------------------------------------------------------
 # Main loop
 # ------------------------------------------------------
-pipe = open(PIPE, "r")
+pipe = open_fifo_blocking(PIPE)
 last_msg = None
 
 while True:
@@ -160,7 +165,7 @@ while True:
         except Exception:
             pass
         time.sleep(0.1)
-        pipe = open(PIPE, "r")  # blocks until a writer connects
+        pipe = open_fifo_blocking(PIPE)  # blocks until a writer connects
         last_msg = None
         continue
 
