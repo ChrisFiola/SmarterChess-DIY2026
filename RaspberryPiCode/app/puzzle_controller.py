@@ -178,7 +178,6 @@ def _piece_name(sym: str) -> str:
     }.get(u, "PIECE")
 
 
-
 # --- Puzzle theme display mapping (LCD-friendly) ---
 THEME_MAP = {
     "mateIn1": "Mate in 1",
@@ -351,8 +350,6 @@ class DailyPuzzleController:
         solution = puzzle.get("solution") or []
         themes = puzzle.get("themes") or []
         rating = puzzle.get("rating")
-        themes = puzzle.get("themes") or []
-        rating = puzzle.get("rating")
 
         if not puzzle_id or not pgn or not solution:
             return None, "Daily puzzle response missing required fields"
@@ -406,6 +403,8 @@ class DailyPuzzleController:
         pgn = str(game.get("pgn") or "")
         initial_ply = int(puzzle.get("initialPly") or 0)
         solution = puzzle.get("solution") or []
+        themes = puzzle.get("themes") or []
+        rating = puzzle.get("rating")
 
         if not puzzle_id or not pgn or not solution:
             return None, "Puzzle response missing required fields"
@@ -451,7 +450,11 @@ class DailyPuzzleController:
 
         link.sendtoboard("puzzle_setup_begin")
         try:
-            label = _format_puzzle_label(st.themes, st.rating, fallback=("Mix & Match" if self.mode=="mix" else "Daily"))
+            label = _format_puzzle_label(
+                st.themes,
+                st.rating,
+                fallback=("Mix & Match" if self.mode == "mix" else "Daily"),
+            )
             display.send(f"{label}\nSetup position\nOK = next")
             __import__("time").sleep(0.8)
             link.sendtoboard("setup_clear")
@@ -529,6 +532,7 @@ class DailyPuzzleController:
 
                 if m == "shutdown":
                     from piGame import shutdown_pi
+
                     shutdown_pi(link, display)
                     return False
 
@@ -555,6 +559,7 @@ class DailyPuzzleController:
 
                 if m == "shutdown":
                     from piGame import shutdown_pi
+
                     shutdown_pi(link, display)
                     return None
 
@@ -594,7 +599,9 @@ class DailyPuzzleController:
                 pass
 
             # IMPORTANT: show the *return* path (to -> from) because the user already moved it.
-            display.send(f"{side_prefix}\nWrong: {piece_txt} {frm}->{to}\nPut it back + OK")
+            display.send(
+                f"{side_prefix}\nWrong: {piece_txt} {frm}->{to}\nPut it back + OK"
+            )
             link.sendtoboard(f"puzzle_wrong_{to}{frm}")
             return _wait_ack_ok()
 
