@@ -136,6 +136,14 @@ persistent_trail_move = None  # e.g., 'e2e4'
 uart = UART(0, baudrate=115200, tx=Pin(0), rx=Pin(1), timeout=10)
 
 
+def _is_alnum(ch: str) -> bool:
+    # MicroPython-safe "isalnum" for single characters
+    if not ch or len(ch) != 1:
+        return False
+    o = ord(ch)
+    return (48 <= o <= 57) or (65 <= o <= 90) or (97 <= o <= 122)  # 0-9  # A-Z  # a-z
+
+
 def send_to_pi(kind, payload=""):
     uart.write(f"heypi{kind}{payload}\n".encode())
 
@@ -1997,10 +2005,42 @@ def main_loop():
             cancel_user_input_and_restart()
             continue
 
+        if msg.startswith("heyArduinopuzzle_wrong_"):
+            # Show the wrong move trail in RED and wait for OK acknowledgement.
+            raw = msg[len("heyArduinopuzzle_wrong_") :].strip()
+            mv = "".join(ch for ch in raw if _is_alnum(ch))
+            if len(mv) >= 4:
+                mv = mv[:4]
+                show_persistent_trail(mv, RED, "wrong", end_color=None)
+                cp_only_ok(True)
+
+                # Wait for OK press, then ack back to Pi and resume input
+                buttons.reset()
+                while True:
+                    if is_shutdown_held():
+                        shutdown_pico()
+                    irq = process_hint_irq()
+                    if irq == "new":
+                        send_to_pi("n")
+                        break
+                    b = buttons.detect_press()
+                    if b == (OK_BUTTON_INDEX + 1):
+                        send_to_pi("btn_ok")
+                        break
+                    time.sleep_ms(10)
+
+                # IMPORTANT: Do NOT start a new move collection here.
+                # The Pi will send the next "turn_" message when it is ready.
+                cp_only_ok(False)
+                clear_persistent_trail()
+                ui_board.markings()
+            continue
+
         if msg.startswith("heyArduinoerror"):
+            # Legacy error messages: show illegal animation, but avoid
+            # auto move-entry (prevents race / double-entry).
             ui_board.illegal()
-            cp_only_hint_and_coords_for_input()
-            collect_and_send_move()
+            cp_only_ok(False)
             continue
 
         if msg.startswith("heyArduinoturn_"):

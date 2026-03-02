@@ -29,6 +29,7 @@ class OnlineDeps:
     side_name_from_board: Callable[[chess.Board], str]
     handle_typing_preview: Callable[[object, str, Optional[chess.Board]], None]
     report_game_over: Callable[[object, object, chess.Board], str]
+    illegal_putback_flow: Callable[..., bool]
     shutdown_pi: Callable[[object, object], None]
     GoToModeSelect: type
 
@@ -362,8 +363,12 @@ class OnlineController:
                 continue
 
             if move not in board.legal_moves:
-                link.sendtoboard(f"error_illegal_{uci}")
-                display.show_illegal(uci, self.d.side_name_from_board(board))
+                # Match the exact same illegal-move UX used everywhere else
+                # (red put-back trail + wait for OK; no Pico auto move-entry).
+                self.d.illegal_putback_flow(
+                    link=link, display=display, board=board, uci=uci, label="Illegal"
+                )
+                # The helper re-sends turn_ and prompts for input.
                 continue
 
             resp = self.client.make_move(game_id, uci)
