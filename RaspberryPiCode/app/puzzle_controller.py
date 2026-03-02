@@ -23,8 +23,36 @@ from piDisplay import Display
 from piSerial import BoardLink
 from .lichess_client import LichessClient
 
+import os
+import random
+
 
 # -------------------- LED-guided physical setup helpers --------------------
+
+PUZZLE_IDS_PATH = os.path.join(os.path.dirname(__file__), "puzzle_ids.txt")
+
+
+def _pick_random_line_seek(path: str, max_tries: int = 25) -> str:
+    """Fast random line selection without loading the whole file."""
+    try:
+        size = os.path.getsize(path)
+        if size <= 0:
+            return ""
+        with open(path, "rb") as f:
+            for _ in range(max_tries):
+                pos = random.randrange(0, size)
+                f.seek(pos)
+                if pos > 0:
+                    f.readline()  # drop partial line
+                line = f.readline()
+                if not line:
+                    continue
+                s = line.decode("utf-8", errors="ignore").strip()
+                if s:
+                    return s
+    except Exception:
+        return ""
+    return ""
 
 
 def _dist(a: str, b: str) -> int:
@@ -45,7 +73,6 @@ def _pieces_by_type_and_color(brd: chess.Board):
     return buckets
 
 
-
 def _compute_place_steps_from_fen(target_fen: str):
     """Return a simple list of placement steps for an *empty* physical board.
 
@@ -63,13 +90,23 @@ def _compute_place_steps_from_fen(target_fen: str):
         side = "w" if p.color == chess.WHITE else "b"
         steps.append((side, chess.square_name(sq), p.symbol()))
     # Order: White then Black, then piece type, then square
-    order_pt = {chess.KING: 0, chess.QUEEN: 1, chess.ROOK: 2, chess.BISHOP: 3, chess.KNIGHT: 4, chess.PAWN: 5}
+    order_pt = {
+        chess.KING: 0,
+        chess.QUEEN: 1,
+        chess.ROOK: 2,
+        chess.BISHOP: 3,
+        chess.KNIGHT: 4,
+        chess.PAWN: 5,
+    }
+
     def key(t):
         side, square, sym = t
         ptype = chess.Piece.from_symbol(sym).piece_type
-        return (0 if side=="w" else 1, order_pt.get(ptype, 9), square)
+        return (0 if side == "w" else 1, order_pt.get(ptype, 9), square)
+
     steps.sort(key=key)
     return steps
+
 
 def _compute_setup_actions_from_start(target_fen: str):
     """Compute physical actions to reach target_fen from standard start.
@@ -285,6 +322,51 @@ class DailyPuzzleController:
             None,
         )
 
+    def fetch_mix(self) -> Tuple[Optional[PuzzleState], Optional[str]]:
+        # Pick a random puzzle id from puzzle_ids.txt (constant memory)
+        if not os.path.exists(PUZZLE_IDS_PATH):
+            return None, "puzzle_ids.txt missing"
+
+        pid = _pick_random_line_seek(PUZZLE_IDS_PATH)
+        if not pid:
+            return None, "No valid puzzle IDs found"
+
+        # Sanitize line to alphanumeric only (handles accidental URLs/quotes/commas)
+        pid = "".join(ch for ch in pid if ch.isalnum())
+        if not pid:
+            return None, "Invalid puzzle ID line"
+
+        payload = self.client.get_puzzle(pid)
+        if not isinstance(payload, dict) or payload.get("_error"):
+            return None, str(payload.get("_error") or "Puzzle fetch failed")
+
+        puzzle = payload.get("puzzle") or {}
+        game = payload.get("game") or {}
+
+        puzzle_id = str(puzzle.get("id") or pid)
+        pgn = str(game.get("pgn") or "")
+        initial_ply = int(puzzle.get("initialPly") or 0)
+        solution = puzzle.get("solution") or []
+
+        if not puzzle_id or not pgn or not solution:
+            return None, "Puzzle response missing required fields"
+
+        sol = [str(m) for m in solution]
+
+        start_board, used_ply, matched = _find_best_start_board_from_pgn(
+            pgn=pgn,
+            initial_ply=initial_ply,
+            sol=sol,
+            back=6,
+            forward=10,
+        )
+
+        fen = start_board.fen()
+        return (
+            PuzzleState(puzzle_id=puzzle_id, fen_start=fen, solution=sol, idx=0),
+            None,
+        )
+
     def run(self, link: BoardLink, display: Display) -> None:
         # 1) Fetch puzzle (daily or mix)
         display.send("Puzzle\nLoading…")
@@ -315,6 +397,7 @@ class DailyPuzzleController:
 
                 if msg == "shutdown":
                     from piGame import shutdown_pi
+
                     shutdown_pi(link, display)
                     return
 
@@ -324,7 +407,7 @@ class DailyPuzzleController:
                 if msg in ("btn_ok", "ok"):
                     break
 
-            for (side, sq, sym) in steps:
+            for side, sq, sym in steps:
                 display.send(
                     f"PLACE {('WHITE' if side=='w' else 'BLACK')}\n{_piece_name(sym)} {sq}\nOK = next"
                 )
@@ -337,6 +420,7 @@ class DailyPuzzleController:
 
                     if msg == "shutdown":
                         from piGame import shutdown_pi
+
                         shutdown_pi(link, display)
                         return
 
@@ -355,7 +439,7 @@ class DailyPuzzleController:
         finally:
             link.sendtoboard("puzzle_setup_done")
 
-# 3) Load board state
+        # 3) Load board state
         board = chess.Board(st.fen_start)
 
         # You always play the side-to-move at the puzzle start position
