@@ -78,6 +78,98 @@ def parse_move_payload(payload: str) -> Optional[str]:
     return None
 
 
+def _piece_name(sym: str) -> str:
+    u = (sym or "").upper()
+    return {
+        "P": "PAWN",
+        "N": "KNIGHT",
+        "B": "BISHOP",
+        "R": "ROOK",
+        "Q": "QUEEN",
+        "K": "KING",
+    }.get(u, "PIECE")
+
+
+def wait_ack_ok(link: BoardLink, display: Display) -> bool:
+    """Wait for Pico OK acknowledgement (btn_ok/ok).
+
+    Returns False if the user exits to menu (new game) or shutdown is triggered.
+    """
+    while True:
+        m = link.getboard()
+        if m is None:
+            continue
+
+        if m == "shutdown":
+            shutdown_pi(link, display)
+            return False
+
+        if m in ("n", "new", "in", "newgame", "btn_new"):
+            return False
+
+        if m in ("btn_ok", "ok"):
+            return True
+
+        # ignore chatter
+        if (
+            m.startswith("typing_")
+            or m.startswith("capq_")
+            or m in ("hint", "btn_hint")
+        ):
+            continue
+
+
+def illegal_putback_flow(
+    *,
+    link: BoardLink,
+    display: Display,
+    board: chess.Board,
+    uci: str,
+    label: str = "Illegal",
+) -> bool:
+    """Standard illegal-move UX: show put-back target + red trail; wait OK.
+
+    Pico handler expects: `puzzle_wrong_{to}{from}` (trail from TO back to FROM).
+    """
+    u = (uci or "").strip().lower()
+    if u.startswith("m"):
+        u = u[1:]
+    u = "".join(ch for ch in u if ch.isalnum())
+
+    side = "WHITE" if board.turn == chess.WHITE else "BLACK"
+    side_prefix = f"You are {side}"
+
+    frm, to = (u[:2], u[2:4]) if len(u) >= 4 else ("", "")
+    piece_txt = "PIECE"
+    try:
+        if frm:
+            p = board.piece_at(chess.parse_square(frm))
+            if p:
+                piece_txt = _piece_name(p.symbol())
+    except Exception:
+        pass
+
+    if frm and to:
+        display.send(
+            f"{side_prefix}\n{label}: {piece_txt} {frm}->{to}\nPut it back + OK"
+        )
+        link.sendtoboard(f"puzzle_wrong_{to}{frm}")
+    else:
+        display.send(f"{side_prefix}\n{label} move\nPut it back + OK")
+
+    ok = wait_ack_ok(link, display)
+    if not ok:
+        return False
+
+    # Deterministic re-entry: Pi commands turn_ and then waits for a move.
+    link.sendtoboard(f"turn_{'white' if board.turn == chess.WHITE else 'black'}")
+    try:
+        display.prompt_move(side)
+    except Exception:
+        display.send(f"{side_prefix}\nEnter move:")
+    return True
+
+
 def parse_side_choice(s: str) -> Optional[bool]:
     s = (s or "").strip().lower()
     if s.startswith("s1"):
@@ -635,8 +727,12 @@ def process_human_move(
 
     # 4) Legality check
     if move not in board.legal_moves:
-        link.sendtoboard(f"error_illegal_{uci}")
-        display.show_illegal(uci, side_name_from_board(board))
+        # Standardized illegal UX across *all* modes:
+        #   - show piece + squares on LCD
+        #   - Pico shows red put-back trail
+        #   - wait for OK acknowledgement
+        #   - Pi re-enters move collection via a deterministic turn_ message
+        illegal_putback_flow(link=link, display=display, board=board, uci=uci, label="Illegal")
         return
 
     # 5) Push
@@ -798,8 +894,9 @@ def play_game(
 
         # 9) Legality check (AFTER OK) — Pico only sends after OK now
         if move not in state.board.legal_moves:
-            link.sendtoboard(f"error_illegal_{uci}")
-            display.show_illegal(uci, side_name_from_board(state.board))
+            illegal_putback_flow(
+                link=link, display=display, board=state.board, uci=uci, label="Illegal"
+            )
             continue
 
         # 10) Accept and push
@@ -847,6 +944,7 @@ def run_online_mode(link: BoardLink, display: Display, cfg: GameConfig) -> None:
         side_name_from_board=side_name_from_board,
         handle_typing_preview=handle_typing_preview,
         report_game_over=report_game_over,
+        illegal_putback_flow=illegal_putback_flow,
         shutdown_pi=shutdown_pi,
         GoToModeSelect=GoToModeSelect,
     )
