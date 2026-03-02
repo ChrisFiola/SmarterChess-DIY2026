@@ -340,7 +340,7 @@ class DailyPuzzleController:
             return None, "No valid puzzle IDs found"
 
         # Sanitize line to alphanumeric only (handles accidental URLs/quotes/commas)
-        pid = "".join(ch for ch in pid if _is_alnum())
+        pid = "".join(ch for ch in pid if _is_alnum(ch))
         if not pid:
             return None, "Invalid puzzle ID line"
 
