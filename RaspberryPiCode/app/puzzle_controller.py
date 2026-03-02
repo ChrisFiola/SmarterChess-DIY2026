@@ -16,22 +16,12 @@ from dataclasses import dataclass
 from typing import List, Optional, Tuple
 from collections import defaultdict
 
-import os
-import json
-import random
-
 import chess  # type: ignore
 import chess.pgn  # type: ignore
 
 from piDisplay import Display
 from piSerial import BoardLink
 from .lichess_client import LichessClient
-
-
-# -------------------- Mix & Match puzzle list (no-repeat shuffle) --------------------
-
-PUZZLE_IDS_FILE = os.path.join(os.path.dirname(__file__), "puzzle_ids.txt")
-PUZZLE_QUEUE_FILE = os.path.join(os.path.dirname(__file__), ".puzzle_queue.json")
 
 
 # -------------------- LED-guided physical setup helpers --------------------
@@ -295,94 +285,7 @@ class DailyPuzzleController:
             None,
         )
 
-    
-def _read_mix_ids(self) -> List[str]:
-    """Read puzzle IDs from puzzle_ids.txt (one ID per line)."""
-    try:
-        with open(PUZZLE_IDS_FILE, "r", encoding="utf-8") as f:
-            ids = [ln.strip() for ln in f.read().splitlines() if ln.strip()]
-    except Exception:
-        ids = []
-    # de-dup but keep order
-    seen = set()
-    out: List[str] = []
-    for pid in ids:
-        if pid in seen:
-            continue
-        seen.add(pid)
-        out.append(pid)
-    return out
-
-def _load_queue(self) -> List[str]:
-    try:
-        with open(PUZZLE_QUEUE_FILE, "r", encoding="utf-8") as f:
-            q = json.load(f)
-        if isinstance(q, list):
-            return [str(x) for x in q if str(x).strip()]
-    except Exception:
-        pass
-    return []
-
-def _save_queue(self, q: List[str]) -> None:
-    try:
-        with open(PUZZLE_QUEUE_FILE, "w", encoding="utf-8") as f:
-            json.dump(q, f)
-    except Exception:
-        # non-fatal
-        return
-
-def _next_mix_id(self) -> Optional[str]:
-    """Return the next puzzle id using 'random without repeats until all are used'."""
-    ids = self._read_mix_ids()
-    if not ids:
-        return None
-
-    q = self._load_queue()
-
-    # If queue missing/invalid/contains unknown ids, rebuild cleanly
-    q = [pid for pid in q if pid in ids]
-    if not q:
-        q = ids[:]
-        random.shuffle(q)
-
-    pid = q.pop(0)
-    self._save_queue(q)
-    return pid
-
-def fetch_mix(self) -> Tuple[Optional[PuzzleState], Optional[str]]:
-    pid = self._next_mix_id()
-    if not pid:
-        return None, "No puzzle IDs in puzzle_ids.txt"
-
-    payload = self.client.get_puzzle(pid)
-    if not isinstance(payload, dict) or payload.get("_error"):
-        return None, str(payload.get("_error") or "Unknown error")
-
-    puzzle = payload.get("puzzle") or {}
-    game = payload.get("game") or {}
-
-    puzzle_id = str(puzzle.get("id") or pid)
-    pgn = str(game.get("pgn") or "")
-    initial_ply = int(puzzle.get("initialPly") or 0)
-    solution = puzzle.get("solution") or []
-
-    if not pgn or not solution:
-        return None, "Puzzle response missing required fields"
-
-    sol = [str(m) for m in solution]
-
-    start_board, used_ply, matched = _find_best_start_board_from_pgn(
-        pgn=pgn,
-        initial_ply=initial_ply,
-        sol=sol,
-        back=6,
-        forward=10,
-    )
-
-    fen = start_board.fen()
-    return (PuzzleState(puzzle_id=puzzle_id, fen_start=fen, solution=sol, idx=0), None)
-
-def run(self, link: BoardLink, display: Display) -> None:
+    def run(self, link: BoardLink, display: Display) -> None:
         # 1) Fetch puzzle (daily or mix)
         display.send("Puzzle\nLoading…")
         if self.mode == "mix":
