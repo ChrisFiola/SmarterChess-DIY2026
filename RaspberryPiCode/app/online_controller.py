@@ -27,7 +27,7 @@ class OnlineDeps:
     compute_capture_preview: Callable[[chess.Board, str], bool]
     ask_promotion_piece: Callable[[object, object], str]
     side_name_from_board: Callable[[chess.Board], str]
-    handle_typing_preview: Callable[[object, str], None]
+    handle_typing_preview: Callable[[object, str, Optional[chess.Board]], None]
     report_game_over: Callable[[object, object, chess.Board], str]
     shutdown_pi: Callable[[object, object], None]
     GoToModeSelect: type
@@ -121,7 +121,6 @@ class OnlineController:
 
                 board.push(mv)
                 last_move_count += 1
-
                 # Pico: show trail + OK-only (engine_ack_pending behavior)
                 link.sendtoboard(f"m{uci}{'_cap' if is_cap else ''}")
                 time.sleep(
@@ -131,7 +130,16 @@ class OnlineController:
 
                 if announce_new:
                     side_to_move = "WHITE" if board.turn == chess.WHITE else "BLACK"
-                    display.send(f"{uci_to_oled(uci)}\n{side_to_move} to move")
+                    promo_line = ""
+                    if mv.promotion:
+                        promo_letter = chess.piece_symbol(mv.promotion)
+                        promo_name = (
+                            display._promo_name(promo_letter)
+                            if hasattr(display, "_promo_name")
+                            else (promo_letter or "").upper()
+                        )
+                        promo_line = f"Promoted to {promo_name}"
+                    display.send(f"{uci_to_oled(uci)}\n{promo_line}\n{side_to_move} to move" if promo_line else f"{uci_to_oled(uci)}\n{side_to_move} to move")
 
                     # Hold this message until OK is pressed and user starts input
                     awaiting_ok_ack = True
@@ -180,7 +188,7 @@ class OnlineController:
                     # As soon as typing starts, we are in move entry => never show prompt_move this turn
                     awaiting_ok_ack = False
                     in_move_entry = True
-                    self.d.handle_typing_preview(display, peek[7:])
+                    self.d.handle_typing_preview(display, peek[7:], board)
 
                 if peek.startswith("capq_"):
                     uciq = peek[5:].strip()
@@ -280,7 +288,7 @@ class OnlineController:
             if msg.startswith("typing_"):
                 awaiting_ok_ack = False
                 in_move_entry = True
-                self.d.handle_typing_preview(display, msg[7:])
+                self.d.handle_typing_preview(display, msg[7:], board)
                 continue
 
             if msg.startswith("capq_"):

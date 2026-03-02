@@ -26,10 +26,18 @@ BLACK_BG = Image.new("RGB", (W, H), "BLACK")
 
 # Font cache
 FONTS = {}
+
+
+def open_fifo_blocking(path: str):
+    fd = os.open(path, os.O_RDONLY)  # blocking until writer connects
+    return os.fdopen(fd, "r", buffering=1)
+
+
 def get_font(size: int):
     if size not in FONTS:
         FONTS[size] = ImageFont.truetype(FONT_PATH, size)
     return FONTS[size]
+
 
 # ------------------------------------------------------
 # AUTO FONT SCALING
@@ -64,6 +72,7 @@ def find_best_font_size(lines, min_size=14, max_size=28, vpad=4, spacing=6):
             return size, spacing
 
     return min_size, spacing  # fallback
+
 
 # ------------------------------------------------------
 # Draw centered text with explicit size/spacing
@@ -102,12 +111,16 @@ def draw_centered_text_with_size(lines, size: int, spacing: int = 6, vpad: int =
 
     disp.ShowImage(img)
 
+
 def draw_centered_text_auto(lines, min_size=14, max_size=28, vpad=4, spacing=6):
     """
     Autosize to fit, then render centered.
     """
-    size, sp = find_best_font_size(lines, min_size=min_size, max_size=max_size, vpad=vpad, spacing=spacing)
+    size, sp = find_best_font_size(
+        lines, min_size=min_size, max_size=max_size, vpad=vpad, spacing=spacing
+    )
     draw_centered_text_with_size(lines, size=size, spacing=sp, vpad=vpad)
+
 
 # ------------------------------------------------------
 # Splash screen
@@ -124,10 +137,10 @@ def draw_splash():
     w = bbox[2] - bbox[0]
     h = bbox[3] - bbox[1]
 
-    draw.text(((W - w) // 2, (H - h) // 2 - 10),
-              txt, font=font, fill="WHITE")
+    draw.text(((W - w) // 2, (H - h) // 2 - 10), txt, font=font, fill="WHITE")
 
     disp.ShowImage(img)
+
 
 # Draw splash on start
 draw_splash()
@@ -139,23 +152,40 @@ with open(READY_FLAG, "w") as f:
 # ------------------------------------------------------
 # Main loop
 # ------------------------------------------------------
-pipe = open(PIPE, "r")
+pipe = open_fifo_blocking(PIPE)
 last_msg = None
 
 while True:
     line = pipe.readline()
 
-    if not line:
-        time.sleep(0.003)
+    if line == "":
+        # Writer closed (EOF) -> reopen FIFO and back off (prevents CPU spin)
+        try:
+            pipe.close()
+        except Exception:
+            pass
+        time.sleep(0.1)
+        pipe = open_fifo_blocking(PIPE)  # blocks until a writer connects
+        last_msg = None
         continue
 
-    # Skip exact duplicate frames
-    if line == last_msg:
+    msg = line.strip()  # normalize (removes \n and trailing spaces)
+
+    # Skip duplicates after normalization
+    if msg == last_msg:
         continue
-    last_msg = line
+    last_msg = msg
+
+    # Optional: cap refresh rate (huge win on Pi Zero)
+    now = time.monotonic()
+    if "last_draw_t" not in globals():
+        globals()["last_draw_t"] = 0.0
+    if now - globals()["last_draw_t"] < 0.10:  # 0.10s = 10 fps cap
+        continue
+    globals()["last_draw_t"] = now
 
     # Parse message: "L1|L2|L3|L4|size"
-    parts = line.strip().split("|")
+    parts = msg.split("|")
     if not parts:
         continue
 

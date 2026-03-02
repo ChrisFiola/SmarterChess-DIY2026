@@ -48,7 +48,20 @@ class RuntimeState:
 # -------------------- Parsing & helpers --------------------
 
 
-RESERVED_NON_MOVES = {"ok", "btnok", "btn_ok", "draw", "btn_draw", "hint", "btn_hint", "n", "new", "in", "newgame", "btn_new"}
+RESERVED_NON_MOVES = {
+    "ok",
+    "btnok",
+    "btn_ok",
+    "draw",
+    "btn_draw",
+    "hint",
+    "btn_hint",
+    "n",
+    "new",
+    "in",
+    "newgame",
+    "btn_new",
+}
 
 
 def parse_move_payload(payload: str) -> Optional[str]:
@@ -191,6 +204,62 @@ def report_game_over(link: BoardLink, display: Display, brd: chess.Board) -> str
     return result
 
 
+def _auto_draw_reason(brd: chess.Board) -> Optional[str]:
+    """Return a short reason string if we should auto-declare a draw.
+
+    We auto-declare:
+      - 5-fold repetition (automatic by rules)
+      - 75-move rule (automatic by rules)
+      - 3-fold repetition (claimable)  [QoL, like many online UIs]
+      - 50-move rule (claimable)       [QoL]
+    """
+    try:
+        if brd.is_fivefold_repetition():
+            return "5-fold repetition"
+        if brd.is_seventyfive_moves():
+            return "75-move rule"
+        if brd.can_claim_threefold_repetition():
+            return "Repetition"
+        if brd.can_claim_fifty_moves():
+            return "50-move rule"
+    except Exception:
+        pass
+    return None
+
+
+def _handle_auto_draw(link: BoardLink, display: Display, brd: chess.Board) -> bool:
+    """If draw condition met, notify Pico + LCD and wait for new game.
+
+    Returns True if we handled a draw and the caller should stop current game loop.
+    """
+    reason = _auto_draw_reason(brd)
+    if not reason:
+        return False
+
+    # Result string in UCI/Pico protocol format
+    result = "1/2-1/2"
+    link.sendtoboard(f"GameOver:{result}")
+    try:
+        move_no = max(1, (len(brd.move_stack) + 1) // 2)
+    except Exception:
+        move_no = 0
+    display.show_draw(reason, move_no)
+
+    # Wait for Pico to acknowledge by sending 'n' (new game / back)
+    while True:
+        msg2 = link.getboard()
+        if msg2 is None:
+            continue
+        if msg2 == "shutdown":
+            shutdown_pi(link, display)
+            return True
+        if msg2 in ("n", "new", "in", "newgame", "btn_new"):
+            # caller typically raises GoToModeSelect
+            return True
+        if msg2.startswith("typing_") or msg2 in ("hint", "btn_hint", "btn_ok", "ok"):
+            continue
+
+
 # -------------------- Flow control --------------------
 
 
@@ -204,7 +273,7 @@ class GoToModeSelect(Exception):
 def select_mode(link: BoardLink, display: Display, state: RuntimeState) -> str:
     link.sendtoboard("ChooseMode")
     display.send(
-        "Choose mode:\n1) Against PC\n2) Lichess Online\n3) Local 2-player\n4) Daily puzzle"
+        "Choose mode:\n1) Against PC\n2) Lichess Online\n3) Local 2-player\n4) Puzzles"
     )
     while True:
         msg = link.getboard()
@@ -338,9 +407,24 @@ def handoff_next_turn(
     )
     if human_to_move:
         link.sendtoboard(f"turn_{'white' if brd.turn == chess.WHITE else 'black'}")
+        # If last move was a promotion (UCI like e7e8q), show it alongside the usual "to move" prompt.
+        promo_letter = (
+            last_uci[4].lower()
+            if isinstance(last_uci, str) and len(last_uci) >= 5
+            else ""
+        )
+        promo_line = ""
+        if promo_letter in ("q", "r", "b", "n"):
+            promo_name = (
+                display._promo_name(promo_letter)
+                if hasattr(display, "_promo_name")
+                else promo_letter.upper()
+            )
+            promo_line = f"Promoted to {promo_name}\n"
+
         display.show_arrow(
             last_uci,
-            suffix=f"{'WHITE' if brd.turn == chess.WHITE else 'BLACK'} to move",
+            suffix=f"{promo_line}{'WHITE' if brd.turn == chess.WHITE else 'BLACK'} to move",
         )
     else:
         display.show_arrow(last_uci, suffix="ENGINE thinking")
@@ -364,6 +448,9 @@ def engine_move_and_send(
     # Send with _cap if capture, then push
     link.sendtoboard(f"m{reply}{'_cap' if is_cap else ''}")
     state.board.push(mv)
+    # Auto-draw after engine move
+    if _handle_auto_draw(link, display, state.board):
+        raise GoToModeSelect()
 
     if state.board.is_game_over():
         _res = report_game_over(link, display, state.board)
@@ -392,7 +479,46 @@ def winner_text_from_result(res: str) -> str:
 # -------------------- Typing preview --------------------
 
 
-def handle_typing_preview(display: Display, payload: str) -> None:
+def _piece_pretty_name(piece: "chess.Piece") -> str:
+    """Return a short label like 'White Pawn' suitable for a small LCD."""
+    try:
+        color = "White" if piece.color == chess.WHITE else "Black"
+        p = {
+            chess.PAWN: "Pawn",
+            chess.KNIGHT: "Knight",
+            chess.BISHOP: "Bishop",
+            chess.ROOK: "Rook",
+            chess.QUEEN: "Queen",
+            chess.KING: "King",
+        }.get(piece.piece_type, "Piece")
+        return f"{color} {p}"
+    except Exception:
+        return "Piece"
+
+
+def _looks_like_square(s: str) -> bool:
+    if len(s) != 2:
+        return False
+    f, r = s[0].lower(), s[1]
+    return f in "abcdefgh" and r in "12345678"
+
+
+def _piece_label_from_square(board: Optional["chess.Board"], sq: str) -> Optional[str]:
+    """Return a label for the piece currently on sq, or None if not resolvable."""
+    if board is None or not _looks_like_square(sq):
+        return None
+    try:
+        piece = board.piece_at(chess.parse_square(sq))
+        if piece is None:
+            return "Empty"
+        return _piece_pretty_name(piece)
+    except Exception:
+        return None
+
+
+def handle_typing_preview(
+    display: Display, payload: str, board: Optional["chess.Board"] = None
+) -> None:
     """
     payload is the '<after heypityping_...>' part, e.g.:
       'from_e'
@@ -408,11 +534,44 @@ def handle_typing_preview(display: Display, payload: str) -> None:
         label, text = parts[0], parts[1]
         label = label.lower()
         if label == "from":
-            display.send("Enter from:\n" + text)
+            # When a full square is entered (e.g. e2), show which piece is on that square.
+            # If the user deletes back to 0/1 chars, we revert to the generic prompt.
+            if _looks_like_square(text):
+                piece_lbl = _piece_label_from_square(board, text)
+                if piece_lbl:
+                    display.send(f"{piece_lbl}\n{text} →\nEnter to:")
+                else:
+                    display.send("Enter from:\n" + text)
+            else:
+                display.send("Enter from:\n" + text)
+
         elif label == "to":
-            display.send("Enter to:\n" + text)
+            # text format: "e2 → e" (partial) or "e2 → e4"
+            frm = ""
+            partial_to = text
+            if "→" in text:
+                left, right = text.split("→", 1)
+                frm = left.strip()
+                partial_to = right.strip()
+            piece_lbl = _piece_label_from_square(board, frm)
+            if piece_lbl:
+                display.send(f"{piece_lbl}\n{frm} → {partial_to}")
+            else:
+                display.send("Enter to:\n" + text)
+
         elif label == "confirm":
-            display.send("Confirm move:\n" + text + "\nPress OK or re-enter")
+            # text format: "e2 → e4"
+            frm = ""
+            to = ""
+            if "→" in text:
+                left, right = text.split("→", 1)
+                frm = left.strip()
+                to = right.strip()
+            piece_lbl = _piece_label_from_square(board, frm)
+            if piece_lbl:
+                display.send(f"{piece_lbl}\n{frm} → {to}\nOK to send")
+            else:
+                display.send("Confirm move:\n" + text + "\nPress OK or re-enter")
     except Exception:
         # swallow malformed previews quietly
         pass
@@ -531,7 +690,7 @@ def play_game(
                 shutdown_pi(link, display)
                 return
             if peek.startswith("typing_"):
-                handle_typing_preview(display, peek[len("typing_") :])
+                handle_typing_preview(display, peek[len("typing_") :], state.board)
             # do not 'continue' to still allow engine turn same cycle
 
             # Pico asks: "capq_<uci>" -> answer quickly with "capr_0/1"
@@ -565,7 +724,7 @@ def play_game(
 
         # 4) Also handle typing previews in the blocking path (to be consistent)
         if msg.startswith("typing_"):
-            handle_typing_preview(display, msg[len("typing_") :])
+            handle_typing_preview(display, msg[len("typing_") :], state.board)
             continue
 
         # --- NEW: capture preview probe (blocking path) ---
@@ -646,6 +805,10 @@ def play_game(
         # 10) Accept and push
         state.board.push(move)
 
+        # 10.5) Auto-draw (repetition / 50-move etc.)
+        if _handle_auto_draw(link, display, state.board):
+            raise GoToModeSelect()
+
         # 11) Game over?
         if state.board.is_game_over():
             _res = report_game_over(link, display, state.board)
@@ -691,12 +854,30 @@ def run_online_mode(link: BoardLink, display: Display, cfg: GameConfig) -> None:
 
 
 def run_puzzle_mode(link: BoardLink, display: Display) -> None:
-    """Daily puzzle mode (Phase 1).
+    """Puzzle mode.
 
-    Fetches the daily puzzle and validates moves locally.
+    Submenu:
+      1) Daily puzzle (Lichess daily)
+      2) Mix & Match (random from optional local list; falls back to daily)
     """
     client = LichessClient()
-    DailyPuzzleController(client).run(link, display)
+
+    link.sendtoboard("ChoosePuzzle")
+    display.send("PUZZLES\n1) Daily\n2) Mix & Match\n(n=back)")
+    while True:
+        msg = link.getboard()
+        if msg is None:
+            continue
+        m = msg.strip().lower()
+        if m in ("n", "new", "in", "newgame", "btn_new"):
+            raise GoToModeSelect()
+        if m in ("1", "daily", "btn_puzzle_daily"):
+            DailyPuzzleController(client, mode="daily").run(link, display)
+            return
+        if m in ("2", "mix", "random", "btn_puzzle_mix"):
+            DailyPuzzleController(client, mode="mix").run(link, display)
+            return
+        display.send("PUZZLES\n1) Daily\n2) Mix & Match\n(n=back)")
 
 
 def mode_dispatch(
@@ -714,11 +895,11 @@ def mode_dispatch(
         from app.stockfish_opponent import StockfishOpponent
 
         opponent = StockfishOpponent(
-    ctx,
-    move_time_ms=cfg.move_time_ms,
-    skill_level=cfg.skill_level,
-    use_elo=False,   # <-- turn on Elo limiting
-)
+            ctx,
+            move_time_ms=cfg.move_time_ms,
+            skill_level=cfg.skill_level,
+            use_elo=False,  # <-- turn on Elo limiting
+        )
         controller = GameController(
             LoopDeps(link=link, display=display, opponent=opponent),
             human_is_white=cfg.human_is_white,
