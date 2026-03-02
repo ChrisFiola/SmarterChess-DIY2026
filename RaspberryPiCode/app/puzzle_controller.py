@@ -273,9 +273,10 @@ def _find_best_start_board_from_pgn(
 class DailyPuzzleController:
     """Run the daily puzzle loop using the Pico for input and LEDs."""
 
-    def __init__(self, client: LichessClient, mode: str = "daily"):
+    def __init__(self, client: LichessClient, mode: str = "daily", *, theme: Optional[str] = None):
         self.client = client
         self.mode = (mode or "daily").strip().lower()
+        self.theme = (theme or "").strip() or None
 
     def fetch_daily(self) -> Tuple[Optional[PuzzleState], Optional[str]]:
         payload = self.client.get_daily_puzzle()
@@ -370,11 +371,110 @@ class DailyPuzzleController:
             None,
         )
 
+    def fetch_theme(self, theme: str) -> Tuple[Optional[PuzzleState], Optional[str]]:
+        """Fetch a puzzle that matches a Lichess theme tag.
+
+        Primary strategy: use /api/puzzle/next?theme=<tag> (fast, accurate).
+        Fallback strategy: sample random IDs from puzzle_ids.txt and filter
+        by returned puzzle themes (slower but works even if /next is blocked).
+        """
+        theme = (theme or "").strip()
+        if not theme:
+            return None, "Theme missing"
+
+        # 1) Fast path
+        payload = self.client.get_next_puzzle(theme=theme)
+        if isinstance(payload, dict) and not payload.get("_error"):
+            puzzle = payload.get("puzzle") or {}
+            game = payload.get("game") or {}
+
+            puzzle_id = str(puzzle.get("id") or "")
+            pgn = str(game.get("pgn") or "")
+            initial_ply = int(puzzle.get("initialPly") or 0)
+            solution = puzzle.get("solution") or []
+            themes = puzzle.get("themes") or []
+            rating = puzzle.get("rating")
+
+            if puzzle_id and pgn and solution:
+                sol = [str(m) for m in solution]
+                start_board, _used_ply, _matched = _find_best_start_board_from_pgn(
+                    pgn=pgn,
+                    initial_ply=initial_ply,
+                    sol=sol,
+                    back=6,
+                    forward=10,
+                )
+                return (
+                    PuzzleState(
+                        puzzle_id=puzzle_id,
+                        fen_start=start_board.fen(),
+                        solution=sol,
+                        themes=[str(x) for x in (themes or [])],
+                        rating=int(rating) if rating is not None else None,
+                        idx=0,
+                    ),
+                    None,
+                )
+
+        # 2) Fallback path: sample from local ID list
+        if not os.path.exists(PUZZLE_IDS_PATH):
+            err = str(payload.get("_error") or "Theme fetch failed") if isinstance(payload, dict) else "Theme fetch failed"
+            return None, err
+
+        last_err = str(payload.get("_error") or "Theme fetch failed") if isinstance(payload, dict) else "Theme fetch failed"
+        for _ in range(35):
+            pid = _pick_random_line_seek(PUZZLE_IDS_PATH)
+            pid = "".join(ch for ch in (pid or "") if ch.isalnum())
+            if not pid:
+                continue
+            p = self.client.get_puzzle(pid)
+            if not isinstance(p, dict) or p.get("_error"):
+                last_err = str(p.get("_error") or last_err)
+                continue
+            puzzle = p.get("puzzle") or {}
+            themes = [str(x) for x in (puzzle.get("themes") or [])]
+            if theme not in themes:
+                continue
+
+            game = p.get("game") or {}
+            puzzle_id = str(puzzle.get("id") or pid)
+            pgn = str(game.get("pgn") or "")
+            initial_ply = int(puzzle.get("initialPly") or 0)
+            solution = puzzle.get("solution") or []
+            rating = puzzle.get("rating")
+            if not puzzle_id or not pgn or not solution:
+                continue
+
+            sol = [str(m) for m in solution]
+            start_board, _used_ply, _matched = _find_best_start_board_from_pgn(
+                pgn=pgn,
+                initial_ply=initial_ply,
+                sol=sol,
+                back=6,
+                forward=10,
+            )
+
+            return (
+                PuzzleState(
+                    puzzle_id=puzzle_id,
+                    fen_start=start_board.fen(),
+                    solution=sol,
+                    themes=themes,
+                    rating=int(rating) if rating is not None else None,
+                    idx=0,
+                ),
+                None,
+            )
+
+        return None, last_err
+
     def run(self, link: BoardLink, display: Display) -> None:
         # 1) Fetch puzzle
         display.send("Puzzle\nLoading…")
         if self.mode == "mix":
             st, err = self.fetch_mix()
+        elif self.mode == "theme":
+            st, err = self.fetch_theme(self.theme or "")
         else:
             st, err = self.fetch_daily()
 
@@ -391,7 +491,11 @@ class DailyPuzzleController:
             label = _format_puzzle_label(
                 st.themes,
                 st.rating,
-                fallback=("Mix & Match" if self.mode == "mix" else "Daily"),
+                fallback=(
+                    "Mix & Match"
+                    if self.mode == "mix"
+                    else (THEME_MAP.get(self.theme or "", "Theme") if self.mode == "theme" else "Daily")
+                ),
             )
             display.send(f"{label}\nSetup position\nOK = next")
             __import__("time").sleep(0.8)

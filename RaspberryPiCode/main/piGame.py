@@ -962,22 +962,139 @@ def run_puzzle_mode(link: BoardLink, display: Display) -> None:
     """
     client = LichessClient()
 
+    # -------------------- Small paged menu helper --------------------
+
+    def _short(s: str, n: int) -> str:
+        s = (s or "").strip()
+        return s if len(s) <= n else (s[: max(0, n - 1)] + "…")
+
+    def _render_paged(title: str, page: int, pages: int, items4):
+        # 20x4-friendly: 2 items per line, 4 items total
+        a = _short(items4[0] if len(items4) > 0 else "", 9)
+        b = _short(items4[1] if len(items4) > 1 else "", 9)
+        c = _short(items4[2] if len(items4) > 2 else "", 9)
+        d = _short(items4[3] if len(items4) > 3 else "", 9)
+        line1 = f"{_short(title, 12)} {page+1}/{pages}" if pages > 1 else _short(title, 20)
+        line2 = f"1){a:<9}2){b:<9}".rstrip()
+        line3 = f"3){c:<9}4){d:<9}".rstrip()
+        line4 = "H=next OK=back"
+        return "\n".join([line1[:20], line2[:20], line3[:20], line4[:20]])
+
+    from typing import Optional, List
+
+    def _paged_menu(title: str, options: "List[str]") -> "Optional[str]":
+        # Returns selected option string, or None if back.
+        opts = list(options or [])
+        if not opts:
+            return None
+        per_page = 4
+        pages = (len(opts) + per_page - 1) // per_page
+        page = 0
+        while True:
+            chunk = opts[page * per_page : page * per_page + per_page]
+            display.send(_render_paged(title, page, pages, chunk))
+            msg = link.getboard()
+            if msg is None:
+                continue
+            m = msg.strip().lower()
+            if m in ("ok", "btn_ok", "btnok", "n", "new", "in", "newgame", "btn_new"):
+                return None
+            if m in ("hint", "btn_hint"):
+                page = (page + 1) % pages
+                continue
+            if m in ("1", "2", "3", "4"):
+                idx = int(m) - 1
+                if idx < len(chunk) and chunk[idx]:
+                    return chunk[idx]
+                continue
+
+
+    # -------------------- Menu definitions --------------------
+
+    from typing import Tuple
+
+    PHASE_THEMES: "List[Tuple[str, str]]" = [
+        ("opening", "Opening"),
+        ("middlegame", "Middlegame"),
+        ("endgame", "Endgame"),
+        ("rookEndgame", "Rook endgame"),
+        ("bishopEndgame", "Bishop endgame"),
+        ("pawnEndgame", "Pawn endgame"),
+        ("knightEndgame", "Knight endgame"),
+        ("queenEndgame", "Queen endgame"),
+    ]
+
+    # Lichess opening-theme tags (subset). Easy to extend later.
+    OPENING_THEMES: "List[Tuple[str, str]]" = [
+        ("sicilianDefense", "Sicilian"),
+        ("frenchDefense", "French"),
+        ("caroKannDefense", "Caro-Kann"),
+        ("scandinavianDefense", "Scandinav."),
+        ("pircDefense", "Pirc"),
+        ("alekhineDefense", "Alekhine"),
+        ("kingsIndianDefense", "KID"),
+        ("nimzoIndianDefense", "Nimzo"),
+        ("grunfeldDefense", "Grunfeld"),
+        ("queensGambit", "QG"),
+        ("slavDefense", "Slav"),
+        ("englishOpening", "English"),
+        ("ruyLopez", "Ruy Lopez"),
+        ("italianGame", "Italian"),
+        ("scotchGame", "Scotch"),
+        ("viennaGame", "Vienna"),
+        ("kingsGambit", "King's Gamb"),
+    ]
+
+    # -------------------- Top-level puzzle menu --------------------
+
     link.sendtoboard("ChoosePuzzle")
-    display.send("PUZZLES\n1) Daily\n2) Mix & Match\nOK = cancel")
-    while True:
-        msg = link.getboard()
-        if msg is None:
-            continue
-        m = msg.strip().lower()
-        if m in ("ok", "btn_ok", "btnok", "n", "new", "in", "newgame", "btn_new"):
+    top = _paged_menu("PUZZLES", ["Daily Puzzle", "Mix and match", "Themes"])
+    if top is None:
+        raise GoToModeSelect()
+
+    if top.startswith("Daily"):
+        DailyPuzzleController(client, mode="daily").run(link, display)
+        return
+
+    if top.startswith("Mix"):
+        DailyPuzzleController(client, mode="mix").run(link, display)
+        return
+
+    # -------------------- Themes submenu --------------------
+
+    themes_top = _paged_menu("THEMES", ["Phases", "Openings"])
+    if themes_top is None:
+        raise GoToModeSelect()
+
+    if themes_top.startswith("Phases"):
+        label = _paged_menu("PHASES", [t[1] for t in PHASE_THEMES])
+        if label is None:
             raise GoToModeSelect()
-        if m in ("1", "daily", "btn_puzzle_daily"):
-            DailyPuzzleController(client, mode="daily").run(link, display)
-            return
-        if m in ("2", "mix", "random", "btn_puzzle_mix"):
-            DailyPuzzleController(client, mode="mix").run(link, display)
-            return
-        display.send("PUZZLES\n1) Daily\n2) Mix & Match\nOK = cancel")
+        tag = None
+        for k, v in PHASE_THEMES:
+            if v == label:
+                tag = k
+                break
+        if not tag:
+            raise GoToModeSelect()
+        DailyPuzzleController(client, mode="theme", theme=tag).run(link, display)
+        return
+
+    if themes_top.startswith("Openings"):
+        label = _paged_menu("OPENINGS", [t[1] for t in OPENING_THEMES])
+        if label is None:
+            raise GoToModeSelect()
+        tag = None
+        for k, v in OPENING_THEMES:
+            if v == label:
+                tag = k
+                break
+        if not tag:
+            raise GoToModeSelect()
+        DailyPuzzleController(client, mode="theme", theme=tag).run(link, display)
+        return
+
+    raise GoToModeSelect()
 
 
 def mode_dispatch(

@@ -128,3 +128,26 @@ class LichessClient:
             return r.json()
         except RequestException as e:
             return {"_error": str(e)}
+
+    def get_next_puzzle(self, theme: Optional[str] = None) -> Dict[str, Any]:
+        """Fetch the next puzzle.
+
+        If `theme` is provided, Lichess will try to return a puzzle tagged
+        with that theme (same taxonomy as lichess.org/training/themes).
+
+        Endpoint: /api/puzzle/next?theme=<tag>
+        """
+        try:
+            params: Dict[str, Any] = {}
+            if theme:
+                params["theme"] = theme
+            r = requests.get(
+                f"{LICHESS_BASE}/api/puzzle/next",
+                headers=self.headers,
+                params=params,
+                timeout=15,
+            )
+            r.raise_for_status()
+            return r.json()
+        except RequestException as e:
+            return {"_error": str(e)}
