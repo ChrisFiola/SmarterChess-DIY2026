@@ -164,13 +164,23 @@ while True:
         last_msg = None
         continue
 
-    # Skip exact duplicate frames
-    if line == last_msg:
+    msg = line.strip()  # normalize (removes \n and trailing spaces)
+
+    # Skip duplicates after normalization
+    if msg == last_msg:
         continue
-    last_msg = line
+    last_msg = msg
+
+    # Optional: cap refresh rate (huge win on Pi Zero)
+    now = time.monotonic()
+    if "last_draw_t" not in globals():
+        globals()["last_draw_t"] = 0.0
+    if now - globals()["last_draw_t"] < 0.10:  # 0.10s = 10 fps cap
+        continue
+    globals()["last_draw_t"] = now
 
     # Parse message: "L1|L2|L3|L4|size"
-    parts = line.strip().split("|")
+    parts = msg.split("|")
     if not parts:
         continue
 
