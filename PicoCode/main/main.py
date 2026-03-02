@@ -1,17 +1,5 @@
 # ============================================================
-#  PICO FIRMWARE (2026) - Control Panel LEDs per requested UX
-#  + Centralized Chessboard UI (ChessboardUI)
-#  + DIY illegal animation + coordinate bars lit (6..21 DIM)
-#  + "New Game" guard to ignore stale messages and never send a move
-#  + Capture blink on destination square (keeps your full trail/logic)
-#  + Hold H/8 to shutdown Pico (signals Pi then powers LEDs off)
-#
-#  PATCHED:
-#   - Fix OK not working in puzzle setup:
-#       * remove duplicate puzzle_setup_active blocks in main_loop
-#       * use ONE handler: handle_puzzle_setup_cmd(...)
-#       * sync ok_last_val when puzzle_setup begins
-#       * forward OK press reliably during puzzle setup
+#  PICO FIRMWARE (2026)
 # ============================================================
 
 from machine import Pin, UART
@@ -2094,7 +2082,3 @@ def run():
 
 
 run()
-
-# If A–H or 1–8 appear reversed on your panel, flip either/both:
-# CP_FILES_LEDS = list(reversed([6, 7, 8, 9, 10, 11, 12, 13]))
-# CP_RANKS_LEDS = list(reversed([14, 15, 16, 17, 18, 19, 20, 21]))
