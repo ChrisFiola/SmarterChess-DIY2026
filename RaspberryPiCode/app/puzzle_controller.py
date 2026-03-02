@@ -32,6 +32,14 @@ import random
 PUZZLE_IDS_PATH = os.path.join(os.path.dirname(__file__), "puzzle_ids.txt")
 
 
+def _is_alnum(ch: str) -> bool:
+    # MicroPython-safe "isalnum" for single characters
+    if not ch or len(ch) != 1:
+        return False
+    o = ord(ch)
+    return (48 <= o <= 57) or (65 <= o <= 90) or (97 <= o <= 122)  # 0-9  # A-Z  # a-z
+
+
 def _pick_random_line_seek(path: str, max_tries: int = 25) -> str:
     """Fast random line selection without loading the whole file."""
     try:
@@ -332,7 +340,7 @@ class DailyPuzzleController:
             return None, "No valid puzzle IDs found"
 
         # Sanitize line to alphanumeric only (handles accidental URLs/quotes/commas)
-        pid = "".join(ch for ch in pid if ch.isalnum())
+        pid = "".join(ch for ch in pid if _is_alnum())
         if not pid:
             return None, "Invalid puzzle ID line"
 
@@ -485,7 +493,7 @@ class DailyPuzzleController:
             u = user_uci.strip().lower()
             if u.startswith("m"):
                 u = u[1:]
-            u = "".join(ch for ch in u if ch.isalnum())
+            u = "".join(ch for ch in u if _is_alnum(ch))
             frm, to = (u[:2], u[2:4]) if len(u) >= 4 else ("", "")
             piece_txt = "PIECE"
             try:
@@ -560,7 +568,7 @@ class DailyPuzzleController:
             # Capture probe from Pico (user-move capture blink UX)
             if msg.startswith("capq_"):
                 q = msg[len("capq_") :].strip().lower()
-                q = "".join(ch for ch in q if ch.isalnum())
+                q = "".join(ch for ch in q if _is_alnum(ch))
                 cap_flag = 0
                 try:
                     mvq = chess.Move.from_uci(q)
@@ -592,7 +600,7 @@ class DailyPuzzleController:
             uci = msg.strip().lower()
             if uci.startswith("m"):
                 uci = uci[1:]
-            uci = "".join(ch for ch in uci if ch.isalnum())
+            uci = "".join(ch for ch in uci if _is_alnum(ch))
 
             if len(uci) not in (4, 5):
                 continue

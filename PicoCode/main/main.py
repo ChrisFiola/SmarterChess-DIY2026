@@ -136,6 +136,14 @@ persistent_trail_move = None  # e.g., 'e2e4'
 uart = UART(0, baudrate=115200, tx=Pin(0), rx=Pin(1), timeout=10)
 
 
+def _is_alnum(ch: str) -> bool:
+    # MicroPython-safe "isalnum" for single characters
+    if not ch or len(ch) != 1:
+        return False
+    o = ord(ch)
+    return (48 <= o <= 57) or (65 <= o <= 90) or (97 <= o <= 122)  # 0-9  # A-Z  # a-z
+
+
 def send_to_pi(kind, payload=""):
     uart.write(f"heypi{kind}{payload}\n".encode())
 
@@ -1997,11 +2005,10 @@ def main_loop():
             cancel_user_input_and_restart()
             continue
 
-
         if msg.startswith("heyArduinopuzzle_wrong_"):
             # Show the wrong move trail in RED and wait for OK acknowledgement.
             raw = msg[len("heyArduinopuzzle_wrong_") :].strip()
-            mv = "".join(ch for ch in raw if ch.isalnum())
+            mv = "".join(ch for ch in raw if _is_alnum(ch))
             if len(mv) >= 4:
                 mv = mv[:4]
                 show_persistent_trail(mv, RED, "wrong", end_color=None)
