@@ -26,10 +26,13 @@ BLACK_BG = Image.new("RGB", (W, H), "BLACK")
 
 # Font cache
 FONTS = {}
+
+
 def get_font(size: int):
     if size not in FONTS:
         FONTS[size] = ImageFont.truetype(FONT_PATH, size)
     return FONTS[size]
+
 
 # ------------------------------------------------------
 # AUTO FONT SCALING
@@ -64,6 +67,7 @@ def find_best_font_size(lines, min_size=14, max_size=28, vpad=4, spacing=6):
             return size, spacing
 
     return min_size, spacing  # fallback
+
 
 # ------------------------------------------------------
 # Draw centered text with explicit size/spacing
@@ -102,12 +106,16 @@ def draw_centered_text_with_size(lines, size: int, spacing: int = 6, vpad: int =
 
     disp.ShowImage(img)
 
+
 def draw_centered_text_auto(lines, min_size=14, max_size=28, vpad=4, spacing=6):
     """
     Autosize to fit, then render centered.
     """
-    size, sp = find_best_font_size(lines, min_size=min_size, max_size=max_size, vpad=vpad, spacing=spacing)
+    size, sp = find_best_font_size(
+        lines, min_size=min_size, max_size=max_size, vpad=vpad, spacing=spacing
+    )
     draw_centered_text_with_size(lines, size=size, spacing=sp, vpad=vpad)
+
 
 # ------------------------------------------------------
 # Splash screen
@@ -124,10 +132,10 @@ def draw_splash():
     w = bbox[2] - bbox[0]
     h = bbox[3] - bbox[1]
 
-    draw.text(((W - w) // 2, (H - h) // 2 - 10),
-              txt, font=font, fill="WHITE")
+    draw.text(((W - w) // 2, (H - h) // 2 - 10), txt, font=font, fill="WHITE")
 
     disp.ShowImage(img)
+
 
 # Draw splash on start
 draw_splash()
@@ -145,8 +153,15 @@ last_msg = None
 while True:
     line = pipe.readline()
 
-    if not line:
-        time.sleep(0.003)
+    if line == "":
+        # Writer closed (EOF) -> reopen FIFO and back off (prevents CPU spin)
+        try:
+            pipe.close()
+        except Exception:
+            pass
+        time.sleep(0.1)
+        pipe = open(PIPE, "r")  # blocks until a writer connects
+        last_msg = None
         continue
 
     # Skip exact duplicate frames
