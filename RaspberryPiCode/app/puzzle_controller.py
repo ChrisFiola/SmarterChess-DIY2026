@@ -57,6 +57,7 @@ def _pick_random_line_seek(path: str, max_tries: int = 25) -> str:
 
 # -------------------- Setup helpers --------------------
 
+
 def _dist(a: str, b: str) -> int:
     af, ar = ord(a[0]) - 97, int(a[1]) - 1
     bf, br = ord(b[0]) - 97, int(b[1]) - 1
@@ -159,13 +160,16 @@ def _format_puzzle_label(
     label = fallback
     if t:
         raw = str(t[0])
-        label = THEME_MAP.get(raw, raw.replace("_", " ").replace("-", " ").strip().title())
+        label = THEME_MAP.get(
+            raw, raw.replace("_", " ").replace("-", " ").strip().title()
+        )
     if rating is not None:
         label = f"{label} • {int(rating)}"
     return label[:20]
 
 
 # -------------------- PGN alignment helpers --------------------
+
 
 @dataclass
 class PuzzleState:
@@ -254,13 +258,17 @@ def _find_best_start_board_from_pgn(
         if mlen == best_len:
             if abs(ply_try - initial_ply) < abs(best_ply - initial_ply):
                 best_board, best_ply = b, ply_try
-            elif abs(ply_try - initial_ply) == abs(best_ply - initial_ply) and ply_try < best_ply:
+            elif (
+                abs(ply_try - initial_ply) == abs(best_ply - initial_ply)
+                and ply_try < best_ply
+            ):
                 best_board, best_ply = b, ply_try
 
     return best_board, best_ply, best_len
 
 
 # -------------------- Controller --------------------
+
 
 class DailyPuzzleController:
     """Run the daily puzzle loop using the Pico for input and LEDs."""
@@ -397,6 +405,7 @@ class DailyPuzzleController:
 
                 if msg == "shutdown":
                     from piGame import shutdown_pi
+
                     shutdown_pi(link, display)
                     return
 
@@ -419,6 +428,7 @@ class DailyPuzzleController:
 
                     if msg == "shutdown":
                         from piGame import shutdown_pi
+
                         shutdown_pi(link, display)
                         return
 
@@ -458,6 +468,7 @@ class DailyPuzzleController:
 
                 if m == "shutdown":
                     from piGame import shutdown_pi
+
                     shutdown_pi(link, display)
                     return False
 
@@ -467,7 +478,11 @@ class DailyPuzzleController:
                 if m in ("btn_ok", "ok"):
                     return True
 
-                if m.startswith("typing_") or m.startswith("capq_") or m in ("hint", "btn_hint"):
+                if (
+                    m.startswith("typing_")
+                    or m.startswith("capq_")
+                    or m in ("hint", "btn_hint")
+                ):
                     continue
 
         def _wait_promotion_choice() -> Optional[str]:
@@ -479,6 +494,7 @@ class DailyPuzzleController:
 
                 if m == "shutdown":
                     from piGame import shutdown_pi
+
                     shutdown_pi(link, display)
                     return None
 
@@ -488,7 +504,11 @@ class DailyPuzzleController:
                 if m in ("btn_q", "btn_r", "btn_b", "btn_n"):
                     return m[-1]
 
-                if m.startswith("typing_") or m.startswith("capq_") or m in ("hint", "btn_hint"):
+                if (
+                    m.startswith("typing_")
+                    or m.startswith("capq_")
+                    or m in ("hint", "btn_hint")
+                ):
                     continue
 
         def _wrong_move_feedback(user_uci: str) -> bool:
@@ -503,6 +523,17 @@ class DailyPuzzleController:
                 link.sendtoboard("puzzle_wrong_")
                 return _wait_ack_ok()
 
+        def _illegal_move_feedback(user_uci: str) -> bool:
+            """Illegal move: show where to put the piece back (red trail) and wait for OK."""
+            u = (user_uci or "").strip().lower()
+            if u.startswith("m"):
+                u = u[1:]
+            u = "".join(ch for ch in u if ch.isalnum())
+
+            if len(u) < 4:
+                display.send(f"{side_prefix}\nIllegal move\nOK = continue")
+                return _wait_ack_ok()
+
             frm, to = u[:2], u[2:4]
 
             piece_txt = "PIECE"
@@ -513,9 +544,10 @@ class DailyPuzzleController:
             except Exception:
                 pass
 
-            display.send(f"{side_prefix}\nWrong: {piece_txt} {frm}->{to}\nPut it back + OK")
-
-            # Tell Pico to show where to put it back: trail TO -> FROM
+            display.send(
+                f"{side_prefix}\nIllegal: {piece_txt} {frm}->{to}\nPut it back + OK"
+            )
+            # Trail from TO back to FROM so the user knows where to return it
             link.sendtoboard(f"puzzle_wrong_{to}{frm}")
             return _wait_ack_ok()
 
@@ -539,6 +571,7 @@ class DailyPuzzleController:
 
             if msg == "shutdown":
                 from piGame import shutdown_pi
+
                 shutdown_pi(link, display)
                 return
 
@@ -547,7 +580,7 @@ class DailyPuzzleController:
 
             # Capture probe from Pico for preview cap blink
             if msg.startswith("capq_"):
-                q = msg[len("capq_"):].strip().lower()
+                q = msg[len("capq_") :].strip().lower()
                 q = "".join(ch for ch in q if ch.isalnum())
                 cap_flag = 0
                 try:
@@ -560,7 +593,9 @@ class DailyPuzzleController:
 
             # Hint button
             if msg in ("hint", "btn_hint"):
-                link.sendtoboard(f"hint_{expected}{'_cap' if _is_cap(board, expected) else ''}")
+                link.sendtoboard(
+                    f"hint_{expected}{'_cap' if _is_cap(board, expected) else ''}"
+                )
                 display.send(f"{side_prefix}\nHint: {expected[:2]}→{expected[2:4]}")
                 continue
 
@@ -568,7 +603,8 @@ class DailyPuzzleController:
             if msg.startswith("typing_"):
                 try:
                     from piGame import handle_typing_preview
-                    handle_typing_preview(display, msg[len("typing_"):], board)
+
+                    handle_typing_preview(display, msg[len("typing_") :], board)
                 except Exception:
                     display.send(msg.replace("typing_", ""))
                 continue
@@ -587,7 +623,11 @@ class DailyPuzzleController:
                     frm_sq = chess.parse_square(uci[:2])
                     to_sq = chess.parse_square(uci[2:4])
                     promo_needed = any(
-                        (mvv.from_square == frm_sq and mvv.to_square == to_sq and mvv.promotion is not None)
+                        (
+                            mvv.from_square == frm_sq
+                            and mvv.to_square == to_sq
+                            and mvv.promotion is not None
+                        )
                         for mvv in board.legal_moves
                     )
                     if promo_needed:
@@ -604,16 +644,23 @@ class DailyPuzzleController:
             try:
                 user_mv = chess.Move.from_uci(uci)
             except Exception:
-                link.sendtoboard("error_illegal")
-                _show_try_again("Illegal move")
-                link.sendtoboard(f"turn_{'white' if board.turn == chess.WHITE else 'black'}")
+                # Bad/partial UCI from Pico; treat as illegal and guide the user to undo it.
+                if not _illegal_move_feedback(uci):
+                    return
+                # Re-arm Pico input state and prompt again
+                link.sendtoboard(
+                    f"turn_{'white' if board.turn == chess.WHITE else 'black'}"
+                )
+                _show_prompt_enter_move()
                 continue
 
             if user_mv not in board.legal_moves:
-                link.sendtoboard("error_illegal")
-                _show_try_again("Illegal move")
-                __import__("time").sleep(1.0)
-                link.sendtoboard(f"turn_{'white' if board.turn == chess.WHITE else 'black'}")
+                # User made a move that's not legal in this position; guide them to undo it.
+                if not _illegal_move_feedback(uci):
+                    return
+                link.sendtoboard(
+                    f"turn_{'white' if board.turn == chess.WHITE else 'black'}"
+                )
                 _show_prompt_enter_move()
                 continue
 
@@ -633,7 +680,9 @@ class DailyPuzzleController:
                     return
                 _show_prompt_enter_move()
                 # Ensure Pico is back in input state
-                link.sendtoboard(f"turn_{'white' if board.turn == chess.WHITE else 'black'}")
+                link.sendtoboard(
+                    f"turn_{'white' if board.turn == chess.WHITE else 'black'}"
+                )
                 continue
 
             # Correct move (must use expected string to match solution exactly)
@@ -643,7 +692,9 @@ class DailyPuzzleController:
                 link.sendtoboard("error_puzzle_internal")
                 _show_try_again("Puzzle error")
                 __import__("time").sleep(1.0)
-                link.sendtoboard(f"turn_{'white' if board.turn == chess.WHITE else 'black'}")
+                link.sendtoboard(
+                    f"turn_{'white' if board.turn == chess.WHITE else 'black'}"
+                )
                 _show_prompt_enter_move()
                 continue
 
@@ -667,7 +718,9 @@ class DailyPuzzleController:
                     opp = "WHITE" if board.turn == chess.WHITE else "BLACK"
                     cap = board.is_capture(rmv)
 
-                    display.send(f"{side_prefix}\n{opp} played {reply[:2]}→{reply[2:4]}\nOK = continue")
+                    display.send(
+                        f"{side_prefix}\n{opp} played {reply[:2]}→{reply[2:4]}\nOK = continue"
+                    )
                     link.sendtoboard(f"m{reply}{'_cap' if cap else ''}")
 
                     board.push(rmv)
@@ -679,5 +732,7 @@ class DailyPuzzleController:
                     _show_prompt_enter_move()
 
             # Prompt next move
-            link.sendtoboard(f"turn_{'white' if board.turn == chess.WHITE else 'black'}")
+            link.sendtoboard(
+                f"turn_{'white' if board.turn == chess.WHITE else 'black'}"
+            )
             _show_prompt_enter_move()
