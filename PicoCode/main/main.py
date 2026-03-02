@@ -129,11 +129,7 @@ uart = UART(0, baudrate=115200, tx=Pin(0), rx=Pin(1), timeout=10)
 
 def cp_show_menu_choices_1to4():
     cp.clear_small_panel()
-    cp.ok(True)
-    cp.hint(True, YELLOW)
-    # Light buttons 1..4 in WHITE
-    for k in range(1, 5):
-        cp.set(CP_CHOICE_BASE + (k - 1), WHITE)
+    cp_show_coords_top(WHITE)
 
 
 def _is_alnum(ch: str) -> bool:
@@ -1601,6 +1597,33 @@ def _setup_back_cleanup():
         pass
 
 
+def _menu_back_cleanup_soft():
+    global game_state, in_setup, suspend_until_new_game
+
+    # Leave setup state completely so main_loop can see heyArduinoChooseMode again
+    in_setup = True
+    game_state = GAME_SETUP
+    suspend_until_new_game = True
+
+    # Just clean LEDs / edge states; do not change game_state
+    try:
+        cp_all_off()
+    except Exception:
+        pass
+    try:
+        cp_bars_dim_on()
+    except Exception:
+        pass
+    try:
+        ui_board.markings()
+    except Exception:
+        pass
+    try:
+        buttons.reset()
+    except Exception:
+        pass
+
+
 def select_puzzle_variant():
     """
     Puzzle submenu on the Pi:
@@ -1623,7 +1646,7 @@ def select_puzzle_variant():
 
         if b == (OK_BUTTON_INDEX + 1):
             send_to_pi("btn_ok")
-            # _setup_back_cleanup()
+            _setup_back_cleanup()
             return
 
         if b == (HINT_BUTTON_INDEX + 1):
@@ -1656,7 +1679,7 @@ def select_paged_menu_1to4():
         # OK = back
         if b == (OK_BUTTON_INDEX + 1):
             send_to_pi("btn_ok")
-            # _setup_back_cleanup()
+            _setup_back_cleanup()
             return
 
         # HINT = next page (during menus)
@@ -1841,7 +1864,6 @@ def handle_puzzle_setup_cmd(msg):
     Messages (from Pi) are prefixed with 'heyArduino...'
     """
     global puzzle_setup_active, ok_last_val
-
     if not msg:
         return False
 
@@ -2091,7 +2113,6 @@ def main_loop():
             buttons.reset()
             ui_board.markings()
             cp_show_menu_choices_1to4()
-            cp_show_coords_top(WHITE)
             select_puzzle_variant()
             ui_board.markings()
             enable_hint_irq()
