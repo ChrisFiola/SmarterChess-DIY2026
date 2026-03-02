@@ -127,6 +127,15 @@ persistent_trail_move = None  # e.g., 'e2e4'
 uart = UART(0, baudrate=115200, tx=Pin(0), rx=Pin(1), timeout=10)
 
 
+def cp_show_menu_choices_1to4():
+    cp.clear_small_panel()
+    cp.ok(True)
+    cp.hint(True, YELLOW)
+    # Light buttons 1..4 in WHITE
+    for k in range(1, 5):
+        cp.set(CP_CHOICE_BASE + (k - 1), WHITE)
+
+
 def _is_alnum(ch: str) -> bool:
     # MicroPython-safe "isalnum" for single characters
     if not ch or len(ch) != 1:
@@ -1593,39 +1602,72 @@ def _setup_back_cleanup():
 
 
 def select_puzzle_variant():
-    """Submenu for puzzle mode.
-
-    The Raspberry Pi shows:
-      1) Daily
-      2) Mix & Match
-      (n=back)
-
-    Map CP buttons:
-      1 -> send "1"
-      2 -> send "2"
-      4 -> send "n" (back)
+    """
+    Puzzle submenu on the Pi:
+      Page 1:
+        1) Daily Puzzle
+        2) Mix and match
+        3) Themes
+      HINT = next page (if Pi decides to page)
+      OK = back
     """
     buttons.reset()
     while True:
         if is_shutdown_held():
             shutdown_pico()
+
         b = buttons.detect_press()
         if not b:
             time.sleep_ms(5)
             continue
-        # OK = back (Pi interprets as submenu back while setup is active)
+
         if b == (OK_BUTTON_INDEX + 1):
             send_to_pi("btn_ok")
-            _setup_back_cleanup()
+            # _setup_back_cleanup()
             return
-        if b == 1:
-            send_to_pi("1")
+
+        if b == (HINT_BUTTON_INDEX + 1):
+            send_to_pi("btn_hint")
+            continue
+
+        if 1 <= b <= 4:
+            send_to_pi(str(b))
             return
-        if b == 2:
-            send_to_pi("2")
+
+
+def select_paged_menu_1to4():
+    """
+    Generic paged menu input:
+      - Buttons 1..4 => send "1".."4" to Pi
+      - HINT        => send "btn_hint" (next page)
+      - OK          => send "btn_ok" (back)
+    The Pi owns the menu state and decides what each selection means.
+    """
+    buttons.reset()
+    while True:
+        if is_shutdown_held():
+            shutdown_pico()
+
+        b = buttons.detect_press()
+        if not b:
+            time.sleep_ms(5)
+            continue
+
+        # OK = back
+        if b == (OK_BUTTON_INDEX + 1):
+            send_to_pi("btn_ok")
+            # _setup_back_cleanup()
             return
-        if b == 4:
-            send_to_pi("n")
+
+        # HINT = next page (during menus)
+        if b == (HINT_BUTTON_INDEX + 1):
+            send_to_pi("btn_hint")
+            # no cleanup; we stay in the menu
+            continue
+
+        # 1..4 = choose item on current page
+        if 1 <= b <= 4:
+            send_to_pi(str(b))
             return
 
 
@@ -2044,11 +2086,22 @@ def main_loop():
             continue
 
         # Puzzle submenu (Daily / Mix)
+        if msg.startswith("heyArduinoMenuPaged"):
+            disable_hint_irq()
+            buttons.reset()
+            ui_board.markings()
+            cp_show_menu_choices_1to4()
+            select_paged_menu_1to4()
+            ui_board.markings()
+            enable_hint_irq()
+            continue
+
         if msg.startswith("heyArduinoChoosePuzzle"):
             # Keep the board display in a neutral state and let CP buttons choose.
             disable_hint_irq()
             buttons.reset()
             ui_board.markings()
+            cp_show_menu_choices_1to4()
             cp_show_coords_top(WHITE)
             select_puzzle_variant()
             ui_board.markings()
