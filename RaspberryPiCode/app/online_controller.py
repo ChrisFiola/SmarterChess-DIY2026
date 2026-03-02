@@ -499,7 +499,7 @@ class OnlineController:
                 # Match the exact same illegal-move UX used everywhere else
                 # (red put-back trail + wait for OK; no Pico auto move-entry).
                 self.d.illegal_putback_flow(
-                    link=link, display=display, board=board, uci=uci, label="Illegal"
+                    link=link, display=display, board=board, uci=uci, label="ILLEGAL"
                 )
                 # The helper re-sends turn_ and prompts for input.
                 continue

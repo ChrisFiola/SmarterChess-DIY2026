@@ -519,7 +519,7 @@ class DailyPuzzleController:
             u = "".join(ch for ch in u if ch.isalnum())
 
             if len(u) < 4:
-                display.send(f"{side_prefix}\nWrong move\nPut it back + OK")
+                display.send(f"Wrong {side_prefix} move\nPut it back + OK")
                 link.sendtoboard("puzzle_wrong_")
                 return _wait_ack_ok()
 
@@ -531,7 +531,7 @@ class DailyPuzzleController:
             u = "".join(ch for ch in u if ch.isalnum())
 
             if len(u) < 4:
-                display.send(f"{side_prefix}\nIllegal move\nOK = continue")
+                display.send(f"Illegal {side_prefix} move\nOK = continue")
                 return _wait_ack_ok()
 
             frm, to = u[:2], u[2:4]
@@ -545,7 +545,7 @@ class DailyPuzzleController:
                 pass
 
             display.send(
-                f"{side_prefix}\nIllegal: {piece_txt} {frm}->{to}\nPut it back + OK"
+                f"Illegal {side_prefix} move:\n{piece_txt} {frm}->{to}\nPut it back + OK"
             )
             # Trail from TO back to FROM so the user knows where to return it
             link.sendtoboard(f"puzzle_wrong_{to}{frm}")

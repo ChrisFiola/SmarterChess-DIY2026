@@ -49,7 +49,9 @@ STOCKFISH_PATH: str = "/usr/games/stockfish"  # Keep same path unless configured
 # Display server IPC endpoints
 PIPE_PATH: str = "/tmp/lcdpipe"
 READY_FLAG_PATH: str = "/tmp/display_server_ready"
-DISPLAY_SERVER_SCRIPT: str = "/home/king/SmarterChess-DIY2026/RaspberryPiCode/display_server.py"
+DISPLAY_SERVER_SCRIPT: str = (
+    "/home/king/SmarterChess-DIY2026/RaspberryPiCode/display_server.py"
+)
 
 DEFAULT_SKILL: int = 5
 DEFAULT_MOVE_TIME_MS: int = 2000
@@ -58,16 +60,20 @@ DEFAULT_MOVE_TIME_MS: int = 2000
 # =============== DATA STRUCTURES ============================
 # ============================================================
 
+
 @dataclass
 class GameConfig:
     """Configuration that can be set during setup prompts."""
+
     skill_level: int = DEFAULT_SKILL
     move_time_ms: int = DEFAULT_MOVE_TIME_MS
     human_is_white: bool = True  # true => human plays White in Stockfish mode
 
+
 @dataclass
 class EngineContext:
     """Holds the Stockfish engine instance and helper methods."""
+
     engine: Optional[chess.engine.SimpleEngine] = None
 
     def ensure(self, path: str) -> chess.engine.SimpleEngine:
@@ -75,7 +81,9 @@ class EngineContext:
             return self.engine
         while True:
             try:
-                self.engine = chess.engine.SimpleEngine.popen_uci(path, stderr=None, timeout=None)
+                self.engine = chess.engine.SimpleEngine.popen_uci(
+                    path, stderr=None, timeout=None
+                )
                 return self.engine
             except Exception:
                 time.sleep(1)
@@ -88,17 +96,21 @@ class EngineContext:
                 pass
             self.engine = None
 
+
 @dataclass
 class RuntimeState:
     """Mutable game state."""
+
     board: chess.Board
     mode: str = "stockfish"  # "stockfish" | "local" | "online"
     # UI handler to push typing previews even during blocking calls
     on_typing_preview: Optional[Callable[[str, str], None]] = None
 
+
 # ============================================================
 # =============== DISPLAY (OLED via PIPE) ====================
 # ============================================================
+
 
 class Display:
     """
@@ -112,16 +124,23 @@ class Display:
 
     def restart_server(self):
         """Kill old server, create FIFO, start new server."""
-        subprocess.Popen("pkill -f display_server.py", shell=True,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.Popen(
+            "pkill -f display_server.py",
+            shell=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
         time.sleep(0.2)
         if not os.path.exists(self.pipe_path):
             try:
                 os.mkfifo(self.pipe_path)
             except FileExistsError:
                 pass
-        subprocess.Popen(["python3", DISPLAY_SERVER_SCRIPT],
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.Popen(
+            ["python3", DISPLAY_SERVER_SCRIPT],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
 
     def wait_ready(self, timeout_s: float = 10.0):
         """Wait for display server to create its ready flag."""
@@ -171,11 +190,13 @@ class Display:
         self.send(f"Illegal move!\nEnter new\nmove...")
 
     def show_gameover(self, result: str):
-        self.send(f"Game Over\nResult {result}\nPress n to start over")
+        self.send(f"Game Over\nResult {result}\nOK = Menu")
+
 
 # ============================================================
 # =============== SERIAL (UART to PICO) ======================
 # ============================================================
+
 
 class BoardLink:
     """
@@ -185,7 +206,9 @@ class BoardLink:
       - getboard() => blocking wait for payload after 'heypi'
     """
 
-    def __init__(self, port: str = SERIAL_PORT, baud: int = BAUD, timeout: float = SERIAL_TIMEOUT):
+    def __init__(
+        self, port: str = SERIAL_PORT, baud: int = BAUD, timeout: float = SERIAL_TIMEOUT
+    ):
         self.ser = serial.Serial(port, baud, timeout=timeout)
         self.ser.flush()
 
@@ -254,9 +277,11 @@ class BoardLink:
                 print(f"[Board→] {raw}  | payload='{payload}'")
                 return payload
 
+
 # ============================================================
 # =============== UTILS: PARSING & HELPERS ===================
 # ============================================================
+
 
 def parse_move_payload(payload: str) -> Optional[str]:
     """
@@ -273,6 +298,7 @@ def parse_move_payload(payload: str) -> Optional[str]:
         return cleaned
     return None
 
+
 def parse_side_choice(s: str) -> Optional[bool]:
     """
     's1' => True (human white)
@@ -280,20 +306,27 @@ def parse_side_choice(s: str) -> Optional[bool]:
     's3' => random boolean
     """
     s = (s or "").strip().lower()
-    if s.startswith("s1"): return True
-    if s.startswith("s2"): return False
-    if s.startswith("s3"): return bool(random.getrandbits(1))
+    if s.startswith("s1"):
+        return True
+    if s.startswith("s2"):
+        return False
+    if s.startswith("s3"):
+        return bool(random.getrandbits(1))
     return None
+
 
 def side_name_from_board(brd: chess.Board) -> str:
     return "WHITE" if brd.turn == chess.WHITE else "BLACK"
 
+
 def uci_arrow(uci: str) -> str:
     return f"{uci[:2]} → {uci[2:4]}"
+
 
 # ============================================================
 # =============== TYPING PREVIEW HANDLER =====================
 # ============================================================
+
 
 def handle_typing_preview(display: Display, payload: str) -> None:
     """
@@ -320,9 +353,11 @@ def handle_typing_preview(display: Display, payload: str) -> None:
         # swallow malformed previews quietly
         pass
 
+
 # ============================================================
 # =============== ENGINE (STOCKFISH) =========================
 # ============================================================
+
 
 def engine_bestmove(ctx: EngineContext, brd: chess.Board, ms: int) -> Optional[str]:
     if brd.is_game_over():
@@ -331,6 +366,7 @@ def engine_bestmove(ctx: EngineContext, brd: chess.Board, ms: int) -> Optional[s
     limit = chess.engine.Limit(time=max(0.01, ms / 1000.0))
     result = engine.play(brd, limit)  # type: ignore
     return result.move.uci() if result.move else None
+
 
 def engine_hint(ctx: EngineContext, brd: chess.Board, ms: int) -> Optional[str]:
     """
@@ -346,9 +382,11 @@ def engine_hint(ctx: EngineContext, brd: chess.Board, ms: int) -> Optional[str]:
         pass
     return engine_bestmove(ctx, brd, ms)
 
+
 # ============================================================
 # =============== PROMOTION FLOW =============================
 # ============================================================
+
 
 def requires_promotion(move: chess.Move, brd: chess.Board) -> bool:
     """
@@ -366,6 +404,7 @@ def requires_promotion(move: chess.Move, brd: chess.Board) -> bool:
         return move.promotion is None
     return False
 
+
 def ask_promotion_piece(link: BoardLink, display: Display) -> str:
     """
     Ask Pico to collect promotion choice:
@@ -381,17 +420,29 @@ def ask_promotion_piece(link: BoardLink, display: Display) -> str:
             # Signal to caller to restart mode selection via exception
             raise GoToModeSelect()
         m = msg.strip().lower()
-        if m in ("btn_q", "btn_queen"): return "q"
-        if m in ("btn_r", "btn_rook"):  return "r"
-        if m in ("btn_b", "btn_bishop"):return "b"
-        if m in ("btn_n", "btn_knight"):return "n"
+        if m in ("btn_q", "btn_queen"):
+            return "q"
+        if m in ("btn_r", "btn_rook"):
+            return "r"
+        if m in ("btn_b", "btn_bishop"):
+            return "b"
+        if m in ("btn_n", "btn_knight"):
+            return "n"
         display.send("Promotion!\n1=Queen\n2=Rook\n3=Bishop\n4=Knight")
+
 
 # ============================================================
 # =============== HINTS & NEW GAME ===========================
 # ============================================================
 
-def send_hint_to_board(link: BoardLink, display: Display, ctx: EngineContext, state: RuntimeState, cfg: GameConfig) -> None:
+
+def send_hint_to_board(
+    link: BoardLink,
+    display: Display,
+    ctx: EngineContext,
+    state: RuntimeState,
+    cfg: GameConfig,
+) -> None:
     if state.board.is_game_over():
         link.sendtoboard("hint_gameover")
         display.send("Game Over\nNo hints\nPress n to start over")
@@ -408,26 +459,33 @@ def send_hint_to_board(link: BoardLink, display: Display, ctx: EngineContext, st
     display.show_hint_result(best)
     print(f"[Hint] {best}")
 
+
 # ============================================================
 # =============== ERROR / GAME OVER ==========================
 # ============================================================
+
 
 def report_game_over(link: BoardLink, display: Display, brd: chess.Board) -> None:
     result = brd.result(claim_draw=True)
     link.sendtoboard(f"GameOver:{result}")
     display.show_gameover(result)
 
+
 # ============================================================
 # =============== FLOW CONTROL EXCEPTIONS ====================
 # ============================================================
 
+
 class GoToModeSelect(Exception):
     """Signal to jump out to top-level mode selection (e.g., user pressed New Game)."""
+
     pass
+
 
 # ============================================================
 # =============== SETUP & MODE SELECTION =====================
 # ============================================================
+
 
 def select_mode(link: BoardLink, display: Display, state: RuntimeState) -> str:
     """
@@ -538,17 +596,28 @@ def setup_local(link: BoardLink, display: Display, cfg: GameConfig):
             cfg.move_time_ms = max(10, int(msg))
             break
 
+
 # ============================================================
 # =============== UNIFIED PLAY LOOP (SKELETON) ===============
 # ============================================================
 
+
 def ui_new_game_banner(display: Display):
     display.banner("NEW GAME", delay_s=1.0)
+
 
 def ui_engine_thinking(display: Display):
     display.send("Engine Thinking...")
 
-def handoff_next_turn(link: BoardLink, display: Display, brd: chess.Board, mode: str, cfg: GameConfig, last_uci: str):
+
+def handoff_next_turn(
+    link: BoardLink,
+    display: Display,
+    brd: chess.Board,
+    mode: str,
+    cfg: GameConfig,
+    last_uci: str,
+):
     """
     After a valid push, notify Pico whose turn it is and show arrow prompt.
     """
@@ -557,7 +626,14 @@ def handoff_next_turn(link: BoardLink, display: Display, brd: chess.Board, mode:
     # Show last move arrow and indicate whose turn
     display.show_arrow(last_uci, suffix=f"{side_name_from_board(brd)} to move")
 
-def engine_move_and_send(link: BoardLink, display: Display, ctx: EngineContext, state: RuntimeState, cfg: GameConfig):
+
+def engine_move_and_send(
+    link: BoardLink,
+    display: Display,
+    ctx: EngineContext,
+    state: RuntimeState,
+    cfg: GameConfig,
+):
     """
     Trigger engine to move (Stockfish mode only), push it, send to Pico, then hand off.
     """
@@ -573,7 +649,14 @@ def engine_move_and_send(link: BoardLink, display: Display, ctx: EngineContext, 
 # =============== PLAY GAME (UNIFIED LOOP) ===================
 # ============================================================
 
-def play_game(link: BoardLink, display: Display, ctx: EngineContext, state: RuntimeState, cfg: GameConfig) -> None:
+
+def play_game(
+    link: BoardLink,
+    display: Display,
+    ctx: EngineContext,
+    state: RuntimeState,
+    cfg: GameConfig,
+) -> None:
     """
     Consistent, centralized UI flow:
       - Resets board
@@ -614,15 +697,14 @@ def play_game(link: BoardLink, display: Display, ctx: EngineContext, state: Runt
                 shutdown_pi(link, display)
                 return
             if peek.startswith("typing_"):
-                handle_typing_preview(display, peek[len("typing_"):])
+                handle_typing_preview(display, peek[len("typing_") :])
             # do not 'continue' to still allow engine turn same cycle
 
         # 2) Engine turn (Stockfish mode)
         if state.mode == "stockfish" and not state.board.is_game_over():
             engine_should_move = (
-                (state.board.turn == chess.WHITE and not cfg.human_is_white) or
-                (state.board.turn == chess.BLACK and cfg.human_is_white)
-            )
+                state.board.turn == chess.WHITE and not cfg.human_is_white
+            ) or (state.board.turn == chess.BLACK and cfg.human_is_white)
             if engine_should_move:
                 ui_engine_thinking(display)
                 engine_move_and_send(link, display, ctx, state, cfg)
@@ -640,7 +722,7 @@ def play_game(link: BoardLink, display: Display, ctx: EngineContext, state: Runt
 
         # 4) Also handle typing previews in the blocking path (to be consistent)
         if msg.startswith("typing_"):
-            handle_typing_preview(display, msg[len("typing_"):])
+            handle_typing_preview(display, msg[len("typing_") :])
             continue
 
         # 5) New game request
@@ -695,9 +777,11 @@ def play_game(link: BoardLink, display: Display, ctx: EngineContext, state: Runt
             # The Pico UX expects user to press 'n' => GoToModeSelect
             raise GoToModeSelect()
 
+
 # ============================================================
 # =============== ONLINE MODE PLACEHOLDER ====================
 # ============================================================
+
 
 def run_online_mode(link: BoardLink, display: Display):
     display.send("Online mode not implemented\nUse Stockfish/Local")
@@ -705,11 +789,19 @@ def run_online_mode(link: BoardLink, display: Display):
     # Bounce to mode select
     raise GoToModeSelect()
 
+
 # ============================================================
 # =============== MODE DISPATCHER ============================
 # ============================================================
 
-def mode_dispatch(link: BoardLink, display: Display, ctx: EngineContext, state: RuntimeState, cfg: GameConfig):
+
+def mode_dispatch(
+    link: BoardLink,
+    display: Display,
+    ctx: EngineContext,
+    state: RuntimeState,
+    cfg: GameConfig,
+):
     """
     Enter setup based on selected mode, then start game loop.
     """
@@ -724,9 +816,11 @@ def mode_dispatch(link: BoardLink, display: Display, ctx: EngineContext, state: 
     else:
         run_online_mode(link, display)
 
+
 # ============================================================
 # =============== SHUTDOWN HANDLER ===========================
 # ============================================================
+
 
 def shutdown_pi(link: Optional[BoardLink], display: Optional[Display]) -> None:
     if display:
@@ -737,9 +831,11 @@ def shutdown_pi(link: Optional[BoardLink], display: Optional[Display]) -> None:
     except Exception as e:
         print(f"[Shutdown] {e}", file=sys.stderr)
 
+
 # ============================================================
-# =============== MAIN =======================================  
+# =============== MAIN =======================================
 # ============================================================
+
 
 def main():
     display = Display()
@@ -787,6 +883,7 @@ def main():
         ctx.quit()
     except Exception:
         pass
+
 
 if __name__ == "__main__":
     main()
