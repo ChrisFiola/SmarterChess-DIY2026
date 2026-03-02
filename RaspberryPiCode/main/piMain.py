@@ -64,13 +64,34 @@ def main():
         except GoToModeSelect:
             state.board = chess.Board()
             display.send("SMARTCHESS")
-            time.sleep(2.5)
+            time.sleep(0.4)
             continue
         except KeyboardInterrupt:
             break
-        except Exception:
+        except Exception as e:
+            # Any unexpected exception should not leave the Pico UI in a half-state.
             traceback.print_exc()
-            time.sleep(1)
+
+            # Force Pico back to mode select UI (best-effort).
+            try:
+                link.sendtoboard("ChooseMode")
+            except Exception:
+                pass
+
+            # Show error briefly (or until OK) then return to menu.
+            try:
+                from piGame import wait_ok_or_timeout  # local import to avoid cycles
+                short = (str(e) or e.__class__.__name__)[:18]
+                display.send(f"ERROR\n{short}\nOK=menu")
+                wait_ok_or_timeout(link, timeout_s=2.0)
+            except Exception:
+                # If anything goes wrong while showing the error, just pause briefly.
+                time.sleep(2.0)
+
+            # Reset state and go back to mode select.
+            state.board = chess.Board()
+            display.send("SMARTCHESS")
+            time.sleep(0.4)
             continue
 
     try:
