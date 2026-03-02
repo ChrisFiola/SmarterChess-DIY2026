@@ -453,6 +453,32 @@ class DailyPuzzleController:
         def _show_try_again() -> None:
             display.send(f"{side_prefix}\nTry again\nEnter move")
 
+        def _wait_ack_ok() -> bool:
+            """Wait until Pico sends btn_ok/ok. Return False if user exits or shutdown."""
+            while True:
+                m = link.getboard()
+                if m is None:
+                    continue
+
+                if m == "shutdown":
+                    from piGame import shutdown_pi
+                    shutdown_pi(link, display)
+                    return False
+
+                if m in ("n", "new", "in", "newgame", "btn_new"):
+                    return False
+
+                if m in ("btn_ok", "ok"):
+                    return True
+
+                # ignore everything else while waiting for OK
+                if (
+                    m.startswith("typing_")
+                    or m.startswith("capq_")
+                    or m in ("hint", "btn_hint")
+                ):
+                    continue
+
         def _wait_promotion_choice() -> Optional[str]:
             """Wait for Pico to return btn_q/btn_r/btn_b/btn_n. Returns 'q','r','b','n' or None if canceled."""
             while True:
@@ -462,7 +488,6 @@ class DailyPuzzleController:
 
                 if m == "shutdown":
                     from piGame import shutdown_pi
-
                     shutdown_pi(link, display)
                     return None
 
@@ -481,55 +506,30 @@ class DailyPuzzleController:
                     continue
 
         def _wrong_move_feedback(user_uci: str) -> bool:
-            """Tell user what they moved, show red trail, wait for OK. Returns False if exited."""
+            """Tell user what they moved, show RED 'put it back' trail, wait for OK."""
             u = user_uci.strip().lower()
             if u.startswith("m"):
                 u = u[1:]
             u = "".join(ch for ch in u if ch.isalnum())
-            frm, to = (u[:2], u[2:4]) if len(u) >= 4 else ("", "")
+            if len(u) < 4:
+                display.send(f"{side_prefix}\nWrong move\nOK = retry")
+                link.sendtoboard("puzzle_wrong_")
+                return _wait_ack_ok()
+
+            frm, to = u[:2], u[2:4]
+
             piece_txt = "PIECE"
             try:
-                p = board.piece_at(chess.parse_square(frm)) if frm else None
+                p = board.piece_at(chess.parse_square(frm))
                 if p:
                     piece_txt = _piece_name(p.symbol())
             except Exception:
                 pass
 
-            display.send(
-                f"{side_prefix}\nWrong: {piece_txt} {frm}->{to}\nPut it back + OK"
-            )
-            link.sendtoboard(f"puzzle_wrong_{frm}{to}")
+            # IMPORTANT: show the *return* path (to -> from) because the user already moved it.
+            display.send(f"{side_prefix}\nWrong: {piece_txt} {frm}->{to}\nPut it back + OK")
+            link.sendtoboard(f"puzzle_wrong_{to}{frm}")
             return _wait_ack_ok()
-
-        link.sendtoboard(f"turn_{'white' if board.turn == chess.WHITE else 'black'}")
-        _show_prompt_enter_move()
-
-        # Helper: wait for OK acknowledgement coming from Pico (requires Pico patch above)
-        def _wait_ack_ok() -> bool:
-            while True:
-                m = link.getboard()
-                if m is None:
-                    continue
-
-                if m == "shutdown":
-                    from piGame import shutdown_pi
-
-                    shutdown_pi(link, display)
-                    return False
-
-                if m in ("n", "new", "in", "newgame", "btn_new"):
-                    return False
-
-                if m in ("btn_ok", "ok"):
-                    return True
-
-                # ignore everything else while waiting for OK
-                if (
-                    m.startswith("typing_")
-                    or m.startswith("capq_")
-                    or m in ("hint", "btn_hint")
-                ):
-                    continue
 
         # 4) Main solve loop
         while True:
@@ -698,3 +698,17 @@ class DailyPuzzleController:
             )
             # Keep consistent prompt text
             _show_prompt_enter_move()
+
+            piece_txt = "PIECE"
+            try:
+                p = board.piece_at(chess.parse_square(frm)) if frm else None
+                if p:
+                    piece_txt = _piece_name(p.symbol())
+            except Exception:
+                pass
+
+            display.send(
+                f"{side_prefix}\nWrong: {piece_txt} {frm}->{to}\nPut it back + OK"
+            )
+            link.sendtoboard(f"puzzle_wrong_{frm}{to}")
+            return _wait_ack_ok()

@@ -1999,7 +1999,8 @@ def main_loop():
 
 
         if msg.startswith("heyArduinopuzzle_wrong_"):
-            # Show the wrong move trail in RED and wait for OK acknowledgement.
+            # Wrong-move correction: show RED trail and wait for OK.
+            # IMPORTANT: do NOT auto-enter move collection here. The Pi will send the next turn_ prompt.
             raw = msg[len("heyArduinopuzzle_wrong_") :].strip()
             mv = "".join(ch for ch in raw if ch.isalnum())
             if len(mv) >= 4:
@@ -2007,11 +2008,11 @@ def main_loop():
                 show_persistent_trail(mv, RED, "wrong", end_color=None)
                 cp_only_ok(True)
 
-                # Wait for OK press, then ack back to Pi and resume input
                 buttons.reset()
                 while True:
                     if is_shutdown_held():
                         shutdown_pico()
+                    # Allow OK+Hint "new game" combo to escape
                     irq = process_hint_irq()
                     if irq == "new":
                         send_to_pi("n")
@@ -2025,8 +2026,6 @@ def main_loop():
                 cp_only_ok(False)
                 clear_persistent_trail()
                 ui_board.markings()
-                cp_only_hint_and_coords_for_input()
-                collect_and_send_move()
             continue
 
         if msg.startswith("heyArduinoerror"):
