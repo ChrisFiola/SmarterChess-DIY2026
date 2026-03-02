@@ -151,11 +151,11 @@ def illegal_putback_flow(
 
     if frm and to:
         display.send(
-            f"{side_prefix}\n{label}: {piece_txt} {frm}->{to}\nPut it back + OK"
+            f"{side_prefix}\nReturn {label}: {piece_txt} {frm}->{to}\nPress OK"
         )
         link.sendtoboard(f"puzzle_wrong_{to}{frm}")
     else:
-        display.send(f"{side_prefix}\n{label} move\nPut it back + OK")
+        display.send(f"{side_prefix}\n{label} move\nPress OK")
 
     ok = wait_ack_ok(link, display)
     if not ok:
@@ -396,41 +396,41 @@ def setup_stockfish(link: BoardLink, display: Display, cfg: GameConfig) -> None:
     time.sleep(2)
 
     # Difficulty
-    display.send("Choose computer\ndifficulty level:\n(0 -> 8)")
+    display.send("Difficulty level:\n1 to 8\nOK = cancel")
     link.sendtoboard("EngineStrength")
     link.sendtoboard(f"default_strength_{cfg.skill_level}")
     while True:
         msg = link.getboard()
         if msg is None:
             continue
-        if msg.startswith("n"):
+        if msg in ("ok", "btn_ok", "btnok") or msg.startswith("n"):
             raise GoToModeSelect()
         if msg.isdigit():
             cfg.skill_level = max(0, min(int(msg), 20))
             break
 
     # Move time
-    display.send("Choose computer\nmove time:\n(0 -> 8)")
+    display.send("Computer\nmove time:\n1 to 8\nOK = cancel")
     link.sendtoboard("TimeControl")
     link.sendtoboard(f"default_time_{cfg.move_time_ms}")
     while True:
         msg = link.getboard()
         if msg is None:
             continue
-        if msg.startswith("n"):
+        if msg in ("ok", "btn_ok", "btnok") or msg.startswith("n"):
             raise GoToModeSelect()
         if msg.isdigit():
             cfg.move_time_ms = max(10, int(msg))
             break
 
     # Color
-    display.send("Select a colour:\n1 = White/First\n2 = Black/Second\n3 = Random")
+    display.send("Select a colour:\n1=White 2=Black\n3=Random\nOK = cancel")
     link.sendtoboard("PlayerColor")
     while True:
         msg = link.getboard()
         if msg is None:
             continue
-        if msg.startswith("n"):
+        if msg in ("ok", "btn_ok", "btnok") or msg.startswith("n"):
             raise GoToModeSelect()
         side = parse_side_choice(msg)
         if side is not None:
@@ -732,7 +732,9 @@ def process_human_move(
         #   - Pico shows red put-back trail
         #   - wait for OK acknowledgement
         #   - Pi re-enters move collection via a deterministic turn_ message
-        illegal_putback_flow(link=link, display=display, board=board, uci=uci, label="Illegal")
+        illegal_putback_flow(
+            link=link, display=display, board=board, uci=uci, label="ILLEGAL"
+        )
         return
 
     # 5) Push
@@ -895,7 +897,7 @@ def play_game(
         # 9) Legality check (AFTER OK) — Pico only sends after OK now
         if move not in state.board.legal_moves:
             illegal_putback_flow(
-                link=link, display=display, board=state.board, uci=uci, label="Illegal"
+                link=link, display=display, board=state.board, uci=uci, label="ILLEGAL"
             )
             continue
 
@@ -961,13 +963,13 @@ def run_puzzle_mode(link: BoardLink, display: Display) -> None:
     client = LichessClient()
 
     link.sendtoboard("ChoosePuzzle")
-    display.send("PUZZLES\n1) Daily\n2) Mix & Match\n(n=back)")
+    display.send("PUZZLES\n1) Daily\n2) Mix & Match\nOK = cancel")
     while True:
         msg = link.getboard()
         if msg is None:
             continue
         m = msg.strip().lower()
-        if m in ("n", "new", "in", "newgame", "btn_new"):
+        if m in ("ok", "btn_ok", "btnok", "n", "new", "in", "newgame", "btn_new"):
             raise GoToModeSelect()
         if m in ("1", "daily", "btn_puzzle_daily"):
             DailyPuzzleController(client, mode="daily").run(link, display)
@@ -975,7 +977,7 @@ def run_puzzle_mode(link: BoardLink, display: Display) -> None:
         if m in ("2", "mix", "random", "btn_puzzle_mix"):
             DailyPuzzleController(client, mode="mix").run(link, display)
             return
-        display.send("PUZZLES\n1) Daily\n2) Mix & Match\n(n=back)")
+        display.send("PUZZLES\n1) Daily\n2) Mix & Match\nOK = cancel")
 
 
 def mode_dispatch(

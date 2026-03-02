@@ -57,6 +57,15 @@ class Display:
         with open(self.pipe_path, "w") as pipe:
             pipe.write(payload)
 
+    def show_qr(self, data: str, *caption_lines: str) -> None:
+        """Render a QR code on the LCD.
+
+        Protocol extension: use trailing size token 'qr'.
+        Line1 is the QR payload, remaining lines are optional captions.
+        """
+        lines = [data] + [ln for ln in caption_lines if ln]
+        self.send("\n".join(lines), size="qr")
+
     # Convenience UI helpers
     def banner(self, text: str, delay_s: float = 0.0) -> None:
         self.send(text)
@@ -83,7 +92,7 @@ class Display:
         try:
             frm, to = uci[:2], uci[2:4]
             if len(uci) >= 4:
-                self.send(f"Hint received:\n{frm} → {to}")
+                self.send(f"Hint received:\n{frm} → {to}\nPress OK")
             else:
                 # Fallback: just show whatever we received
                 self.send(f"Hint received:\n{uci}")
@@ -106,7 +115,7 @@ class Display:
         try:
             frm = (uci or "")[:2]
             if len(frm) == 2 and frm[0].isalpha() and frm[1].isdigit():
-                self.send(f"Illegal move!\nReturn to {frm}\nTry again")
+                self.send(f"Illegal move!\nReturn to {frm}\nPress OK")
             else:
                 self.send("Illegal move!\nTry again")
         except Exception:
