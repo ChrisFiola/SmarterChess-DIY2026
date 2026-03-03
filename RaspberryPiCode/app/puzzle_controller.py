@@ -738,11 +738,18 @@ class DailyPuzzleController:
                     display.send(msg.replace("typing_", ""))
                 continue
 
+            # Navigation / acknowledgement tokens can leak through right after
+            # the last setup OK press. They are *not* UCI moves.
+            if msg in ("ok", "btn_ok", "btnok"):
+                continue
+
             # Parse user move
             uci = msg.strip().lower()
             if uci.startswith("m"):
                 uci = uci[1:]
             uci = "".join(ch for ch in uci if ch.isalnum())
+            if uci in ("ok", "btnok", "hint", "btn_hint", "n", "new", "in", "newgame", "btn_new"):
+                continue
             if len(uci) not in (4, 5):
                 continue
 
