@@ -89,6 +89,29 @@ def _save_seen_cache(data: dict) -> None:
         pass
 
 
+def reset_seen_puzzles(angle: Optional[str] = None) -> None:
+    """Clear seen_puzzles.json.
+
+    If angle is provided, clears only that angle bucket.
+    If angle is None, clears everything (removes the file).
+    """
+    try:
+        if angle:
+            data = _load_seen_cache()
+            by = data.get("by_angle") or {}
+            if isinstance(by, dict) and angle in by:
+                by.pop(angle, None)
+                data["by_angle"] = by
+                _save_seen_cache(data)
+            return
+
+        # Full reset
+        if os.path.exists(SEEN_CACHE_PATH):
+            os.remove(SEEN_CACHE_PATH)
+    except Exception:
+        pass
+
+
 def _pick_random_line_seek(path: str, max_tries: int = 25) -> str:
     """Fast random line selection without loading the whole file."""
     try:
@@ -530,69 +553,67 @@ class DailyPuzzleController:
 
         # 1) Fast path (api/puzzle/next)
         payload: dict = {}
+        passed_checks = False
+        seen_skips = 0
+
+        # NOTE: we pass a nonce to reduce caching, and we dedupe per-angle.
         last_for_angle = self._last_next_id_by_angle.get(angle)
+        seen_set = self._seen_by_angle.get(angle, set())
 
-        # Try a few times to avoid same puzzle for same angle AND enforce phase correctness.
-        for _ in range(8):
-            payload = (
-                self.client.get_next_puzzle(
-                    angle=angle,
-                    nonce=str(random.getrandbits(32)),
+        def _try_next_batch(tries: int) -> None:
+            nonlocal payload, passed_checks, seen_skips, last_for_angle, seen_set
+            for _ in range(tries):
+                payload = (
+                    self.client.get_next_puzzle(
+                        angle=angle,
+                        nonce=str(random.getrandbits(32)),
+                    )
+                    or {}
                 )
-                or {}
-            )
-
-            if not isinstance(payload, dict) or payload.get("_error"):
-                break
-
-            puzzle = payload.get("puzzle") or {}
-            game = payload.get("game") or {}
-
-            pid_try = str(puzzle.get("id") or "")
-            pgn_try = str(game.get("pgn") or "")
-            themes_try = puzzle.get("themes") or []
-
-            if not pid_try:
-                break
-            # Avoid puzzles we've already served (reduces repeats).
-            if pid_try in self._seen_global:
-                continue
-            if pid_try in self._seen_by_angle.get(angle, set()):
-                continue
-
-            # Dedupe against last result for this same angle.
-            if last_for_angle and pid_try == last_for_angle:
-                continue
-
-            # --- PHASE ENFORCEMENT ---
-            # If angle is a phase tag, require it to be present in puzzle themes.
-            if angle in PHASE_TAGS:
                 try:
-                    tset = set(str(x) for x in (themes_try or []))
+                    pid_try = str(((payload.get("puzzle") or {}).get("id")) or "")
                 except Exception:
-                    tset = set()
-                if angle not in tset:
-                    # Not actually an "opening/middlegame/endgame" puzzle; retry.
+                    pid_try = ""
+                if not pid_try:
+                    break
+
+                # Avoid puzzles we've already served (reduces repeats).
+                if pid_try in self._seen_global:
+                    seen_skips += 1
+                    continue
+                if pid_try in seen_set:
+                    seen_skips += 1
                     continue
 
-            # --- OPENING NAME ENFORCEMENT (best-effort) ---
-            # If angle looks like an opening name, validate using PGN headers when available.
-            # If headers are missing/empty, don't hard-fail; accept.
-            if _is_opening_name(angle):
-                try:
-                    eco_try, opening_try = _pgn_opening_info(pgn_try)
-                except Exception:
-                    eco_try, opening_try = ("", "")
-                # If lichess included an Opening header, require it to match the requested opening (substring match).
-                if opening_try:
-                    # Case-insensitive contains match is robust for variants like "Sicilian Defense: Najdorf"
-                    if angle.lower() not in opening_try.lower():
+                # Dedupe against last result for this same angle.
+                if last_for_angle and pid_try == last_for_angle:
+                    continue
+
+                # --- PHASE ENFORCEMENT ---
+                # If angle is a phase tag, require it to be present in puzzle themes.
+                if angle in PHASE_TAGS:
+                    try:
+                        tset = set(str(x) for x in ((payload.get("puzzle") or {}).get("themes") or []))
+                    except Exception:
+                        tset = set()
+                    if angle not in tset:
                         continue
 
-            # Passed all checks; keep this payload
-            break
+                passed_checks = True
+                return
 
-        if isinstance(payload, dict) and not payload.get("_error"):
+        _try_next_batch(8)
+
+        # If we keep getting the same seen puzzle(s), allow a one-time reset for this angle.
+        # This is useful when you have "seen" everything in a category and want to replay them.
+        if (not passed_checks) and seen_skips >= 6:
+            reset_seen_puzzles(angle)
+            self._seen_by_angle.pop(angle, None)
+            seen_set = set()
+            last_for_angle = None
+            seen_skips = 0
+            _try_next_batch(4)
+        if passed_checks and isinstance(payload, dict) and not payload.get("_error"):
             puzzle = payload.get("puzzle") or {}
             game = payload.get("game") or {}
 
@@ -896,6 +917,21 @@ class DailyPuzzleController:
                 display.send(f"Wrong {side_prefix} move\nPut it back + OK")
                 link.sendtoboard("puzzle_wrong_")
                 return _wait_ack_ok()
+
+            frm, to = u[:2], u[2:4]
+
+            piece_txt = "PIECE"
+            try:
+                p = board.piece_at(chess.parse_square(frm))
+                if p:
+                    piece_txt = _piece_name(p.symbol())
+            except Exception:
+                pass
+
+            display.send(f"Wrong move:\n{piece_txt} {frm}->{to}\nPut it back + OK")
+            # Trail from TO back to FROM so the user knows where to return it
+            link.sendtoboard(f"puzzle_wrong_{to}{frm}")
+            return _wait_ack_ok()
 
         def _illegal_move_feedback(user_uci: str) -> bool:
             """Illegal move: show where to put the piece back (red trail) and wait for OK."""
