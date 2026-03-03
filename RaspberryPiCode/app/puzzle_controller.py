@@ -27,6 +27,7 @@ import chess.pgn  # type: ignore
 from piDisplay import Display
 from piSerial import BoardLink
 from .lichess_client import LichessClient
+from .lichess_client import _slugify_angle
 
 
 def _pgn_opening_info(pgn_text: str) -> Tuple[str, str]:
@@ -49,6 +50,7 @@ def _pgn_opening_info(pgn_text: str) -> Tuple[str, str]:
 # -------------------- Mix puzzle ids --------------------
 
 PUZZLE_IDS_PATH = os.path.join(os.path.dirname(__file__), "puzzle_ids.txt")
+
 
 # -------------------- Seen-puzzle cache (avoid repeats) --------------------
 # Lichess /api/puzzle/next can legitimately return the same puzzle multiple
@@ -87,6 +89,7 @@ SEEN_CACHE_PATH = os.path.join(
     "seen_puzzles.json",
 )
 
+
 def _load_seen_cache() -> dict:
     try:
         if not os.path.exists(SEEN_CACHE_PATH):
@@ -104,6 +107,7 @@ def _load_seen_cache() -> dict:
         return data
     except Exception:
         return {"global": [], "by_angle": {}}
+
 
 def _save_seen_cache(data: dict) -> None:
     try:
@@ -405,10 +409,15 @@ class DailyPuzzleController:
 
         # Seen puzzle IDs (persisted)
         self._seen_cache = _load_seen_cache()
-        self._seen_global = set([str(x) for x in (self._seen_cache.get('global') or [])])
-        self._seen_by_angle = {str(k): set([str(x) for x in (v or [])]) for k, v in (self._seen_cache.get('by_angle') or {}).items() if isinstance(v, list)}
+        self._seen_global = set(
+            [str(x) for x in (self._seen_cache.get("global") or [])]
+        )
+        self._seen_by_angle = {
+            str(k): set([str(x) for x in (v or [])])
+            for k, v in (self._seen_cache.get("by_angle") or {}).items()
+            if isinstance(v, list)
+        }
 
-    
     def _mark_seen(self, angle: str, puzzle_id: str) -> None:
         """Persistently remember a puzzle id (global + per-angle) to reduce repeats."""
         pid = str(puzzle_id or "").strip()
@@ -487,7 +496,6 @@ class DailyPuzzleController:
             None,
         )
 
-    
     def fetch_mix(self) -> Tuple[Optional[PuzzleState], Optional[str]]:
         """Fetch a random puzzle from the local puzzle_ids.txt list.
 
@@ -566,7 +574,11 @@ class DailyPuzzleController:
         # If we get here, either everything is completed or we couldn't fetch any.
         if last_err:
             return None, last_err
-        return None, "All mix puzzles completed. Use Reset Completed to play them again."
+        return (
+            None,
+            "All mix puzzles completed. Use Reset Completed to play them again.",
+        )
+
     def fetch_theme(self, angle: str) -> Tuple[Optional[PuzzleState], Optional[str]]:
         """Fetch a puzzle for a given Lichess *angle*.
 
@@ -642,7 +654,10 @@ class DailyPuzzleController:
                 # If angle is a phase tag, require it to be present in puzzle themes.
                 if angle in PHASE_TAGS:
                     try:
-                        tset = set(str(x) for x in ((payload.get("puzzle") or {}).get("themes") or []))
+                        tset = set(
+                            str(x)
+                            for x in ((payload.get("puzzle") or {}).get("themes") or [])
+                        )
                     except Exception:
                         tset = set()
                     if angle not in tset:
@@ -1038,7 +1053,11 @@ class DailyPuzzleController:
                 ok = _wait_ack_ok()
                 # Mark as completed ONLY when the puzzle is fully solved.
                 if ok:
-                    key = (self.theme or "") if self.mode == "theme" else (self.mode or "global")
+                    key = (
+                        (self.theme or "")
+                        if self.mode == "theme"
+                        else (self.mode or "global")
+                    )
                     self._mark_seen(key, st.puzzle_id)
                 return
 
