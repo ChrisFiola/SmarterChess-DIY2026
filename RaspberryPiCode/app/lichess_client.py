@@ -173,7 +173,7 @@ class LichessClient:
         try:
             params: Dict[str, Any] = {}
             # Prefer the newer `angle` param; fall back to `theme` for legacy.
-            a = (angle or theme or "").strip()
+            a = (_slugify_angle(angle) or _slugify_angle(theme) or "").strip()
             if a:
                 params["angle"] = a
             d = (difficulty or "").strip()
