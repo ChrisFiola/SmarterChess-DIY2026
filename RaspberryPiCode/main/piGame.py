@@ -265,7 +265,7 @@ def send_hint_to_board(
         display.send("Game Over\nNo hints\nPress n to start over")
         return
 
-    display.show_hint_thinking()
+    ui_engine_thinking(display)
     best = engine_hint(ctx, state.board, cfg.move_time_ms)
     if not best:
         link.sendtoboard("hint_none")
@@ -381,7 +381,8 @@ def select_mode(link: BoardLink, display: Display, state: RuntimeState) -> str:
         # In mode-select, simply ignore non-selection tokens.
         if (
             not m
-            or m in (
+            or m
+            in (
                 "n",
                 "new",
                 "in",
