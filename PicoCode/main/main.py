@@ -133,11 +133,7 @@ uart = UART(0, baudrate=115200, tx=Pin(0), rx=Pin(1), timeout=10)
 
 def cp_show_menu_choices_1to4():
     cp.clear_small_panel()
-    cp.ok(True)
-    cp.hint(True, YELLOW)
-    # Light buttons 1..4 in WHITE
-    for k in range(1, 5):
-        cp.set(CP_CHOICE_BASE + (k - 1), WHITE)
+    cp_show_coords_top(WHITE)
 
 
 def _is_alnum(ch: str) -> bool:
@@ -910,8 +906,7 @@ def cancel_user_input_and_restart():
 
 def process_hint_irq():
     global hint_irq_flag, suppress_hints_until_ms, game_state, suspend_until_new_game
-    global engine_ack_pending, pending_gameover_result, buffered_turn_msg
-    global hint_enabled
+    global engine_ack_pending, pending_gameover_result, buffered_turn_msg, hint_enabled
 
     if not hint_irq_flag:
         return None
@@ -924,7 +919,7 @@ def process_hint_irq():
     if time.ticks_diff(suppress_hints_until_ms, now) > 0:
         return None
 
-    if BTN_OK.value() == 0:
+    if BTN_OK.value() == 0 and BTN_HINT.value() == 0:
         game_state = GAME_SETUP
         send_to_pi("n")
 
@@ -1611,6 +1606,33 @@ def _setup_back_cleanup():
         pass
 
 
+def _menu_back_cleanup_soft():
+    global game_state, in_setup, suspend_until_new_game
+
+    # Leave setup state completely so main_loop can see heyArduinoChooseMode again
+    in_setup = True
+    game_state = GAME_SETUP
+    suspend_until_new_game = True
+
+    # Just clean LEDs / edge states; do not change game_state
+    try:
+        cp_all_off()
+    except Exception:
+        pass
+    try:
+        cp_bars_dim_on()
+    except Exception:
+        pass
+    try:
+        ui_board.markings()
+    except Exception:
+        pass
+    try:
+        buttons.reset()
+    except Exception:
+        pass
+
+
 def select_puzzle_variant():
     """
     Puzzle submenu on the Pi:
@@ -1633,7 +1655,7 @@ def select_puzzle_variant():
 
         if b == (OK_BUTTON_INDEX + 1):
             send_to_pi("btn_ok")
-            # _setup_back_cleanup()
+            _setup_back_cleanup()
             return
 
         if b == (HINT_BUTTON_INDEX + 1):
@@ -1666,7 +1688,7 @@ def select_paged_menu_1to4():
         # OK = back
         if b == (OK_BUTTON_INDEX + 1):
             send_to_pi("btn_ok")
-            # _setup_back_cleanup()
+            _setup_back_cleanup()
             return
 
         # HINT = next page (during menus)
@@ -1850,8 +1872,7 @@ def handle_puzzle_setup_cmd(msg):
 
     Messages (from Pi) are prefixed with 'heyArduino...'
     """
-    global puzzle_setup_active, ok_last_val
-
+    global puzzle_setup_active, ok_last_val, game_state, in_setup, suspend_until_new_game
     if not msg:
         return False
 
@@ -1866,6 +1887,11 @@ def handle_puzzle_setup_cmd(msg):
 
     if msg.startswith("heyArduinopuzzle_setup_done"):
         puzzle_setup_active = False
+
+        game_state = GAME_RUNNING
+        in_setup = False
+        suspend_until_new_game = False
+        cp_bars_dim_on()
         ui_board.markings()
         enable_hint_irq()
         return True
@@ -1883,24 +1909,38 @@ def handle_puzzle_setup_cmd(msg):
         parts = tail.split("_")
         sq = parts[0].strip() if parts else ""
         side = parts[1].strip().lower() if len(parts) > 1 else "w"
-        # IMPORTANT: During puzzle setup the Pi can stream many setup_* commands
-        # quickly. Long blocking blink animations here can overflow the UART
-        # buffer and make early commands appear "missing" on the board.
-        # So we keep this handler fast and non-blocking: just light the square.
         color = GREEN if side.startswith("w") else ENGINE_COLOR
+        ui_board.markings()
         xy = board.algebraic_to_xy(sq)
         if xy:
             x, y = xy
+            for _ in range(2):
+                board.set_square(x, y, color)
+                board.write()
+                time.sleep_ms(200)
+                board.set_square(x, y, BLACK)
+                board.write()
+                time.sleep_ms(200)
+            # leave lit when done
             board.set_square(x, y, color)
             board.write()
         return True
 
     if msg.startswith("heyArduinosetup_remove_"):
         sq = msg.split("_")[-1].strip()
-        # Non-blocking: light the square red to indicate removal.
+        ui_board.markings()
         xy = board.algebraic_to_xy(sq)
         if xy:
             x, y = xy
+            for _ in range(3):
+                board.set_square(x, y, RED)
+                board.write()
+                time.sleep_ms(200)
+                board.set_square(x, y, BLACK)
+                board.write()
+                time.sleep_ms(200)
+
+            # leave it RED when done blinking
             board.set_square(x, y, RED)
             board.write()
         return True
@@ -1911,8 +1951,7 @@ def handle_puzzle_setup_cmd(msg):
         uci = parts[0].strip() if parts else ""
         side = parts[1].strip().lower() if len(parts) > 1 else "w"
         color = GREEN if side.startswith("w") else ENGINE_COLOR
-        # Draw the move trail on top of markings (fast; no long animation).
-        ui_board.markings()
+        ui_board.off()
         board.draw_trail(uci, color, end_color=None)
         return True
 
@@ -1948,12 +1987,8 @@ def main_loop():
         #  - Pi sends setup_move/setup_remove messages => handled here
         #  - Pico forwards OK press => "heypibtn_ok"
         if puzzle_setup_active:
-            # Drain a few setup commands per tick so we don't fall behind if the
-            # Pi streams actions quickly (prevents UART buffer overrun).
-            for _ in range(8):
-                msg_setup = read_from_pi()
-                if not msg_setup:
-                    break
+            msg_setup = read_from_pi()
+            if msg_setup:
                 handle_puzzle_setup_cmd(msg_setup)
 
             # Allow OK + Hint to cancel puzzle setup and return to mode select
@@ -2097,17 +2132,6 @@ def main_loop():
                 wait_for_setup()
             continue
 
-        # Puzzle submenu (Daily / Mix)
-        if msg.startswith("heyArduinoMenuPaged"):
-            disable_hint_irq()
-            buttons.reset()
-            ui_board.markings()
-            cp_show_menu_choices_1to4()
-            select_paged_menu_1to4()
-            ui_board.markings()
-            enable_hint_irq()
-            continue
-
         if msg.startswith("heyArduinoChoosePuzzle"):
             # Keep the board display in a neutral state and let CP buttons choose.
             disable_hint_irq()
@@ -2115,6 +2139,17 @@ def main_loop():
             ui_board.markings()
             cp_show_menu_choices_1to4()
             select_puzzle_variant()
+            ui_board.markings()
+            enable_hint_irq()
+            continue
+
+        # Puzzle submenu (Daily / Mix)
+        if msg.startswith("heyArduinoMenuPaged"):
+            disable_hint_irq()
+            buttons.reset()
+            ui_board.markings()
+            cp_show_menu_choices_1to4()
+            select_paged_menu_1to4()
             ui_board.markings()
             enable_hint_irq()
             continue
