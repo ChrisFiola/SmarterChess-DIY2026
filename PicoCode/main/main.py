@@ -1863,7 +1863,7 @@ def handle_puzzle_setup_cmd(msg):
 
     Messages (from Pi) are prefixed with 'heyArduino...'
     """
-    global puzzle_setup_active, ok_last_val
+    global puzzle_setup_active, ok_last_val, game_state, in_setup, suspend_until_new_game
     if not msg:
         return False
 
@@ -1878,6 +1878,11 @@ def handle_puzzle_setup_cmd(msg):
 
     if msg.startswith("heyArduinopuzzle_setup_done"):
         puzzle_setup_active = False
+
+        game_state = GAME_RUNNING
+        in_setup = False
+        suspend_until_new_game = False
+        cp_bars_dim_on()
         ui_board.markings()
         enable_hint_irq()
         return True
