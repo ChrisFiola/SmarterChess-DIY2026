@@ -597,9 +597,7 @@ class DailyPuzzleController:
                     return
 
                 if msg in ("n", "new", "in", "newgame", "btn_new"):
-                    if _confirm_exit():
-                        return
-                    continue
+                    return
 
                 if msg in ("btn_ok", "ok"):
                     break
@@ -622,9 +620,7 @@ class DailyPuzzleController:
                         return
 
                     if msg in ("n", "new", "in", "newgame", "btn_new"):
-                        if _confirm_exit():
-                            return
-                        continue
+                        return
 
                     if msg in ("btn_ok", "ok"):
                         break
@@ -642,6 +638,10 @@ class DailyPuzzleController:
             # first HINT press right after setup gets ignored.
             link.sendtoboard("hint_enable")
             link.sendtoboard("puzzle_setup_done")
+            try:
+                link.clear_input()
+            except Exception:
+                pass
             __import__("time").sleep(0.05)
             link.sendtoboard("hint_enable")
 
@@ -649,35 +649,6 @@ class DailyPuzzleController:
         board = chess.Board(st.fen_start)
         player_color = "WHITE" if board.turn == chess.WHITE else "BLACK"
         side_prefix = f"You are {player_color}"
-
-        def _confirm_exit() -> bool:
-            """Confirm OK+Hint exit requests.
-
-            Returns True if user confirms exit (OK). Returns False if cancelled (Hint) or timed out.
-            """
-            import time as _time
-
-            display.send(f"{side_prefix}\nPress OK to exit\nHint = cancel")
-            deadline = _time.time() + 3.0
-            while True:
-                x = link.getboard()
-                if x is None:
-                    if _time.time() > deadline:
-                        return False
-                    continue
-                if x == "shutdown":
-                    from piGame import shutdown_pi
-
-                    shutdown_pi(link, display)
-                    return True
-                if x in ("btn_ok", "ok"):
-                    return True
-                if x in ("btn_hint", "hint"):
-                    return False
-                if x in ("n", "new", "in", "newgame", "btn_new"):
-                    continue
-                if _time.time() > deadline:
-                    return False
 
         def _show_prompt_enter_move() -> None:
             display.send(f"{side_prefix}\nEnter move:")
@@ -689,35 +660,21 @@ class DailyPuzzleController:
                 display.send(f"{side_prefix}\nTry again\nEnter move")
 
         def _wait_ack_ok() -> bool:
-
             while True:
-
                 m = link.getboard()
-
                 if m is None:
-
                     continue
 
                 if m == "shutdown":
-
                     from piGame import shutdown_pi
 
                     shutdown_pi(link, display)
-
                     return False
 
-                # Exit combo (OK+Hint) -> confirm with OK, cancel with Hint
-
                 if m in ("n", "new", "in", "newgame", "btn_new"):
-
-                    if _confirm_exit():
-
-                        return False
-
-                    continue
+                    return False
 
                 if m in ("btn_ok", "ok"):
-
                     return True
 
                 if (
@@ -725,7 +682,6 @@ class DailyPuzzleController:
                     or m.startswith("capq_")
                     or m in ("hint", "btn_hint")
                 ):
-
                     continue
 
         def _wait_promotion_choice() -> Optional[str]:
@@ -742,8 +698,7 @@ class DailyPuzzleController:
                     return None
 
                 if m in ("n", "new", "in", "newgame", "btn_new"):
-                    if _confirm_exit():
-                        return
+                    return None
 
                 if m in ("btn_q", "btn_r", "btn_b", "btn_n"):
                     return m[-1]
@@ -818,9 +773,7 @@ class DailyPuzzleController:
                 return
 
             if msg in ("n", "new", "in", "newgame", "btn_new"):
-                if _confirm_exit():
-                    return
-                continue
+                return
 
             # Capture probe from Pico for preview cap blink
             if msg.startswith("capq_"):
