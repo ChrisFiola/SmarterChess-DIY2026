@@ -267,33 +267,6 @@ def _find_best_start_board_from_pgn(
     return best_board, best_ply, best_len
 
 
-def _parse_puzzle_payload(
-    puzzle_id: str,
-    pgn: str,
-    initial_ply: int,
-    sol: List[str],
-    rating: Optional[int] = None,
-    themes: Optional[List[str]] = None,
-) -> PuzzleState:
-    """Build a PuzzleState from lichess puzzle/game payload fields."""
-    start_board, _used_ply, _matched = _find_best_start_board_from_pgn(
-        pgn=pgn,
-        initial_ply=int(initial_ply or 0),
-        sol=[str(m) for m in (sol or [])],
-        back=6,
-        forward=10,
-    )
-
-    return PuzzleState(
-        puzzle_id=str(puzzle_id or ""),
-        fen_start=start_board.fen(),
-        solution=[str(m) for m in (sol or [])],
-        themes=[str(x) for x in (themes or [])] if themes is not None else None,
-        rating=int(rating) if rating is not None else None,
-        idx=0,
-    )
-
-
 # -------------------- Controller --------------------
 
 
@@ -301,17 +274,11 @@ class DailyPuzzleController:
     """Run the daily puzzle loop using the Pico for input and LEDs."""
 
     def __init__(
-        self,
-        client: LichessClient,
-        mode: str = "daily",
-        *,
-        theme: Optional[str] = None,
-        theme_label: Optional[str] = None,
+        self, client: LichessClient, mode: str = "daily", *, theme: Optional[str] = None
     ):
         self.client = client
         self.mode = (mode or "daily").strip().lower()
         self.theme = (theme or "").strip() or None
-        self.theme_label = (theme_label or "").strip() or None
 
     def fetch_daily(self) -> Tuple[Optional[PuzzleState], Optional[str]]:
         payload = self.client.get_daily_puzzle()
@@ -342,6 +309,15 @@ class DailyPuzzleController:
             forward=10,
         )
 
+        # Debug (journalctl)
+        try:
+            print(
+                f"[PUZZLE DAILY] id={puzzle_id!r} rating={rating!r} themes={themes!r} initialPly={initial_ply}",
+                flush=True,
+            )
+        except Exception:
+            pass
+
         return (
             PuzzleState(
                 puzzle_id=puzzle_id,
@@ -353,35 +329,6 @@ class DailyPuzzleController:
             ),
             None,
         )
-
-    def fetch_random(self) -> Tuple[Optional[PuzzleState], Optional[str]]:
-        """Fetch a truly random puzzle from Lichess (no local ID list)."""
-        try:
-            payload = self.client.get_next_puzzle(theme=None)
-        except Exception as e:
-            return None, str(e)
-
-        if isinstance(payload, dict) and not payload.get("_error"):
-            try:
-                puzzle = payload.get("puzzle") or {}
-                game = payload.get("game") or {}
-                puzzle_id = str(puzzle.get("id") or "")
-                pgn = str(game.get("pgn") or "")
-                initial_ply = int(puzzle.get("initialPly") or 0)
-                sol = [str(x) for x in (puzzle.get("solution") or [])]
-                rating_raw = puzzle.get("rating")
-                rating = int(rating_raw) if rating_raw is not None else None
-                themes = [str(x) for x in (puzzle.get("themes") or [])]
-                return (
-                    _parse_puzzle_payload(
-                        puzzle_id, pgn, initial_ply, sol, rating, themes
-                    ),
-                    None,
-                )
-            except Exception as e:
-                return None, f"Parse error: {e}"
-
-        return None, "Random puzzle unavailable"
 
     def fetch_mix(self) -> Tuple[Optional[PuzzleState], Optional[str]]:
         if not os.path.exists(PUZZLE_IDS_PATH):
@@ -423,6 +370,15 @@ class DailyPuzzleController:
             forward=10,
         )
 
+        # Debug (journalctl)
+        try:
+            print(
+                f"[PUZZLE MIX] id={puzzle_id!r} rating={rating!r} themes={themes!r} initialPly={initial_ply}",
+                flush=True,
+            )
+        except Exception:
+            pass
+
         return (
             PuzzleState(
                 puzzle_id=puzzle_id,
@@ -435,19 +391,23 @@ class DailyPuzzleController:
             None,
         )
 
-    def fetch_theme(self, theme: str) -> Tuple[Optional[PuzzleState], Optional[str]]:
-        """Fetch a puzzle that matches a Lichess theme tag.
+    def fetch_theme(self, angle: str) -> Tuple[Optional[PuzzleState], Optional[str]]:
+        """Fetch a puzzle for a given Lichess *angle*.
 
-        Primary strategy: use /api/puzzle/next?theme=<tag> (fast, accurate).
+        Angle can be either:
+          - a puzzle theme/motif (same taxonomy as lichess.org/training/themes)
+          - an opening name (from lichess.org/training/openings)
+
+        Primary strategy: use /api/puzzle/next?angle=<angle> (fast).
         Fallback strategy: sample random IDs from puzzle_ids.txt and filter
-        by returned puzzle themes (slower but works even if /next is blocked).
+        by returned puzzle themes (slower, but works when /next is blocked).
         """
-        theme = (theme or "").strip()
-        if not theme:
+        angle = (angle or "").strip()
+        if not angle:
             return None, "Theme missing"
 
         # 1) Fast path
-        payload = self.client.get_next_puzzle(theme=theme)
+        payload = self.client.get_next_puzzle(angle=angle)
         if isinstance(payload, dict) and not payload.get("_error"):
             puzzle = payload.get("puzzle") or {}
             game = payload.get("game") or {}
@@ -458,6 +418,15 @@ class DailyPuzzleController:
             solution = puzzle.get("solution") or []
             themes = puzzle.get("themes") or []
             rating = puzzle.get("rating")
+
+            # Debug (journalctl): confirm angle/puzzle metadata
+            try:
+                print(
+                    f"[PUZZLE NEXT] angle={angle!r} id={puzzle_id!r} rating={rating!r} themes={themes!r}",
+                    flush=True,
+                )
+            except Exception:
+                pass
 
             if puzzle_id and pgn and solution:
                 sol = [str(m) for m in solution]
@@ -505,7 +474,7 @@ class DailyPuzzleController:
                 continue
             puzzle = p.get("puzzle") or {}
             themes = [str(x) for x in (puzzle.get("themes") or [])]
-            if theme not in themes:
+            if angle not in themes:
                 continue
 
             game = p.get("game") or {}
@@ -543,9 +512,7 @@ class DailyPuzzleController:
     def run(self, link: BoardLink, display: Display) -> None:
         # 1) Fetch puzzle
         display.send("Puzzle\nLoading…")
-        if self.mode == "random":
-            st, err = self.fetch_random()
-        elif self.mode == "mix":
+        if self.mode == "mix":
             st, err = self.fetch_mix()
         elif self.mode == "theme":
             st, err = self.fetch_theme(self.theme or "")
@@ -577,21 +544,12 @@ class DailyPuzzleController:
                 st.themes,
                 st.rating,
                 fallback=(
-                    "Random"
-                    if self.mode == "random"
+                    "Mix & Match"
+                    if self.mode == "mix"
                     else (
-                        "Mix & Match"
-                        if self.mode == "mix"
-                        else (
-                            (
-                                self.theme_label
-                                or THEME_MAP.get(
-                                    self.theme or "", (self.theme or "Theme")
-                                )
-                            )
-                            if self.mode == "theme"
-                            else "Daily"
-                        )
+                        THEME_MAP.get(self.theme or "", "Theme")
+                        if self.mode == "theme"
+                        else "Daily"
                     )
                 ),
             )
@@ -647,8 +605,14 @@ class DailyPuzzleController:
             __import__("time").sleep(0.8)
         finally:
             # Re-enable hints and always end setup mode.
+            # NOTE: we send hint_enable both before and after puzzle_setup_done.
+            # On the Pico, puzzle_setup_done flips into GAME_RUNNING and re-enables
+            # the HINT IRQ. Sending hint_enable again avoids a rare race where the
+            # first HINT press right after setup gets ignored.
             link.sendtoboard("hint_enable")
             link.sendtoboard("puzzle_setup_done")
+            __import__("time").sleep(0.05)
+            link.sendtoboard("hint_enable")
 
         # 3) Load board state
         board = chess.Board(st.fen_start)
@@ -821,17 +785,7 @@ class DailyPuzzleController:
             if uci.startswith("m"):
                 uci = uci[1:]
             uci = "".join(ch for ch in uci if ch.isalnum())
-            if uci in (
-                "ok",
-                "btnok",
-                "hint",
-                "btn_hint",
-                "n",
-                "new",
-                "in",
-                "newgame",
-                "btn_new",
-            ):
+            if uci in ("ok", "btnok", "hint", "btn_hint", "n", "new", "in", "newgame", "btn_new"):
                 continue
             if len(uci) not in (4, 5):
                 continue

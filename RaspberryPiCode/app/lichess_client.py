@@ -129,18 +129,23 @@ class LichessClient:
         except RequestException as e:
             return {"_error": str(e)}
 
-    def get_next_puzzle(self, theme: Optional[str] = None) -> Dict[str, Any]:
+    def get_next_puzzle(
+        self, *, angle: Optional[str] = None, theme: Optional[str] = None
+    ) -> Dict[str, Any]:
         """Fetch the next puzzle.
 
-        If `theme` is provided, Lichess will try to return a puzzle tagged
-        with that theme (same taxonomy as lichess.org/training/themes).
+        Lichess supports filtering the next puzzle by an "angle".
+        Angle can be a single theme/motif (from lichess.org/training/themes)
+        or an opening name (from lichess.org/training/openings).
 
-        Endpoint: /api/puzzle/next?theme=<tag>
+        Back-compat: older code in this repo used `theme=`; we still accept it.
         """
         try:
             params: Dict[str, Any] = {}
-            if theme:
-                params["theme"] = theme
+            # Prefer the newer `angle` param; fall back to `theme` for legacy.
+            a = (angle or theme or "").strip()
+            if a:
+                params["angle"] = a
             r = requests.get(
                 f"{LICHESS_BASE}/api/puzzle/next",
                 headers=self.headers,

@@ -371,6 +371,9 @@ def select_mode(link: BoardLink, display: Display, state: RuntimeState) -> str:
         msg = link.getboard()
         if msg is None:
             continue
+        # Debug for mode-select mismatches (view in journalctl)
+        # Helps diagnose when the Pico sends an unexpected token.
+        print(f"[MODE SELECT] raw={msg!r}", flush=True)
         m = msg.strip().lower()
 
         # Robustness: the Pico can emit control / navigation tokens (e.g. OK+HINT
@@ -404,7 +407,9 @@ def select_mode(link: BoardLink, display: Display, state: RuntimeState) -> str:
             return "online"
         if m in ("3", "local", "human", "btn_mode_local"):
             return "local"
-        if m in ("4", "puzzle", "daily", "btn_mode_puzzle", "btn_mode_puzzles"):
+        # Puzzles: accept both historical token variants (singular/plural)
+        # because the Pico menu firmware has used both.
+        if m in ("4", "puzzle", "puzzles", "daily", "btn_mode_puzzle", "btn_mode_puzzles"):
             return "puzzle"
         link.sendtoboard("error_unknown_mode")
         display.send("Unknown mode\n" + m + "\nSend again")
@@ -1088,25 +1093,26 @@ def run_puzzle_mode(link: BoardLink, display: Display) -> None:
         ("queenEndgame", "Queen endgame"),
     ]
 
-    # Lichess opening-theme tags (subset). Easy to extend later.
+    # Opening angles (names) for /api/puzzle/next?angle=<opening name>.
+    # These are *not* the same as the theme tags under /training/themes.
     OPENING_THEMES: "List[Tuple[str, str]]" = [
-        ("sicilianDefense", "Sicilian"),
-        ("frenchDefense", "French"),
-        ("caroKannDefense", "Caro-Kann"),
-        ("scandinavianDefense", "Scandinav."),
-        ("pircDefense", "Pirc"),
-        ("alekhineDefense", "Alekhine"),
-        ("kingsIndianDefense", "KID"),
-        ("nimzoIndianDefense", "Nimzo"),
-        ("grunfeldDefense", "Grunfeld"),
-        ("queensGambit", "QG"),
-        ("slavDefense", "Slav"),
-        ("englishOpening", "English"),
-        ("ruyLopez", "Ruy Lopez"),
-        ("italianGame", "Italian"),
-        ("scotchGame", "Scotch"),
-        ("viennaGame", "Vienna"),
-        ("kingsGambit", "King's Gamb"),
+        ("Sicilian Defense", "Sicilian Defense"),
+        ("French Defense", "French Defense"),
+        ("Caro-Kann Defense", "Caro-Kann Defense"),
+        ("Scandinavian Defense", "Scandinavian Defense"),
+        ("Pirc Defense", "Pirc Defense"),
+        ("Alekhine Defense", "Alekhine Defense"),
+        ("King's Indian Defense", "King's Indian Defense"),
+        ("Nimzo-Indian Defense", "Nimzo-Indian Defense"),
+        ("Grünfeld Defense", "Grünfeld Defense"),
+        ("Queen's Gambit", "Queen's Gambit"),
+        ("Slav Defense", "Slav Defense"),
+        ("English Opening", "English Opening"),
+        ("Ruy Lopez", "Ruy Lopez"),
+        ("Italian Game", "Italian Game"),
+        ("Scotch Game", "Scotch Game"),
+        ("Vienna Game", "Vienna Game"),
+        ("King's Gambit", "King's Gambit"),
     ]
 
     # -------------------- Top-level puzzle menu --------------------
@@ -1120,8 +1126,8 @@ def run_puzzle_mode(link: BoardLink, display: Display) -> None:
         DailyPuzzleController(client, mode="daily").run(link, display)
         return
 
-    if top.startswith("Random"):
-        DailyPuzzleController(client, mode="random").run(link, display)
+    if top.startswith("Mix"):
+        DailyPuzzleController(client, mode="mix").run(link, display)
         return
 
     # -------------------- Themes submenu --------------------
@@ -1130,12 +1136,10 @@ def run_puzzle_mode(link: BoardLink, display: Display) -> None:
     if themes_top is None:
         raise GoToModeSelect()
 
-    # ---- Phases (Lichess theme tags) ----
     if themes_top.startswith("Phases"):
         label = _paged_menu("PHASES", [t[1] for t in PHASE_THEMES])
         if label is None:
             raise GoToModeSelect()
-
         tag = None
         for k, v in PHASE_THEMES:
             if v == label:
@@ -1143,192 +1147,21 @@ def run_puzzle_mode(link: BoardLink, display: Display) -> None:
                 break
         if not tag:
             raise GoToModeSelect()
-
         DailyPuzzleController(client, mode="theme", theme=tag).run(link, display)
         return
 
-    # ---- Openings (Lichess opening angles) ----
     if themes_top.startswith("Openings"):
-
-        def _opening_angle(name: str) -> str:
-            # Lichess opening "angle" strings match the /training/<...> pages.
-            # Using underscores is accepted; requests will URL-encode accents/apostrophes.
-            s = (name or "").strip()
-            s = s.replace("’", "'")
-            s = s.replace(" ", "_")
-            return s
-
-        OPENING_GROUPS = [
-            (
-                "A to E",
-                [
-                    "Alekhine Defense",
-                    "Amar",
-                    "Amazon",
-                    "Anderssen's",
-                    "Barnes Defense",
-                    "Barnes Opening",
-                    "Benko Gambit",
-                    "Benko Accepted",
-                    "Benko Declined",
-                    "Benoni",
-                    "Bird",
-                    "Bishop's",
-                    "Blackmar",
-                    "Blackmar Accepted",
-                    "Blackmar Declined",
-                    "Blumenfeld",
-                    "Bogo-Indian",
-                    "Borg",
-                    "Canard",
-                    "Caro-Kann",
-                    "Carr",
-                    "Catalan",
-                    "Center Game",
-                    "Center Accepted",
-                    "Clemenz",
-                    "Czech",
-                    "Danish",
-                    "Danish Accepted",
-                    "Danish Declined",
-                    "Dutch",
-                    "East Indian",
-                    "Elephant",
-                    "English Defense",
-                    "English Opening",
-                    "Englund",
-                    "Englund Declined",
-                ],
-            ),
-            (
-                "F to I",
-                [
-                    "French Defense",
-                    "Fried Fox",
-                    "Goldsmith",
-                    "Grob",
-                    "Grunfeld",
-                    "Gunderam",
-                    "Hippopotamus",
-                    "Horwitz",
-                    "Hungarian",
-                    "Indian",
-                    "Italian Game",
-                ],
-            ),
-            (
-                "K to N",
-                [
-                    "Kangaroo",
-                    "King's Gambit",
-                    "King's Accepted",
-                    "King's Declined",
-                    "King's Indian Attack",
-                    "King's Indian Defense",
-                    "King's Knight",
-                    "King's Pawn",
-                    "King's Pawn Opening",
-                    "Kadas",
-                    "Lasker Simul",
-                    "Latvian",
-                    "Latvian Accepted",
-                    "Lemming",
-                    "Lion",
-                    "London System",
-                    "Mexican",
-                    "Mieses",
-                    "Mikenas",
-                    "Modern",
-                    "Neo-Grunfeld",
-                    "Nimzo-Indian",
-                    "Nimzo-Larsen",
-                    "Nimzowitsch",
-                ],
-            ),
-            (
-                "O to R",
-                [
-                    "Old Indian",
-                    "Owen",
-                    "Paleface",
-                    "Petrov's",
-                    "Philidor",
-                    "Pirc",
-                    "Polish Defense",
-                    "Polish Opening",
-                    "Ponziani",
-                    "Portuguese",
-                    "Pseudo Queen Indian",
-                    "Pterodactyl",
-                    "Queen's Gambit",
-                    "Queen's Gambit Accepted",
-                    "Queen's Gambit Declined",
-                    "Queen's Indian Accelerated",
-                    "Queen's Indian Defense",
-                    "Queen's Pawn",
-                    "Rapport-Jobava",
-                    "Rat",
-                    "Richter-Veresov",
-                    "Robatsch",
-                    "Rubinstein",
-                    "Ruy Lopez",
-                    "Réti",
-                ],
-            ),
-            (
-                "S to V",
-                [
-                    "Saragossa",
-                    "Scandinavian",
-                    "Scotch",
-                    "Semi-Slav",
-                    "Sicilian",
-                    "Slav",
-                    "Slav Indian",
-                    "Sodium",
-                    "St. George",
-                    "Tarrasch",
-                    "Three Knights",
-                    "Torre",
-                    "Trompowsky",
-                    "Van Geet",
-                    "Van't Kruijs",
-                    "Vienna Gambit",
-                    "Vienna Game",
-                ],
-            ),
-            (
-                "W to Z",
-                [
-                    "Wade",
-                    "Ware Defense",
-                    "Ware Opening",
-                    "Yusupov-Rubinstein",
-                    "Zukertort",
-                ],
-            ),
-        ]
-
-        group_label = _paged_menu("OPENINGS", [g[0] for g in OPENING_GROUPS])
-        if group_label is None:
+        label = _paged_menu("OPENINGS", [t[1] for t in OPENING_THEMES])
+        if label is None:
             raise GoToModeSelect()
-
-        openings = None
-        for gl, items in OPENING_GROUPS:
-            if gl == group_label:
-                openings = items
+        tag = None
+        for k, v in OPENING_THEMES:
+            if v == label:
+                tag = k
                 break
-        if not openings:
+        if not tag:
             raise GoToModeSelect()
-
-        opening_name = _paged_menu(group_label, openings)
-        if opening_name is None:
-            raise GoToModeSelect()
-
-        angle = _opening_angle(opening_name)
-        DailyPuzzleController(
-            client, mode="theme", theme=angle, theme_label=opening_name
-        ).run(link, display)
+        DailyPuzzleController(client, mode="theme", theme=tag).run(link, display)
         return
 
     raise GoToModeSelect()
