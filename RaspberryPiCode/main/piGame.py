@@ -798,7 +798,7 @@ def play_game(
     time.sleep(0.3)
 
     # Initial side to move
-    if state.mode == "stockfish":
+    if state.mode in ("stockfish","pc","btn_mode_pc","vs_computer","vs"):
         if not cfg.human_is_white:
             display.send("Computer starts first.")
             time.sleep(0.4)
@@ -1174,7 +1174,7 @@ def mode_dispatch(
     state: RuntimeState,
     cfg: GameConfig,
 ) -> None:
-    if state.mode == "stockfish":
+    if state.mode in ("stockfish","pc","btn_mode_pc","vs_computer","vs"):
         setup_stockfish(link, display, cfg)
         link.sendtoboard("SetupComplete")
         # Refactored: run through the explicit GameController state machine.
@@ -1192,17 +1192,33 @@ def mode_dispatch(
             human_is_white=cfg.human_is_white,
         )
         controller.play_stockfish(move_time_ms=cfg.move_time_ms)
-    elif state.mode == "local":
+    elif state.mode in ("local","btn_mode_local","local_2p"):
         setup_local(link, display, cfg)
         link.sendtoboard("SetupComplete")
         play_game(link, display, ctx, state, cfg)
-    elif state.mode == "puzzle":
+    elif state.mode in ("puzzle","puzzles","btn_mode_puzzle","btn_mode_puzzles"):
         # No Pico setup screens for puzzle yet.
         link.sendtoboard("SetupComplete")
         run_puzzle_mode(link, display)
         raise GoToModeSelect()
-    else:
+    elif state.mode == "online":
         run_online_mode(link, display, cfg)
+    else:
+        # Don't silently fall back to online; it hides mode-token bugs.
+        print(f"[MODE DISPATCH] unknown mode={state.mode!r}", flush=True)
+        try:
+            link.sendtoboard("error_unknown_mode")
+        except Exception:
+            pass
+        display.send("Unknown mode\n" + str(state.mode)[:18] + "\nOK=menu")
+        # Wait for OK or New (OK+HINT) then return to mode select
+        while True:
+            msg = link.getboard()
+            if msg is None:
+                continue
+            m = msg.strip().lower()
+            if m in ("n","new","in","newgame","btn_new","ok","btn_ok","btnok","hint","btn_hint"):
+                raise GoToModeSelect()
 
 
 # -------------------- Shutdown --------------------

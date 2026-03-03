@@ -274,11 +274,21 @@ class DailyPuzzleController:
     """Run the daily puzzle loop using the Pico for input and LEDs."""
 
     def __init__(
-        self, client: LichessClient, mode: str = "daily", *, theme: Optional[str] = None
+        self,
+        client: LichessClient,
+        mode: str = "daily",
+        *,
+        theme: Optional[str] = None,
+        theme_label: Optional[str] = None,
     ):
         self.client = client
         self.mode = (mode or "daily").strip().lower()
         self.theme = (theme or "").strip() or None
+        self.theme_label = (theme_label or "").strip() or None
+        # Track last /api/puzzle/next result to avoid returning the exact same
+        # puzzle when the user switches angles quickly.
+        self._last_next_angle: Optional[str] = None
+        self._last_next_id: Optional[str] = None
 
     def fetch_daily(self) -> Tuple[Optional[PuzzleState], Optional[str]]:
         payload = self.client.get_daily_puzzle()
@@ -437,6 +447,9 @@ class DailyPuzzleController:
                     back=6,
                     forward=10,
                 )
+                # Remember last next puzzle so rapid angle switching doesn't feel stuck.
+                self._last_next_angle = angle
+                self._last_next_id = puzzle_id
                 return (
                     PuzzleState(
                         puzzle_id=puzzle_id,
@@ -547,7 +560,7 @@ class DailyPuzzleController:
                     "Mix & Match"
                     if self.mode == "mix"
                     else (
-                        THEME_MAP.get(self.theme or "", "Theme")
+                        self.theme_label or THEME_MAP.get(self.theme or "", "Theme")
                         if self.mode == "theme"
                         else "Daily"
                     )
@@ -785,7 +798,17 @@ class DailyPuzzleController:
             if uci.startswith("m"):
                 uci = uci[1:]
             uci = "".join(ch for ch in uci if ch.isalnum())
-            if uci in ("ok", "btnok", "hint", "btn_hint", "n", "new", "in", "newgame", "btn_new"):
+            if uci in (
+                "ok",
+                "btnok",
+                "hint",
+                "btn_hint",
+                "n",
+                "new",
+                "in",
+                "newgame",
+                "btn_new",
+            ):
                 continue
             if len(uci) not in (4, 5):
                 continue

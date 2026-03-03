@@ -130,7 +130,7 @@ class LichessClient:
             return {"_error": str(e)}
 
     def get_next_puzzle(
-        self, *, angle: Optional[str] = None, theme: Optional[str] = None
+        self, *, angle: Optional[str] = None, theme: Optional[str] = None, difficulty: Optional[str] = None
     ) -> Dict[str, Any]:
         """Fetch the next puzzle.
 
@@ -146,6 +146,9 @@ class LichessClient:
             a = (angle or theme or "").strip()
             if a:
                 params["angle"] = a
+            d = (difficulty or "").strip()
+            if d:
+                params["difficulty"] = d
             r = requests.get(
                 f"{LICHESS_BASE}/api/puzzle/next",
                 headers=self.headers,
