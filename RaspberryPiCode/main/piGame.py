@@ -1433,10 +1433,15 @@ def run_puzzle_mode(link: BoardLink, display: Display) -> None:
         if label is None:
             raise GoToModeSelect()
 
-        # For openings, pass the opening label as the angle; lichess_client will slugify.
-        DailyPuzzleController(client, mode="theme", theme=label, theme_label=label).run(
-            link, display
-        )
+        # For openings, tell the controller this is an opening angle so it can enforce
+        # the opening match and apply stronger de-dupe behavior.
+        DailyPuzzleController(
+            client,
+            mode="theme",
+            theme=label,
+            theme_label=label,
+            theme_kind="opening",
+        ).run(link, display)
         return
 
     raise GoToModeSelect()
