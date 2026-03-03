@@ -417,7 +417,21 @@ class DailyPuzzleController:
             return None, "Theme missing"
 
         # 1) Fast path
-        payload = self.client.get_next_puzzle(angle=angle)
+        # Try a few times to avoid returning the exact same puzzle repeatedly
+        # (can happen when switching angles quickly, or when Lichess serves a stable sample).
+        payload: dict = {}
+        for _i in range(4):
+            payload = self.client.get_next_puzzle(angle=angle) or {}
+            try:
+                pid_try = str(((payload.get("puzzle") or {}).get("id")) or "")
+            except Exception:
+                pid_try = ""
+            if not pid_try:
+                break
+            if self._last_next_id and pid_try == self._last_next_id:
+                continue
+            break
+
         if isinstance(payload, dict) and not payload.get("_error"):
             puzzle = payload.get("puzzle") or {}
             game = payload.get("game") or {}

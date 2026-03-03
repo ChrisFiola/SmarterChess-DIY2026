@@ -5,7 +5,30 @@ Token via env var LICHESS_TOKEN.
 """
 from __future__ import annotations
 
-import os, json
+import os, json, re
+
+import unicodedata
+
+def _slugify_angle(a: str) -> str:
+    """Convert human labels into the 'training' slug used by Lichess URLs.
+
+    Examples:
+      "Caro-Kann Defense" -> "Caro-Kann_Defense"
+      "King's Indian Defense" -> "Kings_Indian_Defense"
+      "Grünfeld Defense" -> "Grunfeld_Defense"
+    """
+    s = (a or "").strip()
+    if not s:
+        return ""
+    # Remove accents/diacritics
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(ch for ch in s if not unicodedata.combining(ch))
+    # Drop apostrophes
+    s = s.replace("’", "").replace("'", "")
+    # Spaces -> underscores
+    s = re.sub(r"\s+", "_", s)
+    return s
+
 from typing import Dict, Any, Iterator, Optional
 import requests
 from requests.exceptions import RequestException
@@ -145,7 +168,7 @@ class LichessClient:
             # Prefer the newer `angle` param; fall back to `theme` for legacy.
             a = (angle or theme or "").strip()
             if a:
-                params["angle"] = a
+                params["angle"] = _slugify_angle(a)
             d = (difficulty or "").strip()
             if d:
                 params["difficulty"] = d
