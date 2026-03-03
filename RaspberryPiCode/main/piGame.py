@@ -1055,9 +1055,6 @@ def run_puzzle_mode(link: BoardLink, display: Display) -> None:
         # Tell the Pico we are entering a paged menu (1-4 + HINT next + OK back)
         link.sendtoboard("MenuPaged")
 
-        # Tell the Pico we are entering a paged menu (1-4 + HINT next + OK back)
-        link.sendtoboard("MenuPaged")
-
         while True:
             chunk = opts[page * per_page : page * per_page + per_page]
             display.send(_render_paged(title, page, pages, chunk))
@@ -1123,8 +1120,8 @@ def run_puzzle_mode(link: BoardLink, display: Display) -> None:
         DailyPuzzleController(client, mode="daily").run(link, display)
         return
 
-    if top.startswith("Mix"):
-        DailyPuzzleController(client, mode="mix").run(link, display)
+    if top.startswith("Random"):
+        DailyPuzzleController(client, mode="random").run(link, display)
         return
 
     # -------------------- Themes submenu --------------------
@@ -1133,10 +1130,12 @@ def run_puzzle_mode(link: BoardLink, display: Display) -> None:
     if themes_top is None:
         raise GoToModeSelect()
 
+    # ---- Phases (Lichess theme tags) ----
     if themes_top.startswith("Phases"):
         label = _paged_menu("PHASES", [t[1] for t in PHASE_THEMES])
         if label is None:
             raise GoToModeSelect()
+
         tag = None
         for k, v in PHASE_THEMES:
             if v == label:
@@ -1144,21 +1143,174 @@ def run_puzzle_mode(link: BoardLink, display: Display) -> None:
                 break
         if not tag:
             raise GoToModeSelect()
+
         DailyPuzzleController(client, mode="theme", theme=tag).run(link, display)
         return
 
+    # ---- Openings (Lichess opening angles) ----
     if themes_top.startswith("Openings"):
-        label = _paged_menu("OPENINGS", [t[1] for t in OPENING_THEMES])
-        if label is None:
+
+        def _opening_angle(name: str) -> str:
+            # Lichess opening "angle" strings match the /training/<...> pages.
+            # Using underscores is accepted; requests will URL-encode accents/apostrophes.
+            s = (name or "").strip()
+            s = s.replace("’", "'")
+            s = s.replace(" ", "_")
+            return s
+
+        OPENING_GROUPS = [
+            ("A to E", [
+                "Alekhine Defense",
+                "Amar",
+                "Amazon",
+                "Anderssen's",
+                "Barnes Defense",
+                "Barnes Opening",
+                "Benko Gambit",
+                "Benko Accepted",
+                "Benko Declined",
+                "Benoni",
+                "Bird",
+                "Bishop's",
+                "Blackmar",
+                "Blackmar Accepted",
+                "Blackmar Declined",
+                "Blumenfeld",
+                "Bogo-Indian",
+                "Borg",
+                "Canard",
+                "Caro-Kann",
+                "Carr",
+                "Catalan",
+                "Center Game",
+                "Center Accepted",
+                "Clemenz",
+                "Czech",
+                "Danish",
+                "Danish Accepted",
+                "Danish Declined",
+                "Dutch",
+                "East Indian",
+                "Elephant",
+                "English Defense",
+                "English Opening",
+                "Englund",
+                "Englund Declined",
+            ]),
+            ("F to I", [
+                "French Defense",
+                "Fried Fox",
+                "Goldsmith",
+                "Grob",
+                "Grunfeld",
+                "Gunderam",
+                "Hippopotamus",
+                "Horwitz",
+                "Hungarian",
+                "Indian",
+                "Italian Game",
+            ]),
+            ("K to N", [
+                "Kangaroo",
+                "King's Gambit",
+                "King's Accepted",
+                "King's Declined",
+                "King's Indian Attack",
+                "King's Indian Defense",
+                "King's Knight",
+                "King's Pawn",
+                "King's Pawn Opening",
+                "Kadas",
+                "Lasker Simul",
+                "Latvian",
+                "Latvian Accepted",
+                "Lemming",
+                "Lion",
+                "London System",
+                "Mexican",
+                "Mieses",
+                "Mikenas",
+                "Modern",
+                "Neo-Grunfeld",
+                "Nimzo-Indian",
+                "Nimzo-Larsen",
+                "Nimzowitsch",
+            ]),
+            ("O to R", [
+                "Old Indian",
+                "Owen",
+                "Paleface",
+                "Petrov's",
+                "Philidor",
+                "Pirc",
+                "Polish Defense",
+                "Polish Opening",
+                "Ponziani",
+                "Portuguese",
+                "Pseudo Queen Indian",
+                "Pterodactyl",
+                "Queen's Gambit",
+                "Queen's Gambit Accepted",
+                "Queen's Gambit Declined",
+                "Queen's Indian Accelerated",
+                "Queen's Indian Defense",
+                "Queen's Pawn",
+                "Rapport-Jobava",
+                "Rat",
+                "Richter-Veresov",
+                "Robatsch",
+                "Rubinstein",
+                "Ruy Lopez",
+                "Réti",
+            ]),
+            ("S to V", [
+                "Saragossa",
+                "Scandinavian",
+                "Scotch",
+                "Semi-Slav",
+                "Sicilian",
+                "Slav",
+                "Slav Indian",
+                "Sodium",
+                "St. George",
+                "Tarrasch",
+                "Three Knights",
+                "Torre",
+                "Trompowsky",
+                "Van Geet",
+                "Van't Kruijs",
+                "Vienna Gambit",
+                "Vienna Game",
+            ]),
+            ("W to Z", [
+                "Wade",
+                "Ware Defense",
+                "Ware Opening",
+                "Yusupov-Rubinstein",
+                "Zukertort",
+            ]),
+        ]
+
+        group_label = _paged_menu("OPENINGS", [g[0] for g in OPENING_GROUPS])
+        if group_label is None:
             raise GoToModeSelect()
-        tag = None
-        for k, v in OPENING_THEMES:
-            if v == label:
-                tag = k
+
+        openings = None
+        for gl, items in OPENING_GROUPS:
+            if gl == group_label:
+                openings = items
                 break
-        if not tag:
+        if not openings:
             raise GoToModeSelect()
-        DailyPuzzleController(client, mode="theme", theme=tag).run(link, display)
+
+        opening_name = _paged_menu(group_label, openings)
+        if opening_name is None:
+            raise GoToModeSelect()
+
+        angle = _opening_angle(opening_name)
+        DailyPuzzleController(
+            client, mode="theme", theme=angle, theme_label=opening_name
+        ).run(link, display)
         return
 
     raise GoToModeSelect()

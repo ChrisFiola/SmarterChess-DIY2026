@@ -267,6 +267,33 @@ def _find_best_start_board_from_pgn(
     return best_board, best_ply, best_len
 
 
+def _parse_puzzle_payload(
+    puzzle_id: str,
+    pgn: str,
+    initial_ply: int,
+    sol: List[str],
+    rating: Optional[int] = None,
+    themes: Optional[List[str]] = None,
+) -> PuzzleState:
+    """Build a PuzzleState from lichess puzzle/game payload fields."""
+    start_board, _used_ply, _matched = _find_best_start_board_from_pgn(
+        pgn=pgn,
+        initial_ply=int(initial_ply or 0),
+        sol=[str(m) for m in (sol or [])],
+        back=6,
+        forward=10,
+    )
+
+    return PuzzleState(
+        puzzle_id=str(puzzle_id or ""),
+        fen_start=start_board.fen(),
+        solution=[str(m) for m in (sol or [])],
+        themes=[str(x) for x in (themes or [])] if themes is not None else None,
+        rating=int(rating) if rating is not None else None,
+        idx=0,
+    )
+
+
 # -------------------- Controller --------------------
 
 
@@ -274,11 +301,17 @@ class DailyPuzzleController:
     """Run the daily puzzle loop using the Pico for input and LEDs."""
 
     def __init__(
-        self, client: LichessClient, mode: str = "daily", *, theme: Optional[str] = None
+        self,
+        client: LichessClient,
+        mode: str = "daily",
+        *,
+        theme: Optional[str] = None,
+        theme_label: Optional[str] = None,
     ):
         self.client = client
         self.mode = (mode or "daily").strip().lower()
         self.theme = (theme or "").strip() or None
+        self.theme_label = (theme_label or "").strip() or None
 
     def fetch_daily(self) -> Tuple[Optional[PuzzleState], Optional[str]]:
         payload = self.client.get_daily_puzzle()
@@ -320,6 +353,35 @@ class DailyPuzzleController:
             ),
             None,
         )
+
+    def fetch_random(self) -> Tuple[Optional[PuzzleState], Optional[str]]:
+        """Fetch a truly random puzzle from Lichess (no local ID list)."""
+        try:
+            payload = self.client.get_next_puzzle(theme=None)
+        except Exception as e:
+            return None, str(e)
+
+        if isinstance(payload, dict) and not payload.get("_error"):
+            try:
+                puzzle = payload.get("puzzle") or {}
+                game = payload.get("game") or {}
+                puzzle_id = str(puzzle.get("id") or "")
+                pgn = str(game.get("pgn") or "")
+                initial_ply = int(puzzle.get("initialPly") or 0)
+                sol = [str(x) for x in (puzzle.get("solution") or [])]
+                rating_raw = puzzle.get("rating")
+                rating = int(rating_raw) if rating_raw is not None else None
+                themes = [str(x) for x in (puzzle.get("themes") or [])]
+                return (
+                    _parse_puzzle_payload(
+                        puzzle_id, pgn, initial_ply, sol, rating, themes
+                    ),
+                    None,
+                )
+            except Exception as e:
+                return None, f"Parse error: {e}"
+
+        return None, "Random puzzle unavailable"
 
     def fetch_mix(self) -> Tuple[Optional[PuzzleState], Optional[str]]:
         if not os.path.exists(PUZZLE_IDS_PATH):
@@ -481,7 +543,9 @@ class DailyPuzzleController:
     def run(self, link: BoardLink, display: Display) -> None:
         # 1) Fetch puzzle
         display.send("Puzzle\nLoading…")
-        if self.mode == "mix":
+        if self.mode == "random":
+            st, err = self.fetch_random()
+        elif self.mode == "mix":
             st, err = self.fetch_mix()
         elif self.mode == "theme":
             st, err = self.fetch_theme(self.theme or "")
@@ -513,12 +577,21 @@ class DailyPuzzleController:
                 st.themes,
                 st.rating,
                 fallback=(
-                    "Mix & Match"
-                    if self.mode == "mix"
+                    "Random"
+                    if self.mode == "random"
                     else (
-                        THEME_MAP.get(self.theme or "", "Theme")
-                        if self.mode == "theme"
-                        else "Daily"
+                        "Mix & Match"
+                        if self.mode == "mix"
+                        else (
+                            (
+                                self.theme_label
+                                or THEME_MAP.get(
+                                    self.theme or "", (self.theme or "Theme")
+                                )
+                            )
+                            if self.mode == "theme"
+                            else "Daily"
+                        )
                     )
                 ),
             )
@@ -748,7 +821,17 @@ class DailyPuzzleController:
             if uci.startswith("m"):
                 uci = uci[1:]
             uci = "".join(ch for ch in uci if ch.isalnum())
-            if uci in ("ok", "btnok", "hint", "btn_hint", "n", "new", "in", "newgame", "btn_new"):
+            if uci in (
+                "ok",
+                "btnok",
+                "hint",
+                "btn_hint",
+                "n",
+                "new",
+                "in",
+                "newgame",
+                "btn_new",
+            ):
                 continue
             if len(uci) not in (4, 5):
                 continue
