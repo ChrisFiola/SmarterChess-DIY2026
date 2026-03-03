@@ -27,6 +27,23 @@ from piSerial import BoardLink
 from .lichess_client import LichessClient
 
 
+def _pgn_opening_info(pgn_text: str) -> Tuple[str, str]:
+    """Best-effort extraction of ECO / Opening from PGN headers.
+
+    Useful for journalctl debugging to confirm the fetched puzzle actually
+    belongs to the requested opening angle.
+    """
+    try:
+        game = chess.pgn.read_game(__import__("io").StringIO(pgn_text))
+        if game is None:
+            return "", ""
+        eco = str(game.headers.get("ECO") or "")
+        opn = str(game.headers.get("Opening") or "")
+        return eco, opn
+    except Exception:
+        return "", ""
+
+
 # -------------------- Mix puzzle ids --------------------
 
 PUZZLE_IDS_PATH = os.path.join(os.path.dirname(__file__), "puzzle_ids.txt")
@@ -289,6 +306,9 @@ class DailyPuzzleController:
         # puzzle when the user switches angles quickly.
         self._last_next_angle: Optional[str] = None
         self._last_next_id: Optional[str] = None
+        # Per-angle dedupe to avoid "same puzzle for different openings" when
+        # the server (or intermediaries) serve a sticky result.
+        self._last_next_id_by_angle: dict[str, str] = {}
 
     def fetch_daily(self) -> Tuple[Optional[PuzzleState], Optional[str]]:
         payload = self.client.get_daily_puzzle()
@@ -420,15 +440,24 @@ class DailyPuzzleController:
         # Try a few times to avoid returning the exact same puzzle repeatedly
         # (can happen when switching angles quickly, or when Lichess serves a stable sample).
         payload: dict = {}
-        for _i in range(4):
-            payload = self.client.get_next_puzzle(angle=angle) or {}
+        # NOTE: we pass a nonce to reduce caching, and we dedupe per-angle.
+        last_for_angle = self._last_next_id_by_angle.get(angle)
+        for _i in range(8):
+            payload = (
+                self.client.get_next_puzzle(
+                    angle=angle,
+                    nonce=str(random.getrandbits(32)),
+                )
+                or {}
+            )
             try:
                 pid_try = str(((payload.get("puzzle") or {}).get("id")) or "")
             except Exception:
                 pid_try = ""
             if not pid_try:
                 break
-            if self._last_next_id and pid_try == self._last_next_id:
+            # Dedupe against last result for this same angle.
+            if last_for_angle and pid_try == last_for_angle:
                 continue
             break
 
@@ -443,10 +472,12 @@ class DailyPuzzleController:
             themes = puzzle.get("themes") or []
             rating = puzzle.get("rating")
 
+            eco, opening = _pgn_opening_info(pgn)
+
             # Debug (journalctl): confirm angle/puzzle metadata
             try:
                 print(
-                    f"[PUZZLE NEXT] angle={angle!r} id={puzzle_id!r} rating={rating!r} themes={themes!r}",
+                    f"[PUZZLE NEXT] angle={angle!r} id={puzzle_id!r} rating={rating!r} eco={eco!r} opening={opening!r} themes={themes!r}",
                     flush=True,
                 )
             except Exception:
@@ -464,6 +495,7 @@ class DailyPuzzleController:
                 # Remember last next puzzle so rapid angle switching doesn't feel stuck.
                 self._last_next_angle = angle
                 self._last_next_id = puzzle_id
+                self._last_next_id_by_angle[angle] = puzzle_id
                 return (
                     PuzzleState(
                         puzzle_id=puzzle_id,

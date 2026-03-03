@@ -153,7 +153,12 @@ class LichessClient:
             return {"_error": str(e)}
 
     def get_next_puzzle(
-        self, *, angle: Optional[str] = None, theme: Optional[str] = None, difficulty: Optional[str] = None
+        self,
+        *,
+        angle: Optional[str] = None,
+        theme: Optional[str] = None,
+        difficulty: Optional[str] = None,
+        nonce: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Fetch the next puzzle.
 
@@ -166,15 +171,25 @@ class LichessClient:
         try:
             params: Dict[str, Any] = {}
             # Prefer the newer `angle` param; fall back to `theme` for legacy.
+            # IMPORTANT: Lichess expects the *human* angle/opening label (URL encoded).
+            # Slugifying breaks openings like "Ruy Lopez" / "Petrov's" / accented names.
             a = (angle or theme or "").strip()
             if a:
-                params["angle"] = _slugify_angle(a)
+                params["angle"] = a
             d = (difficulty or "").strip()
             if d:
                 params["difficulty"] = d
+            # Add a nonce to reduce caching and help diversify results.
+            if nonce:
+                params["r"] = str(nonce)
+
+            hdrs = dict(self.headers)
+            hdrs["Cache-Control"] = "no-cache"
+            hdrs["Pragma"] = "no-cache"
+
             r = requests.get(
                 f"{LICHESS_BASE}/api/puzzle/next",
-                headers=self.headers,
+                headers=hdrs,
                 params=params,
                 timeout=15,
             )
