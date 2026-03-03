@@ -425,24 +425,41 @@ class DailyPuzzleController:
         """Fetch a puzzle for a given Lichess *angle*.
 
         Angle can be either:
-          - a puzzle theme/motif (same taxonomy as lichess.org/training/themes)
-          - an opening name (from lichess.org/training/openings)
+        - a puzzle theme/motif/phase tag (same taxonomy as lichess.org/training/themes)
+        - an opening name (from lichess.org/training/openings)
 
         Primary strategy: use /api/puzzle/next?angle=<angle> (fast).
         Fallback strategy: sample random IDs from puzzle_ids.txt and filter
-        by returned puzzle themes (slower, but works when /next is blocked).
+        by returned puzzle themes (slower).
         """
         angle = (angle or "").strip()
         if not angle:
             return None, "Theme missing"
 
-        # 1) Fast path
-        # Try a few times to avoid returning the exact same puzzle repeatedly
-        # (can happen when switching angles quickly, or when Lichess serves a stable sample).
+        PHASE_TAGS = {
+            "opening",
+            "middlegame",
+            "endgame",
+            "rookEndgame",
+            "bishopEndgame",
+            "pawnEndgame",
+            "knightEndgame",
+            "queenEndgame",
+        }
+
+        def _is_opening_name(a: str) -> bool:
+            # Heuristic: opening names generally contain a space, apostrophe, hyphen, or "Defense/Gambit/Opening/System"
+            # while theme tags are camelCase tokens.
+            if a in PHASE_TAGS:
+                return False
+            return True
+
+        # 1) Fast path (api/puzzle/next)
         payload: dict = {}
-        # NOTE: we pass a nonce to reduce caching, and we dedupe per-angle.
         last_for_angle = self._last_next_id_by_angle.get(angle)
-        for _i in range(8):
+
+        # Try a few times to avoid same puzzle for same angle AND enforce phase correctness.
+        for _ in range(8):
             payload = (
                 self.client.get_next_puzzle(
                     angle=angle,
@@ -450,15 +467,50 @@ class DailyPuzzleController:
                 )
                 or {}
             )
-            try:
-                pid_try = str(((payload.get("puzzle") or {}).get("id")) or "")
-            except Exception:
-                pid_try = ""
+
+            if not isinstance(payload, dict) or payload.get("_error"):
+                break
+
+            puzzle = payload.get("puzzle") or {}
+            game = payload.get("game") or {}
+
+            pid_try = str(puzzle.get("id") or "")
+            pgn_try = str(game.get("pgn") or "")
+            themes_try = puzzle.get("themes") or []
+
             if not pid_try:
                 break
+
             # Dedupe against last result for this same angle.
             if last_for_angle and pid_try == last_for_angle:
                 continue
+
+            # --- PHASE ENFORCEMENT ---
+            # If angle is a phase tag, require it to be present in puzzle themes.
+            if angle in PHASE_TAGS:
+                try:
+                    tset = set(str(x) for x in (themes_try or []))
+                except Exception:
+                    tset = set()
+                if angle not in tset:
+                    # Not actually an "opening/middlegame/endgame" puzzle; retry.
+                    continue
+
+            # --- OPENING NAME ENFORCEMENT (best-effort) ---
+            # If angle looks like an opening name, validate using PGN headers when available.
+            # If headers are missing/empty, don't hard-fail; accept.
+            if _is_opening_name(angle):
+                try:
+                    eco_try, opening_try = _pgn_opening_info(pgn_try)
+                except Exception:
+                    eco_try, opening_try = ("", "")
+                # If lichess included an Opening header, require it to match the requested opening (substring match).
+                if opening_try:
+                    # Case-insensitive contains match is robust for variants like "Sicilian Defense: Najdorf"
+                    if angle.lower() not in opening_try.lower():
+                        continue
+
+            # Passed all checks; keep this payload
             break
 
         if isinstance(payload, dict) and not payload.get("_error"):
@@ -474,7 +526,7 @@ class DailyPuzzleController:
 
             eco, opening = _pgn_opening_info(pgn)
 
-            # Debug (journalctl): confirm angle/puzzle metadata
+            # Debug (journalctl)
             try:
                 print(
                     f"[PUZZLE NEXT] angle={angle!r} id={puzzle_id!r} rating={rating!r} eco={eco!r} opening={opening!r} themes={themes!r}",
@@ -492,7 +544,6 @@ class DailyPuzzleController:
                     back=6,
                     forward=10,
                 )
-                # Remember last next puzzle so rapid angle switching doesn't feel stuck.
                 self._last_next_angle = angle
                 self._last_next_id = puzzle_id
                 self._last_next_id_by_angle[angle] = puzzle_id
@@ -508,12 +559,22 @@ class DailyPuzzleController:
                     None,
                 )
 
-        # 2) Fallback path: sample from local ID list
+        # 2) Fallback path: only works for THEME TAGS (because it filters by 'themes')
         if not os.path.exists(PUZZLE_IDS_PATH):
             err = (
                 str(payload.get("_error") or "Theme fetch failed")
                 if isinstance(payload, dict)
                 else "Theme fetch failed"
+            )
+            return None, err
+
+        # If we're requesting an opening name, the local fallback can't reliably filter,
+        # because the local list filter is based on puzzle 'themes' tags.
+        if _is_opening_name(angle):
+            err = (
+                str(payload.get("_error") or "Opening fetch failed")
+                if isinstance(payload, dict)
+                else "Opening fetch failed"
             )
             return None, err
 

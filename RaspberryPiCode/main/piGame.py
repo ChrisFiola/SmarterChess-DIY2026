@@ -409,7 +409,14 @@ def select_mode(link: BoardLink, display: Display, state: RuntimeState) -> str:
             return "local"
         # Puzzles: accept both historical token variants (singular/plural)
         # because the Pico menu firmware has used both.
-        if m in ("4", "puzzle", "puzzles", "daily", "btn_mode_puzzle", "btn_mode_puzzles"):
+        if m in (
+            "4",
+            "puzzle",
+            "puzzles",
+            "daily",
+            "btn_mode_puzzle",
+            "btn_mode_puzzles",
+        ):
             return "puzzle"
         link.sendtoboard("error_unknown_mode")
         display.send("Unknown mode\n" + m + "\nSend again")
@@ -798,7 +805,7 @@ def play_game(
     time.sleep(0.3)
 
     # Initial side to move
-    if state.mode in ("stockfish","pc","btn_mode_pc","vs_computer","vs"):
+    if state.mode in ("stockfish", "pc", "btn_mode_pc", "vs_computer", "vs"):
         if not cfg.human_is_white:
             display.send("Computer starts first.")
             time.sleep(0.4)
@@ -1096,62 +1103,204 @@ def run_puzzle_mode(link: BoardLink, display: Display) -> None:
     # Opening angles (names) for /api/puzzle/next?angle=<opening name>.
     # These are *not* the same as the theme tags under /training/themes.
     OPENING_GROUPS: "List[Tuple[str, List[str]]]" = [
-        ('A to E', ['Alekhine Defense', 'Amar Opening', 'Amazon Attack', "Anderssen's Opening", 'Barnes Defense', 'Barnes Opening', 'Benko Gambit', 'Benko Gambit Accepted', 'Benko Gambit Declined', 'Benoni Defense', 'Bird Opening', "Bishop's Opening", 'Blackmar Gambit', 'Blackmar Gambit Accepted', 'Blackmar Gambit Declined', 'Blumenfeld Countergambit', 'Bogo-Indian Defense', 'Borg Defense', 'Canard Opening', 'Caro-Kann Defense', 'Carr Defense', 'Catalan Opening', 'Center Game', 'Center Counter', 'Clemenz Opening', 'Czech Defense', 'Danish Gambit', 'Danish Gambit Accepted', 'Danish Gambit Declined', 'Dutch Defense', 'East Indian Defense', 'Elephant Gambit', 'English Defense', 'English Opening', 'Englund Gambit', 'Englund Gambit Declined']),
-        ('F to I', ['French Defense', 'Fried Fox Defense', 'Goldsmith Defense', 'Grob Opening', 'Grunfeld Defense', 'Gunderam Defense', 'Hippopotamus Defense', 'Horwitz Defense', 'Hungarian Opening', 'Indian Defense', 'Italian Game']),
-        ('K to N', ['Kangaroo Defense', "King's Gambit", "King's Gambit Accepted", "King's Gambit Declined", "King's Indian Attack", "King's Indian Defense", "King's Knight Opening", "King's Pawn Game", "King's Pawn Opening", 'Kadas Opening', 'Lasker Simul Special', 'Latvian Gambit', 'Latvian Gambit Accepted', 'Lemming Defense', 'Lion Defense', 'London System', 'Mexican Defense', 'Mieses Opening', 'Mikenas Defense', 'Modern Defense', 'Neo-Grunfeld Defense', 'Nimzo-Indian Defense', 'Nimzo-Larsen Attack', 'Nimzowitsch Defense']),
-        ('O to R', ['Old Indian Defense', 'Owen Defense', 'Paleface Attack', "Petrov's Defense", 'Philidor Defense', 'Pirc Defense', 'Polish Defense', 'Polish Opening', 'Ponziani Opening', 'Portuguese Defense', "Pseudo-Queen's Indian Defense", 'Pterodactyl Defense', "Queen's Gambit", "Queen's Gambit Accepted", "Queen's Gambit Declined", "Queen's Indian Accelerated", "Queen's Indian Defense", "Queen's Pawn Game", 'Rapport-Jobava System', 'Rat Defense', 'Richter-Veresov Attack', 'Robatsch Defense', 'Rubinstein Opening', 'Ruy Lopez', 'Réti Opening']),
-        ('S to V', ['Saragossa Opening', 'Scandinavian Defense', 'Scotch Game', 'Semi-Slav Defense', 'Sicilian Defense', 'Slav Defense', 'Slav Indian', 'Sodium Attack', 'St. George Defense', 'Tarrasch Defense', 'Three Knights Game', 'Torre Attack', 'Trompowsky Attack', 'Van Geet Opening', "Van't Kruijs Opening", 'Vienna Gambit', 'Vienna Game']),
-        ('W to Z', ['Wade Defense', 'Ware Defense', 'Ware Opening', 'Yusupov-Rubinstein System', 'Zukertort Opening']),
+        (
+            "A to E",
+            [
+                "Alekhine Defense",
+                "Amar Opening",
+                "Amazon Attack",
+                "Anderssen's Opening",
+                "Barnes Defense",
+                "Barnes Opening",
+                "Benko Gambit",
+                "Benko Gambit Accepted",
+                "Benko Gambit Declined",
+                "Benoni Defense",
+                "Bird Opening",
+                "Bishop's Opening",
+                "Blackmar Gambit",
+                "Blackmar Gambit Accepted",
+                "Blackmar Gambit Declined",
+                "Blumenfeld Countergambit",
+                "Bogo-Indian Defense",
+                "Borg Defense",
+                "Canard Opening",
+                "Caro-Kann Defense",
+                "Carr Defense",
+                "Catalan Opening",
+                "Center Game",
+                "Center Counter",
+                "Clemenz Opening",
+                "Czech Defense",
+                "Danish Gambit",
+                "Danish Gambit Accepted",
+                "Danish Gambit Declined",
+                "Dutch Defense",
+                "East Indian Defense",
+                "Elephant Gambit",
+                "English Defense",
+                "English Opening",
+                "Englund Gambit",
+                "Englund Gambit Declined",
+            ],
+        ),
+        (
+            "F to I",
+            [
+                "French Defense",
+                "Fried Fox Defense",
+                "Goldsmith Defense",
+                "Grob Opening",
+                "Grunfeld Defense",
+                "Gunderam Defense",
+                "Hippopotamus Defense",
+                "Horwitz Defense",
+                "Hungarian Opening",
+                "Indian Defense",
+                "Italian Game",
+            ],
+        ),
+        (
+            "K to N",
+            [
+                "Kangaroo Defense",
+                "King's Gambit",
+                "King's Gambit Accepted",
+                "King's Gambit Declined",
+                "King's Indian Attack",
+                "King's Indian Defense",
+                "King's Knight Opening",
+                "King's Pawn Game",
+                "King's Pawn Opening",
+                "Kadas Opening",
+                "Lasker Simul Special",
+                "Latvian Gambit",
+                "Latvian Gambit Accepted",
+                "Lemming Defense",
+                "Lion Defense",
+                "London System",
+                "Mexican Defense",
+                "Mieses Opening",
+                "Mikenas Defense",
+                "Modern Defense",
+                "Neo-Grunfeld Defense",
+                "Nimzo-Indian Defense",
+                "Nimzo-Larsen Attack",
+                "Nimzowitsch Defense",
+            ],
+        ),
+        (
+            "O to R",
+            [
+                "Old Indian Defense",
+                "Owen Defense",
+                "Paleface Attack",
+                "Petrov's Defense",
+                "Philidor Defense",
+                "Pirc Defense",
+                "Polish Defense",
+                "Polish Opening",
+                "Ponziani Opening",
+                "Portuguese Defense",
+                "Pseudo-Queen's Indian Defense",
+                "Pterodactyl Defense",
+                "Queen's Gambit",
+                "Queen's Gambit Accepted",
+                "Queen's Gambit Declined",
+                "Queen's Indian Accelerated",
+                "Queen's Indian Defense",
+                "Queen's Pawn Game",
+                "Rapport-Jobava System",
+                "Rat Defense",
+                "Richter-Veresov Attack",
+                "Robatsch Defense",
+                "Rubinstein Opening",
+                "Ruy Lopez",
+                "Réti Opening",
+            ],
+        ),
+        (
+            "S to V",
+            [
+                "Saragossa Opening",
+                "Scandinavian Defense",
+                "Scotch Game",
+                "Semi-Slav Defense",
+                "Sicilian Defense",
+                "Slav Defense",
+                "Slav Indian",
+                "Sodium Attack",
+                "St. George Defense",
+                "Tarrasch Defense",
+                "Three Knights Game",
+                "Torre Attack",
+                "Trompowsky Attack",
+                "Van Geet Opening",
+                "Van't Kruijs Opening",
+                "Vienna Gambit",
+                "Vienna Game",
+            ],
+        ),
+        (
+            "W to Z",
+            [
+                "Wade Defense",
+                "Ware Defense",
+                "Ware Opening",
+                "Yusupov-Rubinstein System",
+                "Zukertort Opening",
+            ],
+        ),
     ]
     ALL_OPENINGS: "List[str]" = [
-        'Alekhine Defense',
-        'Amar Opening',
-        'Amazon Attack',
+        "Alekhine Defense",
+        "Amar Opening",
+        "Amazon Attack",
         "Anderssen's Opening",
-        'Barnes Defense',
-        'Barnes Opening',
-        'Benko Gambit',
-        'Benko Gambit Accepted',
-        'Benko Gambit Declined',
-        'Benoni Defense',
-        'Bird Opening',
+        "Barnes Defense",
+        "Barnes Opening",
+        "Benko Gambit",
+        "Benko Gambit Accepted",
+        "Benko Gambit Declined",
+        "Benoni Defense",
+        "Bird Opening",
         "Bishop's Opening",
-        'Blackmar Gambit',
-        'Blackmar Gambit Accepted',
-        'Blackmar Gambit Declined',
-        'Blumenfeld Countergambit',
-        'Bogo-Indian Defense',
-        'Borg Defense',
-        'Canard Opening',
-        'Caro-Kann Defense',
-        'Carr Defense',
-        'Catalan Opening',
-        'Center Game',
-        'Center Counter',
-        'Clemenz Opening',
-        'Czech Defense',
-        'Danish Gambit',
-        'Danish Gambit Accepted',
-        'Danish Gambit Declined',
-        'Dutch Defense',
-        'East Indian Defense',
-        'Elephant Gambit',
-        'English Defense',
-        'English Opening',
-        'Englund Gambit',
-        'Englund Gambit Declined',
-        'French Defense',
-        'Fried Fox Defense',
-        'Goldsmith Defense',
-        'Grob Opening',
-        'Grunfeld Defense',
-        'Gunderam Defense',
-        'Hippopotamus Defense',
-        'Horwitz Defense',
-        'Hungarian Opening',
-        'Indian Defense',
-        'Italian Game',
-        'Kangaroo Defense',
+        "Blackmar Gambit",
+        "Blackmar Gambit Accepted",
+        "Blackmar Gambit Declined",
+        "Blumenfeld Countergambit",
+        "Bogo-Indian Defense",
+        "Borg Defense",
+        "Canard Opening",
+        "Caro-Kann Defense",
+        "Carr Defense",
+        "Catalan Opening",
+        "Center Game",
+        "Center Counter",
+        "Clemenz Opening",
+        "Czech Defense",
+        "Danish Gambit",
+        "Danish Gambit Accepted",
+        "Danish Gambit Declined",
+        "Dutch Defense",
+        "East Indian Defense",
+        "Elephant Gambit",
+        "English Defense",
+        "English Opening",
+        "Englund Gambit",
+        "Englund Gambit Declined",
+        "French Defense",
+        "Fried Fox Defense",
+        "Goldsmith Defense",
+        "Grob Opening",
+        "Grunfeld Defense",
+        "Gunderam Defense",
+        "Hippopotamus Defense",
+        "Horwitz Defense",
+        "Hungarian Opening",
+        "Indian Defense",
+        "Italian Game",
+        "Kangaroo Defense",
         "King's Gambit",
         "King's Gambit Accepted",
         "King's Gambit Declined",
@@ -1160,68 +1309,68 @@ def run_puzzle_mode(link: BoardLink, display: Display) -> None:
         "King's Knight Opening",
         "King's Pawn Game",
         "King's Pawn Opening",
-        'Kadas Opening',
-        'Lasker Simul Special',
-        'Latvian Gambit',
-        'Latvian Gambit Accepted',
-        'Lemming Defense',
-        'Lion Defense',
-        'London System',
-        'Mexican Defense',
-        'Mieses Opening',
-        'Mikenas Defense',
-        'Modern Defense',
-        'Neo-Grunfeld Defense',
-        'Nimzo-Indian Defense',
-        'Nimzo-Larsen Attack',
-        'Nimzowitsch Defense',
-        'Old Indian Defense',
-        'Owen Defense',
-        'Paleface Attack',
+        "Kadas Opening",
+        "Lasker Simul Special",
+        "Latvian Gambit",
+        "Latvian Gambit Accepted",
+        "Lemming Defense",
+        "Lion Defense",
+        "London System",
+        "Mexican Defense",
+        "Mieses Opening",
+        "Mikenas Defense",
+        "Modern Defense",
+        "Neo-Grunfeld Defense",
+        "Nimzo-Indian Defense",
+        "Nimzo-Larsen Attack",
+        "Nimzowitsch Defense",
+        "Old Indian Defense",
+        "Owen Defense",
+        "Paleface Attack",
         "Petrov's Defense",
-        'Philidor Defense',
-        'Pirc Defense',
-        'Polish Defense',
-        'Polish Opening',
-        'Ponziani Opening',
-        'Portuguese Defense',
+        "Philidor Defense",
+        "Pirc Defense",
+        "Polish Defense",
+        "Polish Opening",
+        "Ponziani Opening",
+        "Portuguese Defense",
         "Pseudo-Queen's Indian Defense",
-        'Pterodactyl Defense',
+        "Pterodactyl Defense",
         "Queen's Gambit",
         "Queen's Gambit Accepted",
         "Queen's Gambit Declined",
         "Queen's Indian Accelerated",
         "Queen's Indian Defense",
         "Queen's Pawn Game",
-        'Rapport-Jobava System',
-        'Rat Defense',
-        'Richter-Veresov Attack',
-        'Robatsch Defense',
-        'Rubinstein Opening',
-        'Ruy Lopez',
-        'Réti Opening',
-        'Saragossa Opening',
-        'Scandinavian Defense',
-        'Scotch Game',
-        'Semi-Slav Defense',
-        'Sicilian Defense',
-        'Slav Defense',
-        'Slav Indian',
-        'Sodium Attack',
-        'St. George Defense',
-        'Tarrasch Defense',
-        'Three Knights Game',
-        'Torre Attack',
-        'Trompowsky Attack',
-        'Van Geet Opening',
+        "Rapport-Jobava System",
+        "Rat Defense",
+        "Richter-Veresov Attack",
+        "Robatsch Defense",
+        "Rubinstein Opening",
+        "Ruy Lopez",
+        "Réti Opening",
+        "Saragossa Opening",
+        "Scandinavian Defense",
+        "Scotch Game",
+        "Semi-Slav Defense",
+        "Sicilian Defense",
+        "Slav Defense",
+        "Slav Indian",
+        "Sodium Attack",
+        "St. George Defense",
+        "Tarrasch Defense",
+        "Three Knights Game",
+        "Torre Attack",
+        "Trompowsky Attack",
+        "Van Geet Opening",
         "Van't Kruijs Opening",
-        'Vienna Gambit',
-        'Vienna Game',
-        'Wade Defense',
-        'Ware Defense',
-        'Ware Opening',
-        'Yusupov-Rubinstein System',
-        'Zukertort Opening',
+        "Vienna Gambit",
+        "Vienna Game",
+        "Wade Defense",
+        "Ware Defense",
+        "Ware Opening",
+        "Yusupov-Rubinstein System",
+        "Zukertort Opening",
     ]
 
     # -------------------- Top-level puzzle menu --------------------
@@ -1256,12 +1405,16 @@ def run_puzzle_mode(link: BoardLink, display: Display) -> None:
                 break
         if not tag:
             raise GoToModeSelect()
-        if tag == "opening":
-            import random as _random
-            opening = _random.choice(ALL_OPENINGS)
-            DailyPuzzleController(client, mode="theme", theme=opening, theme_label=opening).run(link, display)
-        else:
-            DailyPuzzleController(client, mode="theme", theme=tag, theme_label=label).run(link, display)
+
+        # IMPORTANT:
+        # "Phases -> Opening" must request the PHASE tag 'opening' (lichess training/themes),
+        # NOT a random opening name (lichess training/openings).
+        DailyPuzzleController(
+            client,
+            mode="theme",
+            theme=tag,  # tag is e.g. 'opening', 'middlegame', 'endgame', ...
+            theme_label=label,  # label is "Opening", "Middlegame", ...
+        ).run(link, display)
         return
 
     if themes_top.startswith("Openings"):
@@ -1281,7 +1434,9 @@ def run_puzzle_mode(link: BoardLink, display: Display) -> None:
             raise GoToModeSelect()
 
         # For openings, pass the opening label as the angle; lichess_client will slugify.
-        DailyPuzzleController(client, mode="theme", theme=label, theme_label=label).run(link, display)
+        DailyPuzzleController(client, mode="theme", theme=label, theme_label=label).run(
+            link, display
+        )
         return
 
     raise GoToModeSelect()
@@ -1294,7 +1449,7 @@ def mode_dispatch(
     state: RuntimeState,
     cfg: GameConfig,
 ) -> None:
-    if state.mode in ("stockfish","pc","btn_mode_pc","vs_computer","vs"):
+    if state.mode in ("stockfish", "pc", "btn_mode_pc", "vs_computer", "vs"):
         setup_stockfish(link, display, cfg)
         link.sendtoboard("SetupComplete")
         # Refactored: run through the explicit GameController state machine.
@@ -1312,11 +1467,11 @@ def mode_dispatch(
             human_is_white=cfg.human_is_white,
         )
         controller.play_stockfish(move_time_ms=cfg.move_time_ms)
-    elif state.mode in ("local","btn_mode_local","local_2p"):
+    elif state.mode in ("local", "btn_mode_local", "local_2p"):
         setup_local(link, display, cfg)
         link.sendtoboard("SetupComplete")
         play_game(link, display, ctx, state, cfg)
-    elif state.mode in ("puzzle","puzzles","btn_mode_puzzle","btn_mode_puzzles"):
+    elif state.mode in ("puzzle", "puzzles", "btn_mode_puzzle", "btn_mode_puzzles"):
         # No Pico setup screens for puzzle yet.
         link.sendtoboard("SetupComplete")
         run_puzzle_mode(link, display)
@@ -1337,7 +1492,18 @@ def mode_dispatch(
             if msg is None:
                 continue
             m = msg.strip().lower()
-            if m in ("n","new","in","newgame","btn_new","ok","btn_ok","btnok","hint","btn_hint"):
+            if m in (
+                "n",
+                "new",
+                "in",
+                "newgame",
+                "btn_new",
+                "ok",
+                "btn_ok",
+                "btnok",
+                "hint",
+                "btn_hint",
+            ):
                 raise GoToModeSelect()
 
 
