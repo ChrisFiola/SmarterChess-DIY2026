@@ -593,6 +593,7 @@ class DailyPuzzleController:
         angle = (angle or "").strip()
         if not angle:
             return None, "Theme missing"
+        difficulty: Optional[str] = None
 
         PHASE_TAGS = {
             "opening",
@@ -628,12 +629,15 @@ class DailyPuzzleController:
             batch_payload: dict = {}
             batch_items = []
             try:
-                batch_payload = self.client.get_puzzle_batch(
-                    angle=angle,
-                    nb=min(int(tries), 50),
-                    difficulty=difficulty,
-                    # color only works when nb=1 (per Lichess docs), so don't send it for batches.
-                ) or {}
+                batch_payload = (
+                    self.client.get_puzzle_batch(
+                        angle=angle,
+                        nb=min(int(tries), 50),
+                        difficulty=difficulty,
+                        # color only works when nb=1 (per Lichess docs), so don't send it for batches.
+                    )
+                    or {}
+                )
                 # Lichess returns a PuzzleBatchSelect object (puzzles list), but be defensive.
                 if isinstance(batch_payload, dict):
                     batch_items = batch_payload.get("puzzles") or []
@@ -667,7 +671,9 @@ class DailyPuzzleController:
                         try:
                             tset = set(
                                 str(x)
-                                for x in ((payload.get("puzzle") or {}).get("themes") or [])
+                                for x in (
+                                    (payload.get("puzzle") or {}).get("themes") or []
+                                )
                             )
                         except Exception:
                             tset = set()
