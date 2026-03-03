@@ -503,6 +503,10 @@ class DailyPuzzleController:
         except Exception:
             pass
 
+        # Disable hints on the Pico during setup so no hint requests can be
+        # triggered while the user is placing pieces.
+        link.sendtoboard("hint_disable")
+
         link.sendtoboard("puzzle_setup_begin")
         try:
             label = _format_puzzle_label(
@@ -569,6 +573,8 @@ class DailyPuzzleController:
             display.send(f"{label}\nSetup done\nPuzzle begins")
             __import__("time").sleep(0.8)
         finally:
+            # Re-enable hints and always end setup mode.
+            link.sendtoboard("hint_enable")
             link.sendtoboard("puzzle_setup_done")
 
         # 3) Load board state
