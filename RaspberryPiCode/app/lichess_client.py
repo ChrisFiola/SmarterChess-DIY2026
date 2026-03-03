@@ -197,3 +197,44 @@ class LichessClient:
             return r.json()
         except RequestException as e:
             return {"_error": str(e)}
+
+    def get_puzzle_batch(
+        self,
+        *,
+        angle: str,
+        nb: int = 20,
+        difficulty: Optional[str] = None,
+        color: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Fetch a batch of puzzles.
+
+        Uses GET /api/puzzle/batch/{angle}.
+        Helpful when /api/puzzle/next keeps returning the same puzzle for a given angle.
+        """
+        try:
+            a = (_slugify_angle(angle) or "").strip()
+            if not a:
+                return {"_error": "angle is required"}
+
+            params: Dict[str, Any] = {"nb": max(1, min(int(nb), 50))}
+            d = (difficulty or "").strip()
+            if d:
+                params["difficulty"] = d
+            c = (color or "").strip()
+            if c:
+                params["color"] = c
+
+            r = requests.get(
+                f"{LICHESS_BASE}/api/puzzle/batch/{a}",
+                headers={
+                    **self.headers,
+                    "Cache-Control": "no-cache",
+                    "Pragma": "no-cache",
+                },
+                params=params,
+                timeout=20,
+            )
+            r.raise_for_status()
+            return r.json()
+        except RequestException as e:
+            return {"_error": str(e)}

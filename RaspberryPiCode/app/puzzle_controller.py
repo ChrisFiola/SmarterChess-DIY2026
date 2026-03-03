@@ -391,11 +391,14 @@ class DailyPuzzleController:
         *,
         theme: Optional[str] = None,
         theme_label: Optional[str] = None,
+        theme_kind: Optional[str] = None,
     ):
         self.client = client
         self.mode = (mode or "daily").strip().lower()
         self.theme = (theme or "").strip() or None
         self.theme_label = (theme_label or "").strip() or None
+        # theme_kind: None|'theme'|'opening'
+        self.theme_kind = (theme_kind or "").strip().lower() or None
         # Track last /api/puzzle/next result to avoid returning the exact same
         # puzzle when the user switches angles quickly.
         self._last_next_angle: Optional[str] = None
@@ -494,64 +497,86 @@ class DailyPuzzleController:
         )
 
     def fetch_mix(self) -> Tuple[Optional[PuzzleState], Optional[str]]:
+        """Fetch a random puzzle from the local puzzle_ids.txt list.
+
+        We do *not* mark puzzles as seen on load. We only skip puzzles that are
+        already completed (seen_puzzles.json), and we only record completion when
+        the user fully solves the puzzle.
+        """
         if not os.path.exists(PUZZLE_IDS_PATH):
             return None, "puzzle_ids.txt missing"
 
-        pid = _pick_random_line_seek(PUZZLE_IDS_PATH)
-        if not pid:
-            return None, "No valid puzzle IDs found"
+        # Try multiple times to avoid returning already-completed puzzles.
+        last_err: Optional[str] = None
+        for _ in range(120):
+            pid = _pick_random_line_seek(PUZZLE_IDS_PATH)
+            pid = "".join(ch for ch in (pid or "") if ch.isalnum())
+            if not pid:
+                continue
 
-        pid = "".join(ch for ch in pid if ch.isalnum())
-        if not pid:
-            return None, "Invalid puzzle ID line"
+            # If already completed, try another.
+            if pid in self._seen_global:
+                continue
 
-        payload = self.client.get_puzzle(pid)
-        if not isinstance(payload, dict) or payload.get("_error"):
-            return None, str(payload.get("_error") or "Puzzle fetch failed")
+            payload = self.client.get_puzzle(pid)
+            if not isinstance(payload, dict) or payload.get("_error"):
+                last_err = str(payload.get("_error") or "Puzzle fetch failed")
+                continue
 
-        puzzle = payload.get("puzzle") or {}
-        game = payload.get("game") or {}
+            puzzle = payload.get("puzzle") or {}
+            game = payload.get("game") or {}
 
-        puzzle_id = str(puzzle.get("id") or pid)
-        pgn = str(game.get("pgn") or "")
-        initial_ply = int(puzzle.get("initialPly") or 0)
-        solution = puzzle.get("solution") or []
+            puzzle_id = str(puzzle.get("id") or pid)
+            if puzzle_id and puzzle_id in self._seen_global:
+                continue
 
-        themes = puzzle.get("themes") or []
-        rating = puzzle.get("rating")
+            pgn = str(game.get("pgn") or "")
+            initial_ply = int(puzzle.get("initialPly") or 0)
+            solution = puzzle.get("solution") or []
+            themes = puzzle.get("themes") or []
+            rating = puzzle.get("rating")
 
-        if not puzzle_id or not pgn or not solution:
-            return None, "Puzzle response missing required fields"
+            if not puzzle_id or not pgn or not solution:
+                last_err = "Puzzle response missing required fields"
+                continue
 
-        sol = [str(m) for m in solution]
+            sol = [str(m) for m in solution]
 
-        start_board, _used_ply, _matched = _find_best_start_board_from_pgn(
-            pgn=pgn,
-            initial_ply=initial_ply,
-            sol=sol,
-            back=6,
-            forward=10,
-        )
-
-        # Debug (journalctl)
-        try:
-            print(
-                f"[PUZZLE MIX] id={puzzle_id!r} rating={rating!r} themes={themes!r} initialPly={initial_ply}",
-                flush=True,
+            start_board, _used_ply, _matched = _find_best_start_board_from_pgn(
+                pgn=pgn,
+                initial_ply=initial_ply,
+                sol=sol,
+                back=6,
+                forward=10,
             )
-        except Exception:
-            pass
 
+            # Debug (journalctl)
+            try:
+                print(
+                    f"[PUZZLE MIX] id={puzzle_id!r} rating={rating!r} themes={themes!r} initialPly={initial_ply}",
+                    flush=True,
+                )
+            except Exception:
+                pass
+
+            return (
+                PuzzleState(
+                    puzzle_id=puzzle_id,
+                    fen_start=start_board.fen(),
+                    solution=sol,
+                    themes=[str(x) for x in (themes or [])],
+                    rating=int(rating) if rating is not None else None,
+                    idx=0,
+                ),
+                None,
+            )
+
+        # If we get here, either everything is completed or we couldn't fetch any.
+        if last_err:
+            return None, last_err
         return (
-            PuzzleState(
-                puzzle_id=puzzle_id,
-                fen_start=start_board.fen(),
-                solution=sol,
-                themes=[str(x) for x in (themes or [])],
-                rating=int(rating) if rating is not None else None,
-                idx=0,
-            ),
             None,
+            "All mix puzzles completed. Use Reset Completed to play them again.",
         )
 
     def fetch_theme(self, angle: str) -> Tuple[Optional[PuzzleState], Optional[str]]:
@@ -598,10 +623,76 @@ class DailyPuzzleController:
 
         def _try_next_batch(tries: int) -> None:
             nonlocal payload, passed_checks, seen_skips, last_for_angle, seen_set
+            # Prefer the batch endpoint when possible. It dramatically reduces the
+            # "same puzzle again" behavior some angles exhibit.
+            batch_payload: dict = {}
+            batch_items = []
+            try:
+                batch_payload = self.client.get_puzzle_batch(
+                    angle=angle,
+                    nb=min(int(tries), 50),
+                    difficulty=difficulty,
+                    # color only works when nb=1 (per Lichess docs), so don't send it for batches.
+                ) or {}
+                # Lichess returns a PuzzleBatchSelect object (puzzles list), but be defensive.
+                if isinstance(batch_payload, dict):
+                    batch_items = batch_payload.get("puzzles") or []
+                elif isinstance(batch_payload, list):
+                    batch_items = batch_payload
+            except Exception:
+                batch_items = []
+
+            # If we got a batch, iterate it first.
+            if batch_items:
+                for item in batch_items:
+                    if not isinstance(item, dict):
+                        continue
+                    payload = item
+
+                    try:
+                        pid_try = str(((payload.get("puzzle") or {}).get("id")) or "")
+                    except Exception:
+                        pid_try = ""
+                    if not pid_try:
+                        continue
+
+                    if pid_try in self._seen_global or pid_try in seen_set:
+                        seen_skips += 1
+                        continue
+
+                    if last_for_angle and pid_try == last_for_angle:
+                        continue
+
+                    if angle in PHASE_TAGS:
+                        try:
+                            tset = set(
+                                str(x)
+                                for x in ((payload.get("puzzle") or {}).get("themes") or [])
+                            )
+                        except Exception:
+                            tset = set()
+                        if angle not in tset:
+                            continue
+
+                    if self.theme_kind == "opening":
+                        try:
+                            game = payload.get("game") or {}
+                            pgn = str(game.get("pgn") or "")
+                            _eco, _opening = _pgn_opening_info(pgn)
+                        except Exception:
+                            _opening = ""
+                        if _slugify_angle(_opening or "") != _slugify_angle(angle):
+                            continue
+
+                    passed_checks = True
+                    return
+
+            # Fallback: call /api/puzzle/next repeatedly.
             for _ in range(tries):
                 payload = (
                     self.client.get_next_puzzle(
                         angle=angle,
+                        difficulty=difficulty,
                         nonce=str(random.getrandbits(32)),
                     )
                     or {}
@@ -638,10 +729,22 @@ class DailyPuzzleController:
                     if angle not in tset:
                         continue
 
+                # --- OPENING ENFORCEMENT ---
+                # If the caller requested an opening, require that the PGN reports the same opening.
+                if self.theme_kind == "opening":
+                    try:
+                        game = payload.get("game") or {}
+                        pgn = str(game.get("pgn") or "")
+                        _eco, _opening = _pgn_opening_info(pgn)
+                    except Exception:
+                        _opening = ""
+                    if _slugify_angle(_opening or "") != _slugify_angle(angle):
+                        continue
+
                 passed_checks = True
                 return
 
-        _try_next_batch(8)
+        _try_next_batch(20)
 
         # If we keep getting the same seen puzzle(s), allow a one-time reset for this angle.
         # This is useful when you have "seen" everything in a category and want to replay them.
@@ -652,21 +755,6 @@ class DailyPuzzleController:
             last_for_angle = None
             seen_skips = 0
             _try_next_batch(4)
-
-        # If we still couldn't find an unseen puzzle (or strict checks kept rejecting),
-        # but Lichess did return *a* puzzle payload, don't hard-error: allow repeats.
-        if (
-            (not passed_checks)
-            and isinstance(payload, dict)
-            and not payload.get("_error")
-        ):
-            try:
-                _puz = payload.get("puzzle") or {}
-                _themes = set(str(x) for x in (_puz.get("themes") or []))
-            except Exception:
-                _themes = set()
-            if (angle not in PHASE_TAGS) or (angle in _themes):
-                passed_checks = True
         if passed_checks and isinstance(payload, dict) and not payload.get("_error"):
             puzzle = payload.get("puzzle") or {}
             game = payload.get("game") or {}
@@ -680,7 +768,7 @@ class DailyPuzzleController:
 
             eco, opening = _pgn_opening_info(pgn)
 
-            # Debug (journalctl)
+            # # Debug (journalctl)
             try:
                 print(
                     f"[PUZZLE NEXT] angle={angle!r} id={puzzle_id!r} rating={rating!r} eco={eco!r} opening={opening!r} themes={themes!r}",
@@ -722,16 +810,6 @@ class DailyPuzzleController:
             )
             return None, err
 
-        # If we're requesting an opening name, the local fallback can't reliably filter,
-        # because the local list filter is based on puzzle 'themes' tags.
-        if _is_opening_name(angle):
-            err = (
-                str(payload.get("_error") or "Opening fetch failed")
-                if isinstance(payload, dict)
-                else "Opening fetch failed"
-            )
-            return None, err
-
         last_err = (
             str(payload.get("_error") or "Theme fetch failed")
             if isinstance(payload, dict)
@@ -747,11 +825,31 @@ class DailyPuzzleController:
                 last_err = str(p.get("_error") or last_err)
                 continue
             puzzle = p.get("puzzle") or {}
-            themes = [str(x) for x in (puzzle.get("themes") or [])]
-            if angle not in themes:
+
+            # Skip already-completed puzzles.
+            try:
+                pid_check = str(puzzle.get("id") or pid)
+            except Exception:
+                pid_check = ""
+            if pid_check and pid_check in self._seen_global:
                 continue
 
+            themes = [str(x) for x in (puzzle.get("themes") or [])]
+
             game = p.get("game") or {}
+            pgn = str(game.get("pgn") or "")
+
+            if self.theme_kind == "opening":
+                _eco, _opening = _pgn_opening_info(pgn)
+                if _slugify_angle(_opening or "") != _slugify_angle(angle):
+                    continue
+            else:
+                # Theme/motif matching (fallback): compare normalized theme tags.
+                want = _slugify_angle(angle)
+                have = {_slugify_angle(x) for x in themes}
+                if want and want not in have:
+                    continue
+
             puzzle_id = str(puzzle.get("id") or pid)
             pgn = str(game.get("pgn") or "")
             initial_ply = int(puzzle.get("initialPly") or 0)
@@ -1017,16 +1115,16 @@ class DailyPuzzleController:
         while True:
             if st.idx >= len(st.solution):
                 display.send(f"{side_prefix}\nPuzzle solved!\nOK = menu")
-                # Mark as completed only AFTER full solve (prevents "loaded == seen").
-                try:
-                    self._mark_seen(
-                        st.puzzle_id,
-                        angle=(self.theme if self.mode == "theme" else None),
-                    )
-                except Exception:
-                    pass
                 link.sendtoboard("GameOver:1-0")
-                _wait_ack_ok()
+                ok = _wait_ack_ok()
+                # Mark as completed ONLY when the puzzle is fully solved.
+                if ok:
+                    key = (
+                        (self.theme or "")
+                        if self.mode == "theme"
+                        else (self.mode or "global")
+                    )
+                    self._mark_seen(key, st.puzzle_id)
                 return
 
             expected = st.solution[st.idx]
