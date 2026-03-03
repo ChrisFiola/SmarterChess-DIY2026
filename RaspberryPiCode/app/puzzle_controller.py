@@ -17,6 +17,7 @@ from typing import List, Optional, Tuple
 from collections import defaultdict
 
 import os
+import json
 import random
 
 import chess  # type: ignore
@@ -47,6 +48,45 @@ def _pgn_opening_info(pgn_text: str) -> Tuple[str, str]:
 # -------------------- Mix puzzle ids --------------------
 
 PUZZLE_IDS_PATH = os.path.join(os.path.dirname(__file__), "puzzle_ids.txt")
+
+# -------------------- Seen-puzzle cache (avoid repeats) --------------------
+# Lichess /api/puzzle/next can legitimately return the same puzzle multiple
+# times, even when authenticated. We keep a small local cache of seen puzzle
+# IDs (global + per-angle) to reduce repeats across sessions.
+SEEN_CACHE_PATH = os.path.join(
+    os.path.expanduser("~"),
+    ".cache",
+    "smartchess",
+    "seen_puzzles.json",
+)
+
+def _load_seen_cache() -> dict:
+    try:
+        if not os.path.exists(SEEN_CACHE_PATH):
+            return {"global": [], "by_angle": {}}
+        with open(SEEN_CACHE_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            return {"global": [], "by_angle": {}}
+        data.setdefault("global", [])
+        data.setdefault("by_angle", {})
+        if not isinstance(data["global"], list):
+            data["global"] = []
+        if not isinstance(data["by_angle"], dict):
+            data["by_angle"] = {}
+        return data
+    except Exception:
+        return {"global": [], "by_angle": {}}
+
+def _save_seen_cache(data: dict) -> None:
+    try:
+        os.makedirs(os.path.dirname(SEEN_CACHE_PATH), exist_ok=True)
+        tmp = SEEN_CACHE_PATH + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+        os.replace(tmp, SEEN_CACHE_PATH)
+    except Exception:
+        pass
 
 
 def _pick_random_line_seek(path: str, max_tries: int = 25) -> str:
@@ -310,6 +350,41 @@ class DailyPuzzleController:
         # the server (or intermediaries) serve a sticky result.
         self._last_next_id_by_angle: dict[str, str] = {}
 
+        # Seen puzzle IDs (persisted)
+        self._seen_cache = _load_seen_cache()
+        self._seen_global = set([str(x) for x in (self._seen_cache.get('global') or [])])
+        self._seen_by_angle = {str(k): set([str(x) for x in (v or [])]) for k, v in (self._seen_cache.get('by_angle') or {}).items() if isinstance(v, list)}
+
+    
+    def _mark_seen(self, angle: str, puzzle_id: str) -> None:
+        """Persistently remember a puzzle id (global + per-angle) to reduce repeats."""
+        pid = str(puzzle_id or "").strip()
+        if not pid:
+            return
+        self._seen_global.add(pid)
+        a = str(angle or "").strip()
+        if a:
+            self._seen_by_angle.setdefault(a, set()).add(pid)
+
+        # Bound cache sizes (avoid unbounded growth)
+        def _bound(lst, max_n):
+            if len(lst) > max_n:
+                del lst[:-max_n]
+
+        try:
+            self._seen_cache["global"] = list(self._seen_global)
+            # Keep per-angle lists bounded
+            by = {}
+            for k, s in self._seen_by_angle.items():
+                by[k] = list(s)
+                _bound(by[k], 150)
+            self._seen_cache["by_angle"] = by
+            # Also bound global
+            _bound(self._seen_cache["global"], 500)
+            _save_seen_cache(self._seen_cache)
+        except Exception:
+            pass
+
     def fetch_daily(self) -> Tuple[Optional[PuzzleState], Optional[str]]:
         payload = self.client.get_daily_puzzle()
         if not isinstance(payload, dict) or payload.get("_error"):
@@ -347,7 +422,6 @@ class DailyPuzzleController:
             )
         except Exception:
             pass
-
         return (
             PuzzleState(
                 puzzle_id=puzzle_id,
@@ -480,6 +554,11 @@ class DailyPuzzleController:
 
             if not pid_try:
                 break
+            # Avoid puzzles we've already served (reduces repeats).
+            if pid_try in self._seen_global:
+                continue
+            if pid_try in self._seen_by_angle.get(angle, set()):
+                continue
 
             # Dedupe against last result for this same angle.
             if last_for_angle and pid_try == last_for_angle:
@@ -547,6 +626,7 @@ class DailyPuzzleController:
                 self._last_next_angle = angle
                 self._last_next_id = puzzle_id
                 self._last_next_id_by_angle[angle] = puzzle_id
+                self._mark_seen(angle, puzzle_id)
                 return (
                     PuzzleState(
                         puzzle_id=puzzle_id,
@@ -614,6 +694,8 @@ class DailyPuzzleController:
                 back=6,
                 forward=10,
             )
+
+            self._mark_seen(angle, puzzle_id)
 
             return (
                 PuzzleState(
