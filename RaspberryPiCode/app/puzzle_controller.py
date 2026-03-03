@@ -50,6 +50,7 @@ def _pgn_opening_info(pgn_text: str) -> Tuple[str, str]:
 
 PUZZLE_IDS_PATH = os.path.join(os.path.dirname(__file__), "puzzle_ids.txt")
 
+
 # -------------------- Seen-puzzle cache (avoid repeats) --------------------
 # Lichess /api/puzzle/next can legitimately return the same puzzle multiple
 # times, even when authenticated. We keep a small local cache of seen puzzle
@@ -87,6 +88,7 @@ SEEN_CACHE_PATH = os.path.join(
     "seen_puzzles.json",
 )
 
+
 def _load_seen_cache() -> dict:
     try:
         if not os.path.exists(SEEN_CACHE_PATH):
@@ -104,6 +106,7 @@ def _load_seen_cache() -> dict:
         return data
     except Exception:
         return {"global": [], "by_angle": {}}
+
 
 def _save_seen_cache(data: dict) -> None:
     try:
@@ -402,10 +405,15 @@ class DailyPuzzleController:
 
         # Seen puzzle IDs (persisted)
         self._seen_cache = _load_seen_cache()
-        self._seen_global = set([str(x) for x in (self._seen_cache.get('global') or [])])
-        self._seen_by_angle = {str(k): set([str(x) for x in (v or [])]) for k, v in (self._seen_cache.get('by_angle') or {}).items() if isinstance(v, list)}
+        self._seen_global = set(
+            [str(x) for x in (self._seen_cache.get("global") or [])]
+        )
+        self._seen_by_angle = {
+            str(k): set([str(x) for x in (v or [])])
+            for k, v in (self._seen_cache.get("by_angle") or {}).items()
+            if isinstance(v, list)
+        }
 
-    
     def _mark_seen(self, angle: str, puzzle_id: str) -> None:
         """Persistently remember a puzzle id (global + per-angle) to reduce repeats."""
         pid = str(puzzle_id or "").strip()
@@ -620,7 +628,10 @@ class DailyPuzzleController:
                 # If angle is a phase tag, require it to be present in puzzle themes.
                 if angle in PHASE_TAGS:
                     try:
-                        tset = set(str(x) for x in ((payload.get("puzzle") or {}).get("themes") or []))
+                        tset = set(
+                            str(x)
+                            for x in ((payload.get("puzzle") or {}).get("themes") or [])
+                        )
                     except Exception:
                         tset = set()
                     if angle not in tset:
@@ -674,7 +685,6 @@ class DailyPuzzleController:
                 self._last_next_angle = angle
                 self._last_next_id = puzzle_id
                 self._last_next_id_by_angle[angle] = puzzle_id
-                self._mark_seen(angle, puzzle_id)
                 return (
                     PuzzleState(
                         puzzle_id=puzzle_id,
@@ -742,8 +752,6 @@ class DailyPuzzleController:
                 back=6,
                 forward=10,
             )
-
-            self._mark_seen(angle, puzzle_id)
 
             return (
                 PuzzleState(
@@ -993,6 +1001,11 @@ class DailyPuzzleController:
         # 4) Solve loop
         while True:
             if st.idx >= len(st.solution):
+                try:
+                    angle_key = (self.theme or self.mode or "").strip()
+                    self._mark_seen(angle_key, st.puzzle_id)
+                except Exception:
+                    pass
                 display.send(f"{side_prefix}\nPuzzle solved!\nOK = menu")
                 link.sendtoboard("GameOver:1-0")
                 _wait_ack_ok()
