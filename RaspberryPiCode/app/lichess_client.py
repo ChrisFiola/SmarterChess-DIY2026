@@ -160,6 +160,7 @@ class LichessClient:
         angle: Optional[str] = None,
         theme: Optional[str] = None,
         difficulty: Optional[str] = None,
+        nonce: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Fetch the next puzzle.
 
@@ -178,9 +179,17 @@ class LichessClient:
             d = (difficulty or "").strip()
             if d:
                 params["difficulty"] = d
+            n = (nonce or "").strip()
+            if n:
+                params["r"] = n
+
             r = requests.get(
                 f"{LICHESS_BASE}/api/puzzle/next",
-                headers=self.headers,
+                headers={
+                    **self.headers,
+                    "Cache-Control": "no-cache",
+                    "Pragma": "no-cache",
+                },
                 params=params,
                 timeout=15,
             )
