@@ -915,7 +915,7 @@ def process_hint_irq():
     if time.ticks_diff(suppress_hints_until_ms, now) > 0:
         return None
 
-    if BTN_OK.value() == 0:
+    if BTN_OK.value() == 0 and BTN_HINT.value() == 0:
         game_state = GAME_SETUP
         send_to_pi("n")
 

@@ -372,6 +372,31 @@ def select_mode(link: BoardLink, display: Display, state: RuntimeState) -> str:
         if msg is None:
             continue
         m = msg.strip().lower()
+
+        # Robustness: the Pico can emit control / navigation tokens (e.g. OK+HINT
+        # sends 'n' to request a return to the main menu). If we treat those as
+        # "unknown mode" we end up replacing the menu on the LCD with an error
+        # screen even though we're already *in* the main menu.
+        #
+        # In mode-select, simply ignore non-selection tokens.
+        if (
+            not m
+            or m in (
+                "n",
+                "new",
+                "in",
+                "newgame",
+                "btn_new",
+                "ok",
+                "btn_ok",
+                "btnok",
+                "hint",
+                "btn_hint",
+            )
+            or m.startswith("typing_")
+        ):
+            continue
+
         if m in ("1", "stockfish", "pc", "btn_mode_pc"):
             return "stockfish"
         if m in ("2", "onlinehuman", "remote", "online", "btn_mode_online"):
