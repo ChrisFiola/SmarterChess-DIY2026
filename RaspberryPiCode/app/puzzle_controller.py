@@ -15,6 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 from collections import defaultdict
+import re
 
 import os
 import json
@@ -53,8 +54,34 @@ PUZZLE_IDS_PATH = os.path.join(os.path.dirname(__file__), "puzzle_ids.txt")
 # Lichess /api/puzzle/next can legitimately return the same puzzle multiple
 # times, even when authenticated. We keep a small local cache of seen puzzle
 # IDs (global + per-angle) to reduce repeats across sessions.
+def _stable_home_dir() -> str:
+    """Best-effort stable home directory for both interactive shells and systemd.
+
+    If systemd starts the service with HOME unset or set to /root, using
+    expanduser('~') will write the cache to the wrong place.
+
+    When the project is installed under /home/<user>/..., we can infer the
+    intended user from this file path.
+    """
+    home = os.environ.get("HOME")
+    if home and home not in ("/", "/root"):
+        return home
+
+    # Infer /home/<user> from the absolute path of this module.
+    try:
+        p = os.path.abspath(__file__)
+        m = re.match(r"^/home/([^/]+)/", p)
+        if m:
+            return f"/home/{m.group(1)}"
+    except Exception:
+        pass
+
+    # Last resort (may still be /root, but it's better than crashing).
+    return os.path.expanduser("~")
+
+
 SEEN_CACHE_PATH = os.path.join(
-    os.path.expanduser("~"),
+    _stable_home_dir(),
     ".cache",
     "smartchess",
     "seen_puzzles.json",
