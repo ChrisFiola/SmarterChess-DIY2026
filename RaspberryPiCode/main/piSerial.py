@@ -10,9 +10,14 @@ SERIAL_PORT: str = "/dev/serial0"
 BAUD: int = 115200
 SERIAL_TIMEOUT: float = 2.0
 
+
 class BoardLink:
-    def __init__(self, port: str = SERIAL_PORT, baud: int = BAUD, timeout: float = SERIAL_TIMEOUT):
+    def __init__(
+        self, port: str = SERIAL_PORT, baud: int = BAUD, timeout: float = SERIAL_TIMEOUT
+    ):
         self.ser = serial.Serial(port, baud, timeout=timeout)
+        self.ser.reset_input_buffer()
+        self.ser.reset_output_buffer()
         self.ser.flush()
 
     def close(self):
@@ -21,13 +26,28 @@ class BoardLink:
         except Exception:
             pass
 
-    # Writes 
+    def clear_input(self) -> None:
+        """Drop any pending incoming messages from the Pico."""
+        try:
+            self.ser.reset_input_buffer()
+        except Exception:
+            pass
+
+    def clear_output(self) -> None:
+        """Drop any pending outgoing bytes to the Pico."""
+        try:
+            self.ser.reset_output_buffer()
+        except Exception:
+            pass
+
+    # Writes
     def send_raw(self, text: str) -> None:
         self.ser.write(text.encode("utf-8") + b"\n")
 
     def sendtoboard(self, text: str) -> None:
         payload = "heyArduino" + text
         self.ser.write(payload.encode("utf-8") + b"\n")
+        self.ser.flush()
         print(f"[-→Board] {payload}")
 
     # Reads

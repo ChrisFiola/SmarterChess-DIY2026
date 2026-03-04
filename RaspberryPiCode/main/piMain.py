@@ -60,6 +60,7 @@ def main():
             else:
                 selected = select_mode(link, display, state)
                 state.mode = selected
+                print(f"[MODE SELECT] selected={selected!r}", flush=True)
             mode_dispatch(link, display, ctx, state, cfg)
         except GoToModeSelect:
             state.board = chess.Board()

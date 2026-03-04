@@ -109,6 +109,10 @@ suspend_until_new_game = False
 # online waiting for a game). Enabled/disabled by the Pi via heyArduinook_back_*.
 ok_back_enabled = False
 
+# When False, ignore the HINT button in process_hint_irq().
+# The Pi can toggle this (e.g., disable hints during puzzle setup).
+hint_enabled = True
+
 # --- Puzzle setup mode (Pi-driven LED guidance) ---
 puzzle_setup_active = False
 
@@ -125,6 +129,11 @@ persistent_trail_move = None  # e.g., 'e2e4'
 # ============================================================
 
 uart = UART(0, baudrate=115200, tx=Pin(0), rx=Pin(1), timeout=10)
+
+
+def cp_show_menu_choices_1to4():
+    cp.clear_small_panel()
+    cp_profile_main_menu()
 
 
 def _is_alnum(ch: str) -> bool:
@@ -653,6 +662,36 @@ class ButtonManager:
         return b in (9, 10)
 
 
+# ============================================================
+# =============== INPUT GATING (ALLOWED BUTTONS) ==============
+# ============================================================
+
+# If None: all buttons are accepted. Otherwise: only listed button numbers (1..10).
+allowed_buttons = None  # type: ignore
+
+
+def set_allowed_buttons(btns):
+    """Restrict which physical buttons can be registered (1..10)."""
+    global allowed_buttons
+    allowed_buttons = None if btns is None else set(int(x) for x in btns)
+    try:
+        buttons.reset()
+    except Exception:
+        pass
+
+
+def detect_press_allowed():
+    """Like buttons.detect_press(), but ignores presses not in allowed_buttons."""
+    while True:
+        b = buttons.detect_press()
+        if b is None:
+            return None
+        if allowed_buttons is None or b in allowed_buttons:
+            return b
+        # Ignore disallowed presses (still debounced by ButtonManager)
+        time.sleep_ms(5)
+
+
 # Instantiate hardware interfaces
 cp = ControlPanel(CONTROL_PANEL_LED_PIN, CONTROL_PANEL_LED_COUNT)
 board = Chessboard(
@@ -756,6 +795,88 @@ def cp_only_hint_and_coords_for_input():
 def cp_show_coords_top(COLOR):
     cp.clear_small_panel()
     cp.coordTop(COLOR, True)
+
+
+# ============================================================
+# =============== CP PROFILES (MENUS / PROMPTS) ==============
+# ============================================================
+
+
+def cp_clear_choices():
+    # Clear the whole choice lane (files + ranks)
+    cp.fill(BLACK, CP_CHOICE_BASE, 16)
+
+
+def cp_choice_lane(n, color):
+    # Light buttons 1..n on the choice lane (1..8 used in your UI)
+    cp_clear_choices()
+    cp.fill(color, CP_CHOICE_BASE, max(0, min(16, int(n))))
+
+
+def cp_profile_main_menu():
+    cp.clear_small_panel()
+    cp.coord(WHITE, True)  # buttons 1..4 (menu)
+    cp.set(CP_OK_PIX, BLACK)
+    cp.hint(False)
+    cp_clear_choices()
+    set_allowed_buttons([1, 2, 3, 4])
+
+
+def cp_profile_vs_strength_time():
+    cp.clear_small_panel()
+    cp.coord(BLACK, False)
+    cp_choice_lane(8, WHITE)  # buttons 1..8
+    cp.set(CP_OK_PIX, RED)  # OK = back
+    cp.hint(False)
+    set_allowed_buttons([1, 2, 3, 4, 5, 6, 7, 8, 9])
+
+
+def cp_profile_vs_color():
+    cp.clear_small_panel()
+    cp.coord(WHITE, True)  # buttons 1..4
+    cp_clear_choices()
+    cp.set(CP_OK_PIX, RED)  # OK = back
+    cp.hint(False)
+    set_allowed_buttons([1, 2, 3, 9])
+
+
+def cp_profile_puzzle_top():
+    # Puzzle submenu: 1..3 + OK (back). LEDs show 1..4 white + OK red.
+    cp.clear_small_panel()
+    cp.coord(WHITE, True)
+    cp_clear_choices()
+    cp.set(CP_OK_PIX, RED)
+    cp.hint(False)
+    set_allowed_buttons([1, 2, 3, 9])
+
+
+def cp_profile_menu_paged():
+    # Paged menus: 1..4 select, HINT next page, OK back
+    cp.clear_small_panel()
+    cp.coord(WHITE, True)
+    cp_clear_choices()
+    cp.set(CP_OK_PIX, RED)
+    cp.hint(True, BLUE)
+    set_allowed_buttons([1, 2, 3, 4, 9, 10])
+
+
+def cp_profile_only_ok_green():
+    cp.clear_small_panel()
+    cp.coord(BLACK, False)
+    cp_clear_choices()
+    cp.ok(True)  # green
+    cp.hint(False)
+    set_allowed_buttons([9])
+
+
+def cp_profile_puzzle_play():
+    # Puzzle play: 1..8 enter, OK red, HINT yellow
+    cp.clear_small_panel()
+    cp.coord(BLACK, False)
+    cp_choice_lane(8, WHITE)
+    cp.set(CP_OK_PIX, RED)
+    cp.hint(True, YELLOW)
+    set_allowed_buttons([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 
 
 # ============================================================
@@ -896,8 +1017,11 @@ def cancel_user_input_and_restart():
 
 
 def process_hint_irq():
+    global hint_enabled
+    if not hint_enabled:
+        return None
     global hint_irq_flag, suppress_hints_until_ms, game_state, suspend_until_new_game
-    global engine_ack_pending, pending_gameover_result, buffered_turn_msg
+    global engine_ack_pending, pending_gameover_result, buffered_turn_msg, hint_enabled
 
     if not hint_irq_flag:
         return None
@@ -910,7 +1034,7 @@ def process_hint_irq():
     if time.ticks_diff(suppress_hints_until_ms, now) > 0:
         return None
 
-    if BTN_OK.value() == 0:
+    if BTN_OK.value() == 0 and BTN_HINT.value() == 0:
         game_state = GAME_SETUP
         send_to_pi("n")
 
@@ -931,6 +1055,11 @@ def process_hint_irq():
         return "new"
 
     if game_state != GAME_RUNNING:
+        return None
+
+    # Pi can disable HINT temporarily (e.g., while puzzle setup is in progress).
+    # We still allow OK+HINT new-game combo above; we only suppress normal hints.
+    if not hint_enabled:
         return None
 
     # Detect hold-vs-tap on Hint:
@@ -1533,12 +1662,17 @@ def wait_for_mode_request():
 
 
 def select_game_mode():
+    # Main menu: only 1..4 are usable and lit.
+    cp_profile_main_menu()
     buttons.reset()
     global game_mode
     while True:
         if is_shutdown_held():
             shutdown_pico()
-        b = buttons.detect_press()
+        b = detect_press_allowed()
+        if not b:
+            time.sleep_ms(5)
+            continue
         if b == 1:
             game_mode = MODE_PC
             send_to_pi("btn_mode_pc")
@@ -1553,14 +1687,9 @@ def select_game_mode():
             return
         if b == 4:
             game_mode = MODE_PUZZLE
-            send_to_pi("btn_mode_puzzle")
+            send_to_pi("btn_mode_puzzles")
             return
         time.sleep_ms(5)
-
-
-# ============================================================
-# SETUP BACK CLEANUP (prevents stuck LEDs / frozen input)
-# ============================================================
 
 
 def _setup_back_cleanup():
@@ -1592,40 +1721,89 @@ def _setup_back_cleanup():
         pass
 
 
+def _menu_back_cleanup_soft():
+    global game_state, in_setup, suspend_until_new_game
+
+    # Leave setup state completely so main_loop can see heyArduinoChooseMode again
+    in_setup = True
+    game_state = GAME_SETUP
+    suspend_until_new_game = True
+
+    # Just clean LEDs / edge states; do not change game_state
+    try:
+        cp_all_off()
+    except Exception:
+        pass
+    try:
+        cp_bars_dim_on()
+    except Exception:
+        pass
+    try:
+        ui_board.markings()
+    except Exception:
+        pass
+    try:
+        buttons.reset()
+    except Exception:
+        pass
+
+
 def select_puzzle_variant():
-    """Submenu for puzzle mode.
-
-    The Raspberry Pi shows:
-      1) Daily
-      2) Mix & Match
-      (n=back)
-
-    Map CP buttons:
-      1 -> send "1"
-      2 -> send "2"
-      4 -> send "n" (back)
     """
+    Puzzle submenu on the Pi:
+      1) Daily Puzzle
+      2) Random Puzzle
+      3) Themes
+      OK = back
+    """
+    cp_profile_puzzle_top()
     buttons.reset()
     while True:
         if is_shutdown_held():
             shutdown_pico()
-        b = buttons.detect_press()
+
+        b = detect_press_allowed()
         if not b:
             time.sleep_ms(5)
             continue
-        # OK = back (Pi interprets as submenu back while setup is active)
+
         if b == (OK_BUTTON_INDEX + 1):
             send_to_pi("btn_ok")
             _setup_back_cleanup()
             return
-        if b == 1:
-            send_to_pi("1")
+
+        # Only 1..3 are valid in this submenu
+        if 1 <= b <= 3:
+            send_to_pi(str(b))
             return
-        if b == 2:
-            send_to_pi("2")
+
+
+def select_paged_menu_1to4():
+    """Generic paged menu input (1..4 select, HINT next, OK back)."""
+    cp_profile_menu_paged()
+    buttons.reset()
+    while True:
+        if is_shutdown_held():
+            shutdown_pico()
+
+        b = detect_press_allowed()
+        if not b:
+            time.sleep_ms(5)
+            continue
+
+        # OK = back
+        if b == (OK_BUTTON_INDEX + 1):
+            send_to_pi("btn_ok")
+            _setup_back_cleanup()
             return
-        if b == 4:
-            send_to_pi("n")
+
+        # HINT = next page
+        if b == (HINT_BUTTON_INDEX + 1):
+            send_to_pi("btn_hint")
+            continue
+
+        if 1 <= b <= 4:
+            send_to_pi(str(b))
             return
 
 
@@ -1634,7 +1812,7 @@ def select_singlepress(default_value, out_min, out_max):
     while True:
         if is_shutdown_held():
             shutdown_pico()
-        b = buttons.detect_press()
+        b = detect_press_allowed()
         # OK = back
         if b == (OK_BUTTON_INDEX + 1):
             send_to_pi("btn_ok")
@@ -1654,11 +1832,12 @@ def select_time_singlepress(default_value):
 
 
 def select_color_choice():
+    cp_profile_vs_color()
     buttons.reset()
     while True:
         if is_shutdown_held():
             shutdown_pico()
-        b = buttons.detect_press()
+        b = detect_press_allowed()
         # OK = back
         if b == (OK_BUTTON_INDEX + 1):
             send_to_pi("btn_ok")
@@ -1712,7 +1891,7 @@ def wait_for_setup():
                 continue
 
             if msg.startswith("heyArduinoEngineStrength"):
-                cp.coord(MAGENTA)
+                cp_profile_vs_strength_time()
                 ui_board.prompt_strength()
                 v = select_strength_singlepress(default_strength)
                 if v is None:
@@ -1723,7 +1902,7 @@ def wait_for_setup():
                 return
 
             if msg.startswith("heyArduinoTimeControl"):
-                cp.coord(MAGENTA)
+                cp_profile_vs_strength_time()
                 ui_board.prompt_time()
                 v = select_time_singlepress(default_move_time)
                 if v is None:
@@ -1798,12 +1977,12 @@ def handle_puzzle_setup_cmd(msg):
 
     Messages (from Pi) are prefixed with 'heyArduino...'
     """
-    global puzzle_setup_active, ok_last_val
-
+    global puzzle_setup_active, ok_last_val, game_state, in_setup, suspend_until_new_game
     if not msg:
         return False
 
     if msg.startswith("heyArduinopuzzle_setup_begin"):
+        cp_profile_only_ok_green()
         puzzle_setup_active = True
         disable_hint_irq()
         buttons.reset()
@@ -1814,6 +1993,12 @@ def handle_puzzle_setup_cmd(msg):
 
     if msg.startswith("heyArduinopuzzle_setup_done"):
         puzzle_setup_active = False
+
+        game_state = GAME_RUNNING
+        in_setup = False
+        suspend_until_new_game = False
+        cp_profile_puzzle_play()
+        cp_bars_dim_on()
         ui_board.markings()
         enable_hint_irq()
         return True
@@ -1887,6 +2072,7 @@ def handle_puzzle_setup_cmd(msg):
 
 def main_loop():
     global current_turn, engine_ack_pending, pending_gameover_result, buffered_turn_msg, suspend_until_new_game, game_state, ok_last_val, puzzle_setup_active, ok_back_enabled
+    global hint_enabled
 
     while True:
         if is_shutdown_held():
@@ -2016,6 +2202,16 @@ def main_loop():
                 pass
             continue
 
+        # Enable/disable HINT (Pi-controlled). Used to suppress hints during
+        # puzzle setup so the Pi never receives spurious hint requests.
+        if msg.startswith("heyArduinohint_disable"):
+            hint_enabled = False
+            continue
+
+        if msg.startswith("heyArduinohint_enable"):
+            hint_enabled = True
+            continue
+
         if suspend_until_new_game or game_state != GAME_RUNNING:
             if not (
                 msg.startswith("heyArduinoChooseMode")
@@ -2043,14 +2239,26 @@ def main_loop():
                 wait_for_setup()
             continue
 
-        # Puzzle submenu (Daily / Mix)
         if msg.startswith("heyArduinoChoosePuzzle"):
+            cp_profile_puzzle_top()
             # Keep the board display in a neutral state and let CP buttons choose.
             disable_hint_irq()
             buttons.reset()
             ui_board.markings()
-            cp_show_coords_top(WHITE)
+            cp_show_menu_choices_1to4()
             select_puzzle_variant()
+            ui_board.markings()
+            enable_hint_irq()
+            continue
+
+        # Puzzle submenu (Daily / Mix)
+        if msg.startswith("heyArduinoMenuPaged"):
+            cp_profile_menu_paged()
+            disable_hint_irq()
+            buttons.reset()
+            ui_board.markings()
+            cp_show_menu_choices_1to4()
+            select_paged_menu_1to4()
             ui_board.markings()
             enable_hint_irq()
             continue

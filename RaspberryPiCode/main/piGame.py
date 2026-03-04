@@ -265,7 +265,7 @@ def send_hint_to_board(
         display.send("Game Over\nNo hints\nPress n to start over")
         return
 
-    display.show_hint_thinking()
+    ui_engine_thinking(display)
     best = engine_hint(ctx, state.board, cfg.move_time_ms)
     if not best:
         link.sendtoboard("hint_none")
@@ -371,14 +371,52 @@ def select_mode(link: BoardLink, display: Display, state: RuntimeState) -> str:
         msg = link.getboard()
         if msg is None:
             continue
+        # Debug for mode-select mismatches (view in journalctl)
+        # Helps diagnose when the Pico sends an unexpected token.
+        print(f"[MODE SELECT] raw={msg!r}", flush=True)
         m = msg.strip().lower()
+
+        # Robustness: the Pico can emit control / navigation tokens (e.g. OK+HINT
+        # sends 'n' to request a return to the main menu). If we treat those as
+        # "unknown mode" we end up replacing the menu on the LCD with an error
+        # screen even though we're already *in* the main menu.
+        #
+        # In mode-select, simply ignore non-selection tokens.
+        if (
+            not m
+            or m
+            in (
+                "n",
+                "new",
+                "in",
+                "newgame",
+                "btn_new",
+                "ok",
+                "btn_ok",
+                "btnok",
+                "hint",
+                "btn_hint",
+            )
+            or m.startswith("typing_")
+        ):
+            continue
+
         if m in ("1", "stockfish", "pc", "btn_mode_pc"):
             return "stockfish"
         if m in ("2", "onlinehuman", "remote", "online", "btn_mode_online"):
             return "online"
         if m in ("3", "local", "human", "btn_mode_local"):
             return "local"
-        if m in ("4", "puzzle", "daily", "btn_mode_puzzle"):
+        # Puzzles: accept both historical token variants (singular/plural)
+        # because the Pico menu firmware has used both.
+        if m in (
+            "4",
+            "puzzle",
+            "puzzles",
+            "daily",
+            "btn_mode_puzzle",
+            "btn_mode_puzzles",
+        ):
             return "puzzle"
         link.sendtoboard("error_unknown_mode")
         display.send("Unknown mode\n" + m + "\nSend again")
@@ -767,7 +805,7 @@ def play_game(
     time.sleep(0.3)
 
     # Initial side to move
-    if state.mode == "stockfish":
+    if state.mode in ("stockfish", "pc", "btn_mode_pc", "vs_computer", "vs"):
         if not cfg.human_is_white:
             display.send("Computer starts first.")
             time.sleep(0.4)
@@ -962,22 +1000,446 @@ def run_puzzle_mode(link: BoardLink, display: Display) -> None:
     """
     client = LichessClient()
 
-    link.sendtoboard("ChoosePuzzle")
-    display.send("PUZZLES\n1) Daily\n2) Mix & Match\nOK = cancel")
-    while True:
-        msg = link.getboard()
-        if msg is None:
-            continue
-        m = msg.strip().lower()
-        if m in ("ok", "btn_ok", "btnok", "n", "new", "in", "newgame", "btn_new"):
+    # -------------------- Small paged menu helper --------------------
+
+    def _short(s: str, n: int) -> str:
+        s = (s or "").strip()
+        return s if len(s) <= n else (s[: max(0, n - 1)] + "…")
+
+    def _render_paged(title: str, page: int, pages: int, items4):
+        # 20x4-friendly: one option per line (readable).
+        # We prioritize readability over showing the header/footer at all times.
+        # - Up to 4 options displayed: 1) .. 4) ..
+        # - If <4 options, we use remaining lines for help / page info.
+        def fmt_opt(i: int, s: str) -> str:
+            s = _short(s or "", 18)  # leave room for "1)" prefix
+            return f"{i}) {s}"[:20].rstrip()
+
+        lines = []
+        n = len(items4)
+
+        # If we have a full 4 options, use all 4 lines for options.
+        # Include page info on line 1 suffix when multiple pages.
+        if n >= 4:
+            l1 = fmt_opt(1, items4[0])
+            if pages > 1:
+                # add "p/x" at end if it fits
+                suffix = f" {page+1}/{pages}"
+                if len(l1) + len(suffix) <= 20:
+                    l1 = l1 + suffix
+                else:
+                    l1 = l1[: max(0, 20 - len(suffix))] + suffix
+            lines = [
+                l1,
+                fmt_opt(2, items4[1]),
+                fmt_opt(3, items4[2]),
+                fmt_opt(4, items4[3]),
+            ]
+            return "\n".join([x[:20] for x in lines])
+
+        # Otherwise, show a compact header then one-option-per-line, plus help.
+        header = (
+            f"{_short(title, 14)} {page+1}/{pages}" if pages > 1 else _short(title, 20)
+        )
+        lines.append(header[:20].rstrip())
+        for i, opt in enumerate(items4, start=1):
+            lines.append(fmt_opt(i, opt))
+        # Fill remaining lines with help text
+        while len(lines) < 4:
+            # Put help on the last line
+            if len(lines) == 3:
+                lines.append("H=next OK=back"[:20])
+            else:
+                lines.append("")
+        return "\n".join([x[:20] for x in lines])
+
+    from typing import Optional, List
+
+    def _paged_menu(title: str, options: "List[str]") -> "Optional[str]":
+        # Returns selected option string, or None if back.
+        opts = list(options or [])
+        if not opts:
+            return None
+        per_page = 4
+        pages = (len(opts) + per_page - 1) // per_page
+        page = 0
+
+        # Tell the Pico we are entering a paged menu (1-4 + HINT next + OK back)
+        link.sendtoboard("MenuPaged")
+
+        while True:
+            chunk = opts[page * per_page : page * per_page + per_page]
+            display.send(_render_paged(title, page, pages, chunk))
+            msg = link.getboard()
+            if msg is None:
+                continue
+            m = msg.strip().lower()
+            if m in ("ok", "btn_ok", "btnok", "n", "new", "in", "newgame", "btn_new"):
+                return None
+            if m in ("hint", "btn_hint"):
+                page = (page + 1) % pages
+                continue
+            if m in ("1", "2", "3", "4"):
+                idx = int(m) - 1
+                if idx < len(chunk) and chunk[idx]:
+                    return chunk[idx]
+                continue
+
+    # -------------------- Menu definitions --------------------
+
+    from typing import Tuple
+
+    PHASE_THEMES: "List[Tuple[str, str]]" = [
+        ("opening", "Opening"),
+        ("middlegame", "Middlegame"),
+        ("endgame", "Endgame"),
+        ("rookEndgame", "Rook endgame"),
+        ("bishopEndgame", "Bishop endgame"),
+        ("pawnEndgame", "Pawn endgame"),
+        ("knightEndgame", "Knight endgame"),
+        ("queenEndgame", "Queen endgame"),
+    ]
+
+    # Opening angles (names) for /api/puzzle/next?angle=<opening name>.
+    # These are *not* the same as the theme tags under /training/themes.
+    OPENING_GROUPS: "List[Tuple[str, List[str]]]" = [
+        (
+            "A to E",
+            [
+                "Alekhine Defense",
+                "Amar Opening",
+                "Amazon Attack",
+                "Anderssen's Opening",
+                "Barnes Defense",
+                "Barnes Opening",
+                "Benko Gambit",
+                "Benko Gambit Accepted",
+                "Benko Gambit Declined",
+                "Benoni Defense",
+                "Bird Opening",
+                "Bishop's Opening",
+                "Blackmar Gambit",
+                "Blackmar Gambit Accepted",
+                "Blackmar Gambit Declined",
+                "Blumenfeld Countergambit",
+                "Bogo-Indian Defense",
+                "Borg Defense",
+                "Canard Opening",
+                "Caro-Kann Defense",
+                "Carr Defense",
+                "Catalan Opening",
+                "Center Game",
+                "Center Counter",
+                "Clemenz Opening",
+                "Czech Defense",
+                "Danish Gambit",
+                "Danish Gambit Accepted",
+                "Danish Gambit Declined",
+                "Dutch Defense",
+                "East Indian Defense",
+                "Elephant Gambit",
+                "English Defense",
+                "English Opening",
+                "Englund Gambit",
+                "Englund Gambit Declined",
+            ],
+        ),
+        (
+            "F to I",
+            [
+                "French Defense",
+                "Fried Fox Defense",
+                "Goldsmith Defense",
+                "Grob Opening",
+                "Grunfeld Defense",
+                "Gunderam Defense",
+                "Hippopotamus Defense",
+                "Horwitz Defense",
+                "Hungarian Opening",
+                "Indian Defense",
+                "Italian Game",
+            ],
+        ),
+        (
+            "K to N",
+            [
+                "Kangaroo Defense",
+                "King's Gambit",
+                "King's Gambit Accepted",
+                "King's Gambit Declined",
+                "King's Indian Attack",
+                "King's Indian Defense",
+                "King's Knight Opening",
+                "King's Pawn Game",
+                "King's Pawn Opening",
+                "Kadas Opening",
+                "Lasker Simul Special",
+                "Latvian Gambit",
+                "Latvian Gambit Accepted",
+                "Lemming Defense",
+                "Lion Defense",
+                "London System",
+                "Mexican Defense",
+                "Mieses Opening",
+                "Mikenas Defense",
+                "Modern Defense",
+                "Neo-Grunfeld Defense",
+                "Nimzo-Indian Defense",
+                "Nimzo-Larsen Attack",
+                "Nimzowitsch Defense",
+            ],
+        ),
+        (
+            "O to R",
+            [
+                "Old Indian Defense",
+                "Owen Defense",
+                "Paleface Attack",
+                "Petrov's Defense",
+                "Philidor Defense",
+                "Pirc Defense",
+                "Polish Defense",
+                "Polish Opening",
+                "Ponziani Opening",
+                "Portuguese Defense",
+                "Pseudo-Queen's Indian Defense",
+                "Pterodactyl Defense",
+                "Queen's Gambit",
+                "Queen's Gambit Accepted",
+                "Queen's Gambit Declined",
+                "Queen's Indian Accelerated",
+                "Queen's Indian Defense",
+                "Queen's Pawn Game",
+                "Rapport-Jobava System",
+                "Rat Defense",
+                "Richter-Veresov Attack",
+                "Robatsch Defense",
+                "Rubinstein Opening",
+                "Ruy Lopez",
+                "Réti Opening",
+            ],
+        ),
+        (
+            "S to V",
+            [
+                "Saragossa Opening",
+                "Scandinavian Defense",
+                "Scotch Game",
+                "Semi-Slav Defense",
+                "Sicilian Defense",
+                "Slav Defense",
+                "Slav Indian",
+                "Sodium Attack",
+                "St. George Defense",
+                "Tarrasch Defense",
+                "Three Knights Game",
+                "Torre Attack",
+                "Trompowsky Attack",
+                "Van Geet Opening",
+                "Van't Kruijs Opening",
+                "Vienna Gambit",
+                "Vienna Game",
+            ],
+        ),
+        (
+            "W to Z",
+            [
+                "Wade Defense",
+                "Ware Defense",
+                "Ware Opening",
+                "Yusupov-Rubinstein System",
+                "Zukertort Opening",
+            ],
+        ),
+    ]
+    ALL_OPENINGS: "List[str]" = [
+        "Alekhine Defense",
+        "Amar Opening",
+        "Amazon Attack",
+        "Anderssen's Opening",
+        "Barnes Defense",
+        "Barnes Opening",
+        "Benko Gambit",
+        "Benko Gambit Accepted",
+        "Benko Gambit Declined",
+        "Benoni Defense",
+        "Bird Opening",
+        "Bishop's Opening",
+        "Blackmar Gambit",
+        "Blackmar Gambit Accepted",
+        "Blackmar Gambit Declined",
+        "Blumenfeld Countergambit",
+        "Bogo-Indian Defense",
+        "Borg Defense",
+        "Canard Opening",
+        "Caro-Kann Defense",
+        "Carr Defense",
+        "Catalan Opening",
+        "Center Game",
+        "Center Counter",
+        "Clemenz Opening",
+        "Czech Defense",
+        "Danish Gambit",
+        "Danish Gambit Accepted",
+        "Danish Gambit Declined",
+        "Dutch Defense",
+        "East Indian Defense",
+        "Elephant Gambit",
+        "English Defense",
+        "English Opening",
+        "Englund Gambit",
+        "Englund Gambit Declined",
+        "French Defense",
+        "Fried Fox Defense",
+        "Goldsmith Defense",
+        "Grob Opening",
+        "Grunfeld Defense",
+        "Gunderam Defense",
+        "Hippopotamus Defense",
+        "Horwitz Defense",
+        "Hungarian Opening",
+        "Indian Defense",
+        "Italian Game",
+        "Kangaroo Defense",
+        "King's Gambit",
+        "King's Gambit Accepted",
+        "King's Gambit Declined",
+        "King's Indian Attack",
+        "King's Indian Defense",
+        "King's Knight Opening",
+        "King's Pawn Game",
+        "King's Pawn Opening",
+        "Kadas Opening",
+        "Lasker Simul Special",
+        "Latvian Gambit",
+        "Latvian Gambit Accepted",
+        "Lemming Defense",
+        "Lion Defense",
+        "London System",
+        "Mexican Defense",
+        "Mieses Opening",
+        "Mikenas Defense",
+        "Modern Defense",
+        "Neo-Grunfeld Defense",
+        "Nimzo-Indian Defense",
+        "Nimzo-Larsen Attack",
+        "Nimzowitsch Defense",
+        "Old Indian Defense",
+        "Owen Defense",
+        "Paleface Attack",
+        "Petrov's Defense",
+        "Philidor Defense",
+        "Pirc Defense",
+        "Polish Defense",
+        "Polish Opening",
+        "Ponziani Opening",
+        "Portuguese Defense",
+        "Pseudo-Queen's Indian Defense",
+        "Pterodactyl Defense",
+        "Queen's Gambit",
+        "Queen's Gambit Accepted",
+        "Queen's Gambit Declined",
+        "Queen's Indian Accelerated",
+        "Queen's Indian Defense",
+        "Queen's Pawn Game",
+        "Rapport-Jobava System",
+        "Rat Defense",
+        "Richter-Veresov Attack",
+        "Robatsch Defense",
+        "Rubinstein Opening",
+        "Ruy Lopez",
+        "Réti Opening",
+        "Saragossa Opening",
+        "Scandinavian Defense",
+        "Scotch Game",
+        "Semi-Slav Defense",
+        "Sicilian Defense",
+        "Slav Defense",
+        "Slav Indian",
+        "Sodium Attack",
+        "St. George Defense",
+        "Tarrasch Defense",
+        "Three Knights Game",
+        "Torre Attack",
+        "Trompowsky Attack",
+        "Van Geet Opening",
+        "Van't Kruijs Opening",
+        "Vienna Gambit",
+        "Vienna Game",
+        "Wade Defense",
+        "Ware Defense",
+        "Ware Opening",
+        "Yusupov-Rubinstein System",
+        "Zukertort Opening",
+    ]
+
+    # -------------------- Top-level puzzle menu --------------------
+
+    # link.sendtoboard("ChoosePuzzle")
+    top = _paged_menu("PUZZLES", ["Daily Puzzle", "Mix and match", "Themes"])
+    if top is None:
+        raise GoToModeSelect()
+
+    if top.startswith("Daily"):
+        DailyPuzzleController(client, mode="daily").run(link, display)
+        return
+
+    if top.startswith("Mix"):
+        DailyPuzzleController(client, mode="mix").run(link, display)
+        return
+
+    # -------------------- Themes submenu --------------------
+
+    themes_top = _paged_menu("THEMES", ["Phases", "Openings"])
+    if themes_top is None:
+        raise GoToModeSelect()
+
+    if themes_top.startswith("Phases"):
+        label = _paged_menu("PHASES", [t[1] for t in PHASE_THEMES])
+        if label is None:
             raise GoToModeSelect()
-        if m in ("1", "daily", "btn_puzzle_daily"):
-            DailyPuzzleController(client, mode="daily").run(link, display)
-            return
-        if m in ("2", "mix", "random", "btn_puzzle_mix"):
-            DailyPuzzleController(client, mode="mix").run(link, display)
-            return
-        display.send("PUZZLES\n1) Daily\n2) Mix & Match\nOK = cancel")
+        tag = None
+        for k, v in PHASE_THEMES:
+            if v == label:
+                tag = k
+                break
+        if not tag:
+            raise GoToModeSelect()
+
+        # IMPORTANT:
+        # "Phases -> Opening" must request the PHASE tag 'opening' (lichess training/themes),
+        # NOT a random opening name (lichess training/openings).
+        DailyPuzzleController(
+            client,
+            mode="theme",
+            theme=tag,  # tag is e.g. 'opening', 'middlegame', 'endgame', ...
+            theme_label=label,  # label is "Opening", "Middlegame", ...
+        ).run(link, display)
+        return
+
+    if themes_top.startswith("Openings"):
+        grp = _paged_menu("OPENINGS", [g[0] for g in OPENING_GROUPS])
+        if grp is None:
+            raise GoToModeSelect()
+        opts: Optional[List[str]] = None
+        for gname, glist in OPENING_GROUPS:
+            if gname == grp:
+                opts = glist
+                break
+        if not opts:
+            raise GoToModeSelect()
+
+        label = _paged_menu(grp.upper(), opts)
+        if label is None:
+            raise GoToModeSelect()
+
+        # For openings, pass the opening label as the angle; lichess_client will slugify.
+        DailyPuzzleController(client, mode="theme", theme=label, theme_label=label).run(
+            link, display
+        )
+        return
+
+    raise GoToModeSelect()
 
 
 def mode_dispatch(
@@ -987,7 +1449,7 @@ def mode_dispatch(
     state: RuntimeState,
     cfg: GameConfig,
 ) -> None:
-    if state.mode == "stockfish":
+    if state.mode in ("stockfish", "pc", "btn_mode_pc", "vs_computer", "vs"):
         setup_stockfish(link, display, cfg)
         link.sendtoboard("SetupComplete")
         # Refactored: run through the explicit GameController state machine.
@@ -1005,17 +1467,44 @@ def mode_dispatch(
             human_is_white=cfg.human_is_white,
         )
         controller.play_stockfish(move_time_ms=cfg.move_time_ms)
-    elif state.mode == "local":
+    elif state.mode in ("local", "btn_mode_local", "local_2p"):
         setup_local(link, display, cfg)
         link.sendtoboard("SetupComplete")
         play_game(link, display, ctx, state, cfg)
-    elif state.mode == "puzzle":
+    elif state.mode in ("puzzle", "puzzles", "btn_mode_puzzle", "btn_mode_puzzles"):
         # No Pico setup screens for puzzle yet.
         link.sendtoboard("SetupComplete")
         run_puzzle_mode(link, display)
         raise GoToModeSelect()
-    else:
+    elif state.mode == "online":
         run_online_mode(link, display, cfg)
+    else:
+        # Don't silently fall back to online; it hides mode-token bugs.
+        print(f"[MODE DISPATCH] unknown mode={state.mode!r}", flush=True)
+        try:
+            link.sendtoboard("error_unknown_mode")
+        except Exception:
+            pass
+        display.send("Unknown mode\n" + str(state.mode)[:18] + "\nOK=menu")
+        # Wait for OK or New (OK+HINT) then return to mode select
+        while True:
+            msg = link.getboard()
+            if msg is None:
+                continue
+            m = msg.strip().lower()
+            if m in (
+                "n",
+                "new",
+                "in",
+                "newgame",
+                "btn_new",
+                "ok",
+                "btn_ok",
+                "btnok",
+                "hint",
+                "btn_hint",
+            ):
+                raise GoToModeSelect()
 
 
 # -------------------- Shutdown --------------------
