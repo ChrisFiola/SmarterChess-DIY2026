@@ -1461,7 +1461,7 @@ def mode_dispatch(
         setup_stockfish(link, display, cfg)
         link.sendtoboard("SetupComplete")
 
-        display.send("Engine starting...")
+        display.send("Engine loading...")
         ctx.ensure()  # uses default STOCKFISH_PATH
 
         # Refactored: run through the explicit GameController state machine.
