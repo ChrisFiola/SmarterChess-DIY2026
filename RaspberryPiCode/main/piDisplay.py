@@ -27,6 +27,23 @@ class Display:
         self._pipe = None
         self._last_payload = None
         self._last_send_t = 0.0
+        # Simple "UI lock" to prevent important prompts (typing / confirmations)
+        # from being immediately overwritten by background/status messages.
+        self._lock_until = 0.0
+        self._locked_category = None
+
+    def _classify(self, message: str) -> str:
+        m = (message or "").lower()
+        # Critical should always break through
+        if any(k in m for k in ["illegal", "invalid", "game over", "promotion", "draw", "shutting down"]):
+            return "critical"
+        # High-salience prompts while user is actively entering a move
+        if any(k in m for k in ["enter from", "enter to", "confirm move", "ok to send", "press ok"]):
+            return "prompt"
+        # Low-value transient status
+        if any(k in m for k in ["engine thinking", "engine starting", "loading"]):
+            return "status"
+        return "normal"
 
     def _ensure_pipe(self) -> None:
         if self._pipe is None:
@@ -86,6 +103,22 @@ class Display:
     def send(self, message: str, size: str = "auto") -> None:
         parts = message.split("\n")
         payload = "|".join(parts) + f"|{size}\n"
+
+        now = time.monotonic()
+        cat = self._classify(message)
+
+        # If we're locked on a prompt, do not let background messages overwrite
+        # it for a short window. Critical messages can always break through.
+        if now < self._lock_until and self._locked_category == "prompt" and cat not in ("prompt", "critical"):
+            return
+
+        # Acquire/refresh prompt lock so the user can read it.
+        if cat == "prompt":
+            self._lock_until = now + 0.45
+            self._locked_category = "prompt"
+        elif cat == "critical":
+            self._lock_until = 0.0
+            self._locked_category = None
 
         # Client-side de-dupe: don’t spam identical frames
         if payload == self._last_payload:
