@@ -1680,11 +1680,11 @@ def collect_and_send_move():
                 continue
 
             if res == "ok":
-                # ui_board.redraw_final_trail(move, cap=preview_cap_flag)
+                ui_board.redraw_final_trail(move, cap=preview_cap_flag)
                 time.sleep_ms(200)
                 send_to_pi(move)
                 preview_cap_flag = False
-                # ui_board.markings()
+                ui_board.markings()
                 return
 
             if isinstance(res, tuple) and res[0] == "redo":
