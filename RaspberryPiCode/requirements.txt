@@ -1,13 +1,7 @@
 python-chess
-pyserial
-requests
 Pillow
-os
-sys
-time
-spidev
-logging
-numpy
+requests
+pyserial
 gpiozero
-neopixel
-chess
+numpy
+spidev
