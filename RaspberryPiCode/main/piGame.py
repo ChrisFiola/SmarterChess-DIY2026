@@ -1452,6 +1452,10 @@ def mode_dispatch(
     if state.mode in ("stockfish", "pc", "btn_mode_pc", "vs_computer", "vs"):
         setup_stockfish(link, display, cfg)
         link.sendtoboard("SetupComplete")
+
+        display.send("Engine starting...")
+        ctx.ensure()  # uses default STOCKFISH_PATH
+
         # Refactored: run through the explicit GameController state machine.
         from app.game_controller import GameController, LoopDeps
         from app.stockfish_opponent import StockfishOpponent

@@ -32,6 +32,7 @@ disp.clear()
 W, H = disp.width, disp.height
 FONT_PATH = "/home/king/LCD_Module_RPI_code/RaspberryPi/python/Font/Font00.ttf"
 BLACK_BG = Image.new("RGB", (W, H), "BLACK")
+SCRATCH = BLACK_BG.copy()
 DRAW_MEASURE = ImageDraw.Draw(BLACK_BG)
 MEASURE_CACHE = {}  # (size, text) -> (w,h)
 
@@ -92,7 +93,8 @@ def draw_centered_text_with_size(lines, size: int, spacing: int = 6, vpad: int =
     """
     Draw 'lines' using font 'size' and 'spacing', centered on screen.
     """
-    img = BLACK_BG.copy()
+    img = SCRATCH
+    img.paster(BLACK_BG)
     draw = ImageDraw.Draw(img)
     font = get_font(size)
 

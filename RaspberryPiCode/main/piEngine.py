@@ -2,12 +2,15 @@
 """
 Engine context and helpers (Stockfish) for SmarterChess (modular version).
 """
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 import time
-import chess  # type: ignore
-import chess.engine  # type: ignore  
 
 STOCKFISH_PATH: str = "/usr/games/stockfish"
+
+if TYPE_CHECKING:
+    import chess  # type: ignore
+    import chess.engine  # type: ignore
+
 
 class EngineContext:
     def __init__(self):
@@ -16,9 +19,15 @@ class EngineContext:
     def ensure(self, path: str = STOCKFISH_PATH) -> chess.engine.SimpleEngine:
         if self.engine is not None:
             return self.engine
+
+        # Local import: only pay import cost when actually starting the engine
+        import chess.engine  # type: ignore
+
         while True:
             try:
-                self.engine = chess.engine.SimpleEngine.popen_uci(path, stderr=None, timeout=None)
+                self.engine = chess.engine.SimpleEngine.popen_uci(
+                    path, stderr=None, timeout=None
+                )
                 return self.engine
             except Exception:
                 time.sleep(1)
@@ -31,15 +40,23 @@ class EngineContext:
                 pass
             self.engine = None
 
+
 def engine_bestmove(ctx: EngineContext, brd: chess.Board, ms: int) -> Optional[str]:
+    # Local import: only pay import cost when actually starting the engine
+    import chess.engine  # type: ignore
+
     if brd.is_game_over():
         return None
     engine = ctx.ensure(STOCKFISH_PATH)
     limit = chess.engine.Limit(time=max(0.01, ms / 1000.0))
-    result = engine.play(brd, limit)  # type: ignore 
+    result = engine.play(brd, limit)  # type: ignore
     return result.move.uci() if result.move else None
 
+
 def engine_hint(ctx: EngineContext, brd: chess.Board, ms: int) -> Optional[str]:
+    # Local import: only pay import cost when actually starting the engine
+    import chess.engine  # type: ignore
+
     try:
         engine = ctx.ensure(STOCKFISH_PATH)
         info = engine.analyse(brd, chess.engine.Limit(time=max(0.01, ms / 1000.0)))  # type: ignore
