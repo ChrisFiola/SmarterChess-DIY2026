@@ -2,6 +2,8 @@
 """
 Engine context and helpers (Stockfish) for SmarterChess (modular version).
 """
+from __future__ import annotations
+
 from typing import Optional, TYPE_CHECKING
 import time
 
@@ -14,9 +16,9 @@ if TYPE_CHECKING:
 
 class EngineContext:
     def __init__(self):
-        self.engine: Optional[chess.engine.SimpleEngine] = None
+        self.engine: Optional["chess.engine.SimpleEngine"] = None
 
-    def ensure(self, path: str = STOCKFISH_PATH) -> chess.engine.SimpleEngine:
+    def ensure(self, path: str = STOCKFISH_PATH) -> "chess.engine.SimpleEngine":
         if self.engine is not None:
             return self.engine
 
@@ -41,7 +43,7 @@ class EngineContext:
             self.engine = None
 
 
-def engine_bestmove(ctx: EngineContext, brd: chess.Board, ms: int) -> Optional[str]:
+def engine_bestmove(ctx: EngineContext, brd: "chess.Board", ms: int) -> Optional[str]:
     # Local import: only pay import cost when actually starting the engine
     import chess.engine  # type: ignore
 
@@ -53,7 +55,7 @@ def engine_bestmove(ctx: EngineContext, brd: chess.Board, ms: int) -> Optional[s
     return result.move.uci() if result.move else None
 
 
-def engine_hint(ctx: EngineContext, brd: chess.Board, ms: int) -> Optional[str]:
+def engine_hint(ctx: EngineContext, brd: "chess.Board", ms: int) -> Optional[str]:
     # Local import: only pay import cost when actually starting the engine
     import chess.engine  # type: ignore
 
