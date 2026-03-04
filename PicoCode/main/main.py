@@ -12,7 +12,7 @@ import neopixel
 
 # Buttons (active-low) wiring stays unchanged
 BUTTON_PINS = [2, 3, 4, 5, 10, 8, 7, 6, 9, 11]  # 1–8=coords, 9=A1(OK), 11=Hint IRQ
-DEBOUNCE_MS = 100
+DEBOUNCE_MS = 150
 
 
 # OK long-hold threshold for backspace during move entry
@@ -120,7 +120,7 @@ puzzle_setup_active = False
 border_coords_on = False
 
 # Border coordinate brightness (user request: max brightness)
-CP_BORDER_COLOR = WHITE
+CP_BORDER_COLOR = (90, 90, 90)
 
 # ============================================================
 # =============== PERSISTENT OVERLAYS ========================
@@ -228,17 +228,20 @@ class ControlPanel:
     # Low-level pixel primitives
     # ----------------------------
     def set_pixel(self, i, color):
+        """Stage one pixel update (no immediate write).
+
+        Use write() / cp_apply_if_changed() to flush.
+        """
         if 0 <= i < self.count:
             self.np[i] = color
-            self.np.write()
 
     def fill_range(self, color, start=0, count=None):
+        """Stage a contiguous range update (no immediate write)."""
         if count is None:
             count = self.count - start
         end = min(self.count, start + count)
         for i in range(start, end):
             self.np[i] = color
-        self.np.write()
 
     def set_pixel_no_write(self, i, color):
         if 0 <= i < self.count:
@@ -251,23 +254,21 @@ class ControlPanel:
     # Semantic helpers
     # ----------------------------
     def set_ok(self, on=True, color=GREEN):
-        self.set_pixel(CP_OK_PIX, (color if on else BLACK))
+        self.set_pixel_no_write(CP_OK_PIX, (color if on else BLACK))
 
     def set_hint(self, on=True, color=YELLOW):
-        self.set_pixel(CP_HINT_PIX, (color if on else BLACK))
+        self.set_pixel_no_write(CP_HINT_PIX, (color if on else BLACK))
 
     def set_border_dim(self, dim_color, on=True):
         col = dim_color if on else BLACK
         for idx in CP_FILES_LEDS + CP_RANKS_LEDS:
             if 0 <= idx < self.count:
                 self.set_pixel_no_write(idx, col)
-        self.write()
 
     def clear_header(self):
         for i in range(0, 6):
             if i < self.count:
                 self.set_pixel_no_write(i, BLACK)
-        self.write()
 
 
 class Chessboard:
@@ -620,21 +621,7 @@ class ChessboardUI:
         self.markings()
         endc = MAGENTA if cap else None
         self.board.draw_trail(uci, GREEN, end_color=endc)
-        # User request: capture blink should happen AFTER confirming the move
-        # (not during preview). So we only blink here.
-        if cap and isinstance(uci, str) and len(uci) >= 4:
-            try:
-                to_sq = uci[2:4]
-                self.board.blink_dest_algebraic(
-                    to_sq,
-                    MAGENTA,
-                    times=2,
-                    on_ms=140,
-                    off_ms=120,
-                    final_color=MAGENTA,
-                )
-            except Exception:
-                pass
+        # No capture blink here (user preference).
 
     def overlay_show(
         self, role, move_uci, cap=False, color_override=None, end_color=None
@@ -911,14 +898,14 @@ def cp_apply_if_changed(force=False):
         _cp_last = cur
 
 
-def cp_set_border(on=True, color=WHITE):
+def cp_set_border(on=True, color=WHITE, force=False):
     """Set A-H and 1-8 border LEDs on the control panel."""
     col = color if on else BLACK
     for idx in CP_FILES_LEDS + CP_RANKS_LEDS:
         if 0 <= idx < cp.count:
             cp.set_pixel_no_write(idx, col)
     # Do not force: avoid flicker if no change.
-    cp_apply_if_changed()
+    cp_apply_if_changed(force=force)
 
 
 def cp_all_off():
@@ -1618,7 +1605,7 @@ def confirm_move(move):
                         _send_to_preview(frm, partial[2])
                     else:
                         _send_to_preview(frm, "")
-                    # ui_board.preview_from(frm)
+                    ui_board.preview_from(frm)
 
                 time.sleep_ms(10)
 
@@ -2155,6 +2142,7 @@ def handle_promotion_choice():
                 break
     finally:
         cp.clear_header()
+        cp_apply_if_changed(force=True)
         ui_board.markings()
 
 
@@ -2179,12 +2167,9 @@ def handle_puzzle_setup_cmd(msg):
         buttons.reset()
         ok_last_val = BTN_OK.value()
 
-        # User request: while the LCD is prompting to set up pieces, keep the
-        # border coordinates ON (max brightness) and avoid any flashing.
+        # Keep border coordinates ON during puzzle setup (no flashing).
         try:
-            for idx in CP_FILES_LEDS + CP_RANKS_LEDS:
-                cp.set_pixel_no_write(idx, CP_BORDER_COLOR)
-            cp.write()
+            cp_set_border(True, force=True)
         except Exception:
             pass
 
