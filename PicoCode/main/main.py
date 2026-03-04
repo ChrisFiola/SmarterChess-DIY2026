@@ -497,7 +497,7 @@ class Chessboard:
             return
         x, y = xy
         try:
-            idx = self.xy_to_index(x, y)
+            idx = self._xy_to_index(x, y)
             prev = self.np[idx]
         except Exception:
             prev = None
@@ -569,7 +569,7 @@ class ChessboardUI:
         self.overlay_active = False
         self.overlay_type = None
         self.overlay_move = None
-        self.__last_from_only = None
+        self._last_from_only = None
 
     def off(self):
         self.board.clear(BLACK)
@@ -614,9 +614,6 @@ class ChessboardUI:
         self.markings()
         endc = MAGENTA if cap else None
         self.board.draw_trail(uci, GREEN, end_color=endc)
-        # NOTE: capture used to blink the destination square. This caused
-        # noticeable flicker/"flash" on fast inputs. We now keep capture
-        # feedback purely as a solid end_color (MAGENTA) for a smoother UX.
 
     def redraw_final_trail(self, uci, cap=False):
         # Always start overlays from base markings for consistent UX
@@ -662,6 +659,80 @@ class ChessboardUI:
         self.overlay_move = None
         self._last_from_only = None
         self.board.show_markings()
+
+
+class PreviewBlink:
+    """Non-blocking single-square blink runner."""
+
+    def __init__(self, board: Chessboard):
+        self.board = board
+        self.active = False
+        self.x = 0
+        self.y = 0
+        self.on_color = MAGENTA
+        self.final_color = MAGENTA
+        self.times_left = 0
+        self.is_on = False
+        self.next_ms = 0
+        self.on_ms = 140
+        self.off_ms = 120
+
+    def start_xy(
+        self, x, y, color_on, times=4, on_ms=140, off_ms=120, final_color=None
+    ):
+        self.active = True
+        self.x, self.y = x, y
+        self.on_color = color_on
+        self.final_color = color_on if final_color is None else final_color
+        self.times_left = max(1, int(times)) * 2  # on+off steps
+        self.is_on = False
+        self.on_ms = int(on_ms)
+        self.off_ms = int(off_ms)
+        self.next_ms = time.ticks_ms()
+
+    def start_sq(self, sq, color_on, times=4, on_ms=140, off_ms=120, final_color=None):
+        xy = self.board.algebraic_to_xy(sq)
+        if not xy:
+            return
+        self.start_xy(
+            xy[0],
+            xy[1],
+            color_on,
+            times=times,
+            on_ms=on_ms,
+            off_ms=off_ms,
+            final_color=final_color,
+        )
+
+    def stop(self):
+        self.active = False
+
+    def tick(self):
+        if not self.active:
+            return
+        now = time.ticks_ms()
+        if time.ticks_diff(now, self.next_ms) < 0:
+            return
+
+        # Toggle
+        if not self.is_on:
+            self.board.set_square(self.x, self.y, self.on_color)
+            self.board.write()
+            self.is_on = True
+            self.times_left -= 1
+            self.next_ms = time.ticks_add(now, self.on_ms)
+        else:
+            self.board.set_square(self.x, self.y, BLACK)
+            self.board.write()
+            self.is_on = False
+            self.times_left -= 1
+            self.next_ms = time.ticks_add(now, self.off_ms)
+
+        # Done => set final color and stop
+        if self.times_left <= 0:
+            self.board.set_square(self.x, self.y, self.final_color)
+            self.board.write()
+            self.active = False
 
 
 # ============================================================
@@ -736,6 +807,7 @@ board = Chessboard(
     zigzag=MATRIX_ZIGZAG,
 )
 ui_board = ChessboardUI(board)
+preview_blink = PreviewBlink(board)
 buttons = ButtonManager(BUTTON_PINS)
 
 BTN_OK = buttons.btn(OK_BUTTON_INDEX)
@@ -1112,21 +1184,6 @@ def clear_persistent_trail(confirm_blink=False):
     mv = persistent_trail_move
     endc = persistent_trail_end_color
 
-    # Optional: blink capture destination once the user acknowledges the overlay.
-    if confirm_blink and endc == MAGENTA and isinstance(mv, str) and len(mv) >= 4:
-        try:
-            to_sq = mv[2:4]
-            board.blink_dest_algebraic(
-                to_sq,
-                MAGENTA,
-                times=2,
-                on_ms=140,
-                off_ms=120,
-                final_color=MAGENTA,
-            )
-        except Exception:
-            pass
-
     persistent_trail_active = False
     persistent_trail_type = None
     persistent_trail_move = None
@@ -1497,6 +1554,18 @@ def confirm_move(move):
         return None
 
     cp_only_ok(True)
+
+    # IMPORTANT: if OK is currently held down, wait for release so we can treat
+    # the next press cleanly (avoids "stuck low" / edge-miss issues).
+    while BTN_OK.value() == 0:
+        if is_shutdown_held():
+            shutdown_pico()
+        irq = process_hint_irq()
+        if irq == "new":
+            cp_only_ok(False)
+            return None
+        time.sleep_ms(10)
+
     buttons.reset()
     _send_confirm_preview(move)
 
@@ -1523,18 +1592,12 @@ def confirm_move(move):
                 cancel_user_input_and_restart()
                 return None
 
-        b = buttons.detect_press()
-        if not b:
-            time.sleep_ms(5)
-            continue
-
-        if b == (OK_BUTTON_INDEX + 1):
-            # OK at confirm stage:
-            # - Short press (release < LONG_PRESS_MS): CONFIRM
-            # - Long hold (>= LONG_PRESS_MS): DELETE last character immediately (single-shot) and return to TO-rank entry
+        # --- OK handling via LEVEL (not edge) ---
+        if BTN_OK.value() == 0:
             t0 = time.ticks_ms()
             fired = False
 
+            # stay here while held: long-hold => backspace; short => confirm
             while BTN_OK.value() == 0:
                 if is_shutdown_held():
                     shutdown_pico()
@@ -1544,25 +1607,19 @@ def confirm_move(move):
                     cp_only_ok(False)
                     return None
 
-                # Fire delete once at threshold (while still held)
                 if (not fired) and time.ticks_diff(
                     time.ticks_ms(), t0
                 ) >= LONG_PRESS_MS:
                     fired = True
-                    # move is full UCI (len 4). Delete last char => len 3 (keep TO file)
-                    partial = move[:-1]  # could be len 3 or len 2
-                    frm = partial[:2]
 
+                    partial = move[:-1]  # delete last char
+                    frm = partial[:2]
                     if len(partial) == 3:
-                        # e2e : show "e2 → e"
                         _send_to_preview(frm, partial[2])
                     else:
-                        # e2 : show "e2 →" (TO empty)
                         _send_to_preview(frm, "")
-                    ui_board.preview_from(frm)
+                    # ui_board.preview_from(frm)
 
-                    # Wait for release so we don't immediately treat it as a new press
-                    # (but do not block other critical actions)
                 time.sleep_ms(10)
 
             held_ms = time.ticks_diff(time.ticks_ms(), t0)
@@ -1573,19 +1630,24 @@ def confirm_move(move):
                 ok_wait_release()
                 return ("backspace_confirm", move[:-1])
 
-            # Short press confirms on release
             if held_ms < LONG_PRESS_MS:
                 cp_only_ok(False)
                 return "ok"
 
-            # Long hold but somehow didn't fire (edge): ignore
+            # long hold but didn’t fire (edge): ignore
             buttons.reset()
             continue
 
-        else:
-            cp_only_ok(False)
-            ui_board.markings()
-            return ("redo", b)
+        # --- Non-OK buttons (redo) still use edge detector ---
+        b = buttons.detect_press()
+        if not b:
+            time.sleep_ms(5)
+            continue
+
+        # Any other button cancels confirm stage and restarts input
+        cp_only_ok(False)
+        # ui_board.markings()
+        return ("redo", b)
 
 
 def collect_and_send_move():
