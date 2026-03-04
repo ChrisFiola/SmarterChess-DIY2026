@@ -72,7 +72,7 @@ class Display:
         # Start server with same interpreter as piMain
         log = open("/tmp/display_server.log", "a")
         subprocess.Popen(
-            [sys.executable, DISPLAY_SERVER_SCRIPT],
+            ["python3", DISPLAY_SERVER_SCRIPT],
             stdout=log,
             stderr=log,
         )
