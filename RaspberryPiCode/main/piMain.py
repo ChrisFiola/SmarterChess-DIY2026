@@ -32,11 +32,8 @@ from piEngine import EngineContext
 def main():
     display = Display()
     display.restart_server()
-    display.wait_ready()
-
-    # Splash + engine pre-warm before we open UART / ask for mode
     display.banner("SMARTCHESS")  # splash
-    # display.send("Engine starting...")          # status line prior to mode select
+    display.wait_ready()
 
     ctx = EngineContext()
     # ctx.ensure("/usr/games/stockfish")

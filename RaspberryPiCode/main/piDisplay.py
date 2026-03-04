@@ -70,11 +70,10 @@ class Display:
                 pass
 
         # Start server with same interpreter as piMain
-        log = open("/tmp/display_server.log", "a")
         subprocess.Popen(
             ["python3", DISPLAY_SERVER_SCRIPT],
-            stdout=log,
-            stderr=log,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
 
     def wait_ready(self, timeout_s: float = 10.0) -> None:

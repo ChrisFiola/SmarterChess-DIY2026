@@ -31,8 +31,11 @@ disp.clear()
 # Screen constants
 W, H = disp.width, disp.height
 FONT_PATH = "/home/king/LCD_Module_RPI_code/RaspberryPi/python/Font/Font00.ttf"
+
+FRAME = Image.new("RGB", (W, H), "BLACK")
+DRAW = ImageDraw.Draw(FRAME)
+
 BLACK_BG = Image.new("RGB", (W, H), "BLACK")
-SCRATCH = BLACK_BG.copy()
 DRAW_MEASURE = ImageDraw.Draw(BLACK_BG)
 MEASURE_CACHE = {}  # (size, text) -> (w,h)
 
@@ -63,20 +66,20 @@ def find_best_font_size(lines, min_size=14, max_size=28, vpad=4, spacing=6):
 
         for ln in lines:
             if not ln:
-                h = size
                 w = 0
+                h = size
             else:
                 key = (size, ln)
                 wh = MEASURE_CACHE.get(key)
-
                 if wh is None:
                     bbox = DRAW_MEASURE.textbbox((0, 0), ln, font=font)
                     wh = (bbox[2] - bbox[0], bbox[3] - bbox[1])
                     MEASURE_CACHE[key] = wh
-
                 w, h = wh
-                total_h += h + spacing
-                max_w = max(max_w, w)
+
+            total_h += h + spacing
+            if w > max_w:
+                max_w = w
 
         total_h -= spacing
 
@@ -90,39 +93,45 @@ def find_best_font_size(lines, min_size=14, max_size=28, vpad=4, spacing=6):
 # Draw centered text with explicit size/spacing
 # ------------------------------------------------------
 def draw_centered_text_with_size(lines, size: int, spacing: int = 6, vpad: int = 0):
-    """
-    Draw 'lines' using font 'size' and 'spacing', centered on screen.
-    """
-    img = SCRATCH
-    img.paste(BLACK_BG)
-    draw = ImageDraw.Draw(img)
+    # Clear framebuffer (no new allocations)
+    DRAW.rectangle((0, 0, W, H), fill="BLACK")
+
     font = get_font(size)
 
-    # Measure
+    # Measure using DRAW_MEASURE (doesn't touch framebuffer)
     heights = []
     total_h = 0
     for ln in lines:
         if not ln:
-            h = size  # blank line spacing approximated to font size
+            h = size
         else:
-            bbox = draw.textbbox((0, 0), ln, font=font)
-            h = bbox[3] - bbox[1]
+            key = (size, ln)
+            wh = MEASURE_CACHE.get(key)
+            if wh is None:
+                bbox = DRAW_MEASURE.textbbox((0, 0), ln, font=font)
+                wh = (bbox[2] - bbox[0], bbox[3] - bbox[1])
+                MEASURE_CACHE[key] = wh
+            _, h = wh
         heights.append(h)
         total_h += h + spacing
     total_h -= spacing
 
-    # Vertical center
     y = max(0, (H - total_h) // 2)
 
-    # Draw each line centered horizontally
     for ln, h in zip(lines, heights):
         if ln:
-            bbox = draw.textbbox((0, 0), ln, font=font)
-            w = bbox[2] - bbox[0]
-            draw.text(((W - w) // 2, y), ln, font=font, fill="WHITE")
+            key = (size, ln)
+            wh = MEASURE_CACHE.get(key)
+            if wh is None:
+                bbox = DRAW_MEASURE.textbbox((0, 0), ln, font=font)
+                wh = (bbox[2] - bbox[0], bbox[3] - bbox[1])
+                MEASURE_CACHE[key] = wh
+            w, _ = wh
+
+            DRAW.text(((W - w) // 2, y), ln, font=font, fill="WHITE")
         y += h + spacing
 
-    disp.ShowImage(img)
+    disp.ShowImage(FRAME)
 
 
 def draw_centered_text_auto(lines, min_size=14, max_size=28, vpad=4, spacing=6):
@@ -141,12 +150,10 @@ def draw_centered_text_auto(lines, min_size=14, max_size=28, vpad=4, spacing=6):
 
 
 def draw_qr(data: str, caption_lines):
-    """Draw QR code (data) + optional caption lines."""
     if not data:
         draw_centered_text_auto(["QR", "(empty)"])
         return
 
-    # If QR encoder isn't available for any reason, fall back to text.
     if _qr_encode_text is None:
         draw_centered_text_auto(["QR unsupported", data[:18]])
         return
@@ -155,15 +162,14 @@ def draw_qr(data: str, caption_lines):
         qr = _qr_encode_text(data, ecl="M")
         qsz = qr.size
 
-        # Reserve some space for caption (bottom).
+        # Reserve caption height
         caption_h = 0
         if caption_lines:
-            font = get_font(14)
-            draw = ImageDraw.Draw(BLACK_BG)
+            font_cap = get_font(14)
             for ln in caption_lines[:3]:
                 if not ln:
                     continue
-                bbox = draw.textbbox((0, 0), ln, font=font)
+                bbox = DRAW_MEASURE.textbbox((0, 0), ln, font=font_cap)
                 caption_h += (bbox[3] - bbox[1]) + 4
             caption_h = min(caption_h + 6, 52)
 
@@ -172,39 +178,39 @@ def draw_qr(data: str, caption_lines):
         avail_h = H - 2 * pad - caption_h
         scale = max(1, min(avail_w // qsz, avail_h // qsz))
 
-        # Build QR image
-        img = BLACK_BG.copy()
-        draw = ImageDraw.Draw(img)
+        # Clear framebuffer
+        DRAW.rectangle((0, 0, W, H), fill="BLACK")
 
         qr_px = qsz * scale
         ox = (W - qr_px) // 2
         oy = max(pad, (avail_h - qr_px) // 2 + pad)
 
-        # White background for QR for better scan
-        draw.rectangle([ox - 2, oy - 2, ox + qr_px + 1, oy + qr_px + 1], fill="WHITE")
+        # White background for QR
+        DRAW.rectangle([ox - 2, oy - 2, ox + qr_px + 1, oy + qr_px + 1], fill="WHITE")
 
-        for y in range(qsz):
-            for x in range(qsz):
-                if qr.get_module(x, y):
-                    x0 = ox + x * scale
-                    y0 = oy + y * scale
-                    draw.rectangle(
-                        [x0, y0, x0 + scale - 1, y0 + scale - 1], fill="BLACK"
+        for yy in range(qsz):
+            y0 = oy + yy * scale
+            for xx in range(qsz):
+                if qr.get_module(xx, yy):
+                    x0 = ox + xx * scale
+                    DRAW.rectangle(
+                        [x0, y0, x0 + scale - 1, y0 + scale - 1],
+                        fill="BLACK",
                     )
 
-        # Caption under QR
+        # Caption
         if caption_lines:
-            font = get_font(14)
+            font_cap = get_font(14)
             ycur = min(H - caption_h + 4, oy + qr_px + 6)
             for ln in caption_lines[:3]:
                 if not ln:
                     continue
-                bbox = draw.textbbox((0, 0), ln, font=font)
+                bbox = DRAW_MEASURE.textbbox((0, 0), ln, font=font_cap)
                 tw = bbox[2] - bbox[0]
-                draw.text(((W - tw) // 2, ycur), ln, font=font, fill="WHITE")
+                DRAW.text(((W - tw) // 2, ycur), ln, font=font_cap, fill="WHITE")
                 ycur += (bbox[3] - bbox[1]) + 4
 
-        disp.ShowImage(img)
+        disp.ShowImage(FRAME)
     except Exception:
         draw_centered_text_auto(["QR error", data[:18]])
 
@@ -213,20 +219,18 @@ def draw_qr(data: str, caption_lines):
 # Splash screen
 # ------------------------------------------------------
 def draw_splash():
-    img = BLACK_BG.copy()
-    draw = ImageDraw.Draw(img)
-    # pick a size that looks good on 1.14"
+    DRAW.rectangle((0, 0, W, H), fill="BLACK")
+
     size = 28
     font = get_font(size)
-
     txt = "SMARTCHESS"
-    bbox = draw.textbbox((0, 0), txt, font=font)
+
+    bbox = DRAW_MEASURE.textbbox((0, 0), txt, font=font)
     w = bbox[2] - bbox[0]
     h = bbox[3] - bbox[1]
 
-    draw.text(((W - w) // 2, (H - h) // 2 - 10), txt, font=font, fill="WHITE")
-
-    disp.ShowImage(img)
+    DRAW.text(((W - w) // 2, (H - h) // 2 - 10), txt, font=font, fill="WHITE")
+    disp.ShowImage(FRAME)
 
 
 # Draw splash on start
