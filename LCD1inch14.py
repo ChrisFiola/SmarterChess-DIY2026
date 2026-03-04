@@ -1,37 +1,37 @@
-
 import time
 from . import lcdconfig
 
-class LCD_1inch14(lcdconfig.RaspberryPi):
 
+class LCD_1inch14(lcdconfig.RaspberryPi):
     width = 240
-    height = 135 
-    def command(self, cmd):
+    height = 135
+
+    def command(self, cmd: int) -> None:
         self.digital_write(self.DC_PIN, False)
-        self.spi_writebyte([cmd])	
-        
-    def data(self, val):
+        self.spi_writebyte([cmd])
+
+    def data(self, val: int) -> None:
         self.digital_write(self.DC_PIN, True)
-        self.spi_writebyte([val])	
-        
-    def reset(self):
-        """Reset the display"""
-        self.digital_write(self.RST_PIN,True)
+        self.spi_writebyte([val])
+
+    def reset(self) -> None:
+        """Reset the display."""
+        self.digital_write(self.RST_PIN, True)
         time.sleep(0.01)
-        self.digital_write(self.RST_PIN,False)
+        self.digital_write(self.RST_PIN, False)
         time.sleep(0.01)
-        self.digital_write(self.RST_PIN,True)
+        self.digital_write(self.RST_PIN, True)
         time.sleep(0.01)
-        
-    def Init(self):
-        """Initialize dispaly"""  
+
+    def Init(self) -> None:
+        """Initialize display."""
         self.module_init()
         self.reset()
 
         self.command(0x36)
-        self.data(0x70)                 #self.data(0x00)
+        self.data(0x70)  # self.data(0x00)
 
-        self.command(0x3A) 
+        self.command(0x3A)
         self.data(0x05)
 
         self.command(0xB2)
@@ -42,7 +42,7 @@ class LCD_1inch14(lcdconfig.RaspberryPi):
         self.data(0x33)
 
         self.command(0xB7)
-        self.data(0x35) 
+        self.data(0x35)
 
         self.command(0xBB)
         self.data(0x19)
@@ -54,13 +54,13 @@ class LCD_1inch14(lcdconfig.RaspberryPi):
         self.data(0x01)
 
         self.command(0xC3)
-        self.data(0x12)   
+        self.data(0x12)
 
         self.command(0xC4)
         self.data(0x20)
 
         self.command(0xC6)
-        self.data(0x0F) 
+        self.data(0x0F)
 
         self.command(0xD0)
         self.data(0xA4)
@@ -97,68 +97,83 @@ class LCD_1inch14(lcdconfig.RaspberryPi):
         self.data(0x1F)
         self.data(0x20)
         self.data(0x23)
-        
+
         self.command(0x21)
-
         self.command(0x11)
-
         self.command(0x29)
-  
-    def SetWindows(self, Xstart, Ystart, Xend, Yend):
-        #set the X coordinates
-        self.command(0x2A)
-        self.data((Xstart+40)>>8& 0xff)               #Set the horizontal starting point to the high octet
-        self.data((Xstart+40)   & 0xff)      #Set the horizontal starting point to the low octet
-        self.data((Xend-1+40)>>8& 0xff)        #Set the horizontal end to the high octet
-        self.data((Xend-1+40)   & 0xff) #Set the horizontal end to the low octet 
-        
-        #set the Y coordinates
-        self.command(0x2B)
-        self.data((Ystart+53)>>8& 0xff)
-        self.data((Ystart+53)   & 0xff)
-        self.data((Yend-1+53)>>8& 0xff)
-        self.data((Yend-1+53)   & 0xff)
 
-        self.command(0x2C) 
-        
-    def ShowImage(self, Image):
-    	imwidth, imheight = Image.size
-    	if imwidth != self.width or imheight != self.height:
+    def SetWindows(self, Xstart: int, Ystart: int, Xend: int, Yend: int) -> None:
+        # Set the X coordinates
+        self.command(0x2A)
+        self.data(((Xstart + 40) >> 8) & 0xFF)
+        self.data((Xstart + 40) & 0xFF)
+        self.data(((Xend - 1 + 40) >> 8) & 0xFF)
+        self.data((Xend - 1 + 40) & 0xFF)
+
+        # Set the Y coordinates
+        self.command(0x2B)
+        self.data(((Ystart + 53) >> 8) & 0xFF)
+        self.data((Ystart + 53) & 0xFF)
+        self.data(((Yend - 1 + 53) >> 8) & 0xFF)
+        self.data((Yend - 1 + 53) & 0xFF)
+
+        self.command(0x2C)
+
+    def ShowImage(self, image) -> None:
+        """Blit a PIL image to the display.
+
+        This optimized implementation avoids building huge Python lists per frame.
+        """
+        imwidth, imheight = image.size
+        if imwidth != self.width or imheight != self.height:
             raise ValueError(f"Image must be {self.width}x{self.height}")
 
-    	# RGB array (uint8)
-    	img = self.np.asarray(Image, dtype=self.np.uint8)
+        # RGB array (uint8)
+        img = self.np.asarray(image, dtype=self.np.uint8)
 
-    	# Reuse buffer if possible
-    	if not hasattr(self, "_pix565") or self._pix565.shape != (self.height, self.width, 2):
-            self._pix565 = self.np.empty((self.height, self.width, 2), dtype=self.np.uint8)
+        # Reuse RGB565 buffer if possible
+        if (not hasattr(self, "_pix565")) or (
+            self._pix565.shape != (self.height, self.width, 2)
+        ):
+            self._pix565 = self.np.empty(
+                (self.height, self.width, 2), dtype=self.np.uint8
+            )
 
-    	pix = self._pix565
+        pix = self._pix565
 
-    	# RGB565 (big-endian bytes)
-    	pix[..., 0] = (img[..., 0] & 0xF8) | (img[..., 1] >> 5)
-    	pix[..., 1] = ((img[..., 1] << 3) & 0xE0) | (img[..., 2] >> 3)
+        # RGB565 (big-endian bytes)
+        pix[..., 0] = (img[..., 0] & 0xF8) | (img[..., 1] >> 5)
+        pix[..., 1] = ((img[..., 1] << 3) & 0xE0) | (img[..., 2] >> 3)
 
-    	buf = pix.tobytes()  # <<< critical: NO Python list
+        buf = pix.tobytes()  # bytes-like, fast
 
-    	self.SetWindows(0, 0, self.width, self.height)
-    	self.digital_write(self.DC_PIN, True)
+        self.SetWindows(0, 0, self.width, self.height)
+        self.digital_write(self.DC_PIN, True)
 
-    	# Prefer writebytes2 if available (bytes-like)
-    	if hasattr(self.SPI, "writebytes2"):
+        # Prefer writebytes2 if available (spidev)
+        if hasattr(self.SPI, "writebytes2"):
             for i in range(0, len(buf), 4096):
-                self.SPI.writebytes2(buf[i:i+4096])
-    	else:
-            # fallback: last resort
+                self.SPI.writebytes2(buf[i : i + 4096])
+        else:
+            # Fallback: convert to list in chunks (slower)
             for i in range(0, len(buf), 4096):
-                self.spi_writebyte(list(buf[i:i+4096]))		
-            
-    def clear(self):
-        """Clear contents of image buffer"""
-        _buffer = [0xff]*(self.width * self.height * 2)
-        self.SetWindows ( 0, 0, self.width, self.height)
-        self.digital_write(self.DC_PIN,True)
-        for i in range(0,len(_buffer),4096):
-            self.spi_writebyte(_buffer[i:i+4096])	        
-        
+                self.spi_writebyte(list(buf[i : i + 4096]))
 
+    def clear(self) -> None:
+        """Clear display (fast)."""
+        # Cache a full-frame buffer so we don't allocate per clear().
+        if not hasattr(self, "_clear_buf"):
+            # 0x00 = black; use b"\xFF" if you want white
+            self._clear_buf = b"\x00" * (self.width * self.height * 2)
+
+        buf = self._clear_buf
+
+        self.SetWindows(0, 0, self.width, self.height)
+        self.digital_write(self.DC_PIN, True)
+
+        if hasattr(self.SPI, "writebytes2"):
+            for i in range(0, len(buf), 4096):
+                self.SPI.writebytes2(buf[i : i + 4096])
+        else:
+            for i in range(0, len(buf), 4096):
+                self.spi_writebyte(list(buf[i : i + 4096]))
