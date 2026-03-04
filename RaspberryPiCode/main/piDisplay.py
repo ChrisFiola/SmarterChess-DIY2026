@@ -47,18 +47,29 @@ class Display:
         self._pipe = None
         self._last_payload = None
 
-        subprocess.Popen(
+        # Remove stale ready flag so wait_ready() is meaningful
+        try:
+            if os.path.exists(self.ready_flag):
+                os.remove(self.ready_flag)
+        except Exception:
+            pass
+
+        # Kill any existing server (block until done)
+        subprocess.run(
             "pkill -f display_server.py",
             shell=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        time.sleep(0.2)
+
+        # Ensure FIFO exists
         if not os.path.exists(self.pipe_path):
             try:
                 os.mkfifo(self.pipe_path)
             except FileExistsError:
                 pass
+
+        # Start server with same interpreter as piMain
         log = open("/tmp/display_server.log", "a")
         subprocess.Popen(
             [sys.executable, DISPLAY_SERVER_SCRIPT],
