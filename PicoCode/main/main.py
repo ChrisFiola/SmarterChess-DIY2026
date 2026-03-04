@@ -39,15 +39,15 @@ MATRIX_ZIGZAG = True
 
 # Colors (keep standard palette)
 BLACK = (0, 0, 0)
-WHITE = (255, 255, 255)
+WHITE = (128, 128, 128)
 DIMW = (10, 10, 10)
-RED = (255, 0, 0)
-GREEN = (0, 255, 0)
-BLUE = (0, 0, 255)
-CYAN = (0, 255, 255)
-MAGENTA = (255, 0, 255)
-YELLOW = (255, 255, 0)
-ORANGE = (255, 130, 0)
+RED = (128, 0, 0)
+GREEN = (0, 128, 0)
+BLUE = (0, 0, 128)
+CYAN = (0, 128, 128)
+MAGENTA = (128, 0, 128)
+YELLOW = (128, 128, 0)
+ORANGE = (128, 65, 0)
 
 ENGINE_COLOR = BLUE  # Deep blue for computer moves
 
@@ -120,7 +120,7 @@ puzzle_setup_active = False
 border_coords_on = False
 
 # Border coordinate brightness (user request: max brightness)
-CP_BORDER_COLOR = (90, 90, 90)
+CP_BORDER_COLOR = (40, 40, 40)
 
 # ============================================================
 # =============== PERSISTENT OVERLAYS ========================
@@ -279,8 +279,8 @@ class Chessboard:
         self.np = neopixel.NeoPixel(Pin(pin, Pin.OUT), w * h)
 
         self._marking_cache = [BLACK] * (w * h)
-        LIGHT = (100, 100, 100)
-        DARK = (3, 3, 3)
+        LIGHT = (40, 40, 40)
+        DARK = (0, 0, 0)
         for y in range(self.h):
             for x in range(self.w):
                 col = DARK if ((x + y) % 2 == 0) else LIGHT
@@ -898,7 +898,7 @@ def cp_apply_if_changed(force=False):
         _cp_last = cur
 
 
-def cp_set_border(on=True, color=WHITE, force=False):
+def cp_set_border(on=True, color=CP_BORDER_COLOR, force=False):
     """Set A-H and 1-8 border LEDs on the control panel."""
     col = color if on else BLACK
     for idx in CP_FILES_LEDS + CP_RANKS_LEDS:
