@@ -89,78 +89,36 @@ SEEN_CACHE_PATH = os.path.join(
 )
 
 
+# -------------------- Opening index (cached by opening tag) --------------------
+def _puzzle_index_dir() -> str:
+    # Centralized so it works correctly under systemd (HOME may be unset).
+    return os.path.join(_stable_home_dir(), ".cache", "smartchess", "puzzle_index")
 
-# -------------------- Opening index (local files) --------------------
-# If you have a local puzzle index folder like:
-#   ~/.cache/smartchess/puzzle_index/opening_tag__<slug>.txt
-# we can use it to choose a puzzle ID for a selected opening.
-#
-# Override path (recommended for systemd) with:
-#   SMARTCHESS_PUZZLE_INDEX_DIR=/home/king/.cache/smartchess/puzzle_index
-PUZZLE_INDEX_DIR = os.environ.get("SMARTCHESS_PUZZLE_INDEX_DIR") or os.path.join(
-    _stable_home_dir(), ".cache", "smartchess", "puzzle_index"
-)
 
-def _slugify_opening_name(name: str) -> str:
-    """Convert display opening name to the index filename slug.
-    Example: "Amar Opening" -> "amar_opening"
-    """
-    s = (name or "").strip().lower()
-    # drop apostrophes
-    s = s.replace("’", "'").replace("'", "")
-    # normalize separators to underscores
-    s = re.sub(r"[^a-z0-9]+", "_", s)
-    s = re.sub(r"_+", "_", s).strip("_")
+_slug_re_non_alnum = re.compile(r"[^a-z0-9]+")
+_slug_re_multi_us = re.compile(r"_+")
+
+
+def _opening_to_slug(opening_name: str) -> str:
+    s = (opening_name or "").strip().lower()
+    s = _slug_re_non_alnum.sub("_", s)
+    s = _slug_re_multi_us.sub("_", s).strip("_")
     return s
 
-def _resolve_opening_index_file(opening_name: str) -> str | None:
-    """Return full path to opening_tag__<slug>.txt if it exists."""
-    if not opening_name:
-        return None
-    slug = _slugify_opening_name(opening_name)
-    if not slug:
-        return None
 
-    # primary candidate
-    candidates = [f"opening_tag__{slug}.txt"]
+def _opening_index_file(opening_name: str) -> str:
+    slug = _opening_to_slug(opening_name)
+    return os.path.join(_puzzle_index_dir(), f"opening_tag__{slug}.txt")
 
-    # small pluralization fallbacks seen in some datasets
-    if "_two_pawn_attack" in slug and "_two_pawns_attack" not in slug:
-        candidates.append(f"opening_tag__{slug.replace('_two_pawn_attack','_two_pawns_attack')}.txt")
-    if "_two_pawns_attack" in slug and "_two_pawn_attack" not in slug:
-        candidates.append(f"opening_tag__{slug.replace('_two_pawns_attack','_two_pawn_attack')}.txt")
-    if "_four_pawn_attack" in slug and "_four_pawns_attack" not in slug:
-        candidates.append(f"opening_tag__{slug.replace('_four_pawn_attack','_four_pawns_attack')}.txt")
-    if "_four_pawns_attack" in slug and "_four_pawn_attack" not in slug:
-        candidates.append(f"opening_tag__{slug.replace('_four_pawns_attack','_four_pawn_attack')}.txt")
 
-    for fn in candidates:
-        p = os.path.join(PUZZLE_INDEX_DIR, fn)
-        if os.path.isfile(p):
-            return p
-    return None
-
-def _pick_random_unseen_id_from_file(path: str, seen_global: set[str]) -> str | None:
-    """Pick a random puzzle id from a newline-delimited file, skipping seen_global."""
+def _read_index_ids(path: str) -> list[str]:
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            ids = [ln.strip() for ln in f if ln.strip()]
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            # One puzzle id per line
+            return [ln.strip() for ln in f if ln.strip()]
     except Exception:
-        return None
-    if not ids:
-        return None
+        return []
 
-    # random sampling without loading huge sets into memory
-    # try a few random picks first, then fall back to linear scan
-    for _ in range(min(32, len(ids))):
-        pid = random.choice(ids)
-        if pid and pid not in seen_global:
-            return pid
-
-    for pid in ids:
-        if pid and pid not in seen_global:
-            return pid
-    return None
 
 def _load_seen_cache() -> dict:
     try:
@@ -468,7 +426,6 @@ class DailyPuzzleController:
         self.mode = (mode or "daily").strip().lower()
         self.theme = (theme or "").strip() or None
         self.theme_label = (theme_label or "").strip() or None
-        self._current_angle: str | None = None
         # Track last /api/puzzle/next result to avoid returning the exact same
         # puzzle when the user switches angles quickly.
         self._last_next_angle: Optional[str] = None
@@ -479,10 +436,6 @@ class DailyPuzzleController:
 
         # Seen puzzle IDs (persisted)
         self._seen_cache = _load_seen_cache()
-        try:
-            print(f"[PUZZLE SEEN] path={SEEN_CACHE_PATH!r} global={len(self._seen_cache.get('global') or [])} by_angle={len(self._seen_cache.get('by_angle') or {})}", flush=True)
-        except Exception:
-            pass
         self._seen_global = set(
             [str(x) for x in (self._seen_cache.get("global") or [])]
         )
@@ -646,7 +599,8 @@ class DailyPuzzleController:
         if not angle:
             return None, "Theme missing"
 
-        self._current_angle = angle
+        payload: dict = {}
+        passed_checks = False
 
         PHASE_TAGS = {
             "opening",
@@ -666,73 +620,67 @@ class DailyPuzzleController:
                 return False
             return True
 
+
+        # 0) Opening-tag index path (preferred for openings menu)
+        # If the angle looks like an opening name and we have a local index file,
+        # we pick an unseen puzzle ID from that file and fetch it directly.
+        if _is_opening_name(angle):
+            idx_path = _opening_index_file(angle)
+            if os.path.exists(idx_path):
+                try:
+                    print(
+                        f"[PUZZLE INDEX] angle={angle!r} dir={_puzzle_index_dir()!r} file={idx_path!r}",
+                        flush=True,
+                    )
+                except Exception:
+                    pass
+
+                ids = _read_index_ids(idx_path)
+                if ids:
+                    # Load persistent seen state (solved-only) for global + per-angle.
+                    seen = _load_seen_cache() or {}
+                    seen_global = set(str(x) for x in (seen.get("global") or []))
+                    seen_angle = set(
+                        str(x) for x in ((seen.get("by_angle") or {}).get(angle) or [])
+                    )
+
+                    # Also exclude what we've served in-memory this run.
+                    served_angle = self._seen_by_angle.get(angle, set())
+                    served_global = self._seen_global
+
+                    avoid = seen_global | seen_angle | set(served_global) | set(served_angle)
+
+                    unseen = [pid for pid in ids if pid not in avoid]
+
+                    # If we've exhausted the opening, allow replay by resetting only that angle.
+                    if not unseen:
+                        reset_seen_puzzles(angle)
+                        self._seen_by_angle.pop(angle, None)
+                        served_angle = set()
+                        avoid = set(served_global)  # keep global served to avoid immediate repeats in-session
+                        unseen = [pid for pid in ids if pid not in avoid]
+
+                    if unseen:
+                        puzzle_id = random.choice(unseen)
+                        payload = self.client.get_puzzle(puzzle_id) or {}
+                        if isinstance(payload, dict) and not payload.get("_error"):
+                            # Keep the same parsing path as api/puzzle/next
+                            passed_checks = True
+                            # Treat this as the "last" for this angle to avoid immediate repeats.
+                            self._last_next_id_by_angle[angle] = puzzle_id
+                        else:
+                            # If the direct fetch failed, fall back to normal next() behavior.
+                            payload = {}
+                            passed_checks = False
         # 1) Fast path (api/puzzle/next)
-        payload: dict = {}
-        passed_checks = False
+        # payload/passed_checks may already be set by the opening index prefetch above.
+        if not passed_checks:
+            payload = {}
         seen_skips = 0
 
         # NOTE: we pass a nonce to reduce caching, and we dedupe per-angle.
         last_for_angle = self._last_next_id_by_angle.get(angle)
         seen_set = self._seen_by_angle.get(angle, set())
-
-
-        # 0) Opening index fast-path (local files)
-        # If this looks like an opening name and we have an index file for it,
-        # pick a random UNSEEN puzzle ID from that file and fetch it directly.
-        if _is_opening_name(angle):
-            idx_path = _resolve_opening_index_file(angle)
-            try:
-                print(f"[PUZZLE INDEX] angle={angle!r} dir={PUZZLE_INDEX_DIR!r} file={idx_path!r}", flush=True)
-            except Exception:
-                pass
-
-            if idx_path:
-                pid = _pick_random_unseen_id_from_file(idx_path, self._seen_global)
-                if pid:
-                    payload0 = self.client.get_puzzle(pid) or {}
-                    try:
-                        pid0 = str(((payload0.get("puzzle") or {}).get("id")) or "")
-                    except Exception:
-                        pid0 = ""
-                    if pid0 and pid0 not in self._seen_global:
-                        # keep per-angle last id to avoid immediate repeats
-                        self._last_next_id_by_angle[angle] = pid0
-                        puzzle = payload0.get("puzzle") or {}
-                        game = payload0.get("game") or {}
-
-                        puzzle_id = str(puzzle.get("id") or "")
-                        pgn = str(game.get("pgn") or "")
-                        initial_ply = int(puzzle.get("initialPly") or 0)
-                        solution = puzzle.get("solution") or []
-                        themes = puzzle.get("themes") or []
-                        rating = puzzle.get("rating")
-
-                        eco, opening = _pgn_opening_info(pgn)
-
-                        try:
-                            print(
-                                f"[PUZZLE NEXT] (index) angle={angle!r} id={puzzle_id!r} rating={rating!r} eco={eco!r} opening={opening!r} themes={themes!r}",
-                                flush=True,
-                            )
-                        except Exception:
-                            pass
-
-                        st, err = self._parse_puzzle_payload(
-                            puzzle_id=puzzle_id,
-                            pgn=pgn,
-                            initial_ply=initial_ply,
-                            solution=solution,
-                            themes=themes,
-                            rating=rating,
-                            eco=eco,
-                            opening=opening,
-                        )
-                        return st, err
-                else:
-                    try:
-                        print(f"[PUZZLE INDEX] no unseen ids left for {angle!r}", flush=True)
-                    except Exception:
-                        pass
 
         def _try_next_batch(tries: int) -> None:
             nonlocal payload, passed_checks, seen_skips, last_for_angle, seen_set
@@ -779,7 +727,8 @@ class DailyPuzzleController:
                 passed_checks = True
                 return
 
-        _try_next_batch(8)
+        if not passed_checks:
+            _try_next_batch(8)
 
         # If we keep getting the same seen puzzle(s), allow a one-time reset for this angle.
         # This is useful when you have "seen" everything in a category and want to replay them.
@@ -789,7 +738,8 @@ class DailyPuzzleController:
             seen_set = set()
             last_for_angle = None
             seen_skips = 0
-            _try_next_batch(4)
+            if not passed_checks:
+                _try_next_batch(4)
         if passed_checks and isinstance(payload, dict) and not payload.get("_error"):
             puzzle = payload.get("puzzle") or {}
             game = payload.get("game") or {}
@@ -1141,7 +1091,7 @@ class DailyPuzzleController:
         while True:
             if st.idx >= len(st.solution):
                 try:
-                    angle_key = (self._current_angle or self.theme_label or self.theme or self.mode or "").strip()
+                    angle_key = (self.theme or self.mode or "").strip()
                     self._mark_seen(angle_key, st.puzzle_id)
                 except Exception:
                     pass
