@@ -47,7 +47,6 @@ def main():
         select_mode,
         mode_dispatch,
         GoToModeSelect,
-        wait_ok_or_timeout,
     )
     import chess  # type: ignore
 
@@ -93,7 +92,25 @@ def main():
 
                     short = (str(e) or e.__class__.__name__)[:18]
                     display.send(f"ERROR\n{short}\nOK=menu")
-                    wait_ok_or_timeout(link, timeout_s=2.0)
+                    timeout_s = 2.0
+                    t0 = time.monotonic()
+                    while time.monotonic() - t0 < timeout_s:
+                        msg = link.getboard()
+                        if not msg:
+                            continue
+                        m = msg.strip().lower()
+                        if m in (
+                            "ok",
+                            "btn_ok",
+                            "btnok",
+                            "new",
+                            "newgame",
+                            "btn_new",
+                            "hint",
+                            "btn_hint",
+                            "in",
+                        ):
+                            break
                 except Exception:
                     time.sleep(2.0)
 
