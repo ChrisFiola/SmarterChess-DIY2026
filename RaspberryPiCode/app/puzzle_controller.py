@@ -1318,8 +1318,23 @@ class DailyPuzzleController:
                     opp = "WHITE" if board.turn == chess.WHITE else "BLACK"
                     cap = board.is_capture(rmv)
 
+                    # If the opponent reply is a promotion (e.g. a7a8q), show what it became.
+                    promo_line = ""
+                    try:
+                        if isinstance(reply, str) and len(reply) >= 5:
+                            promo_letter = reply[4].lower()
+                            if promo_letter in ("q", "r", "b", "n"):
+                                promo_name = (
+                                    display._promo_name(promo_letter)
+                                    if hasattr(display, "_promo_name")
+                                    else promo_letter.upper()
+                                )
+                                promo_line = f"Promoted to {promo_name}\n"
+                    except Exception:
+                        promo_line = ""
+
                     display.send(
-                        f"{side_prefix}\n{opp} played {reply[:2]}→{reply[2:4]}\nOK = continue"
+                        f"{side_prefix}\n{opp} played {reply[:2]}→{reply[2:4]}\n{promo_line}OK = continue"
                     )
                     link.sendtoboard(f"m{reply}{'_cap' if cap else ''}")
 
