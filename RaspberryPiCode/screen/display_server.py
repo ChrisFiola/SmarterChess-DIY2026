@@ -12,7 +12,8 @@ except Exception:
     _qr_encode_text = None
 
 # Waveshare ST7789 driver
-from Drivers import LCD_1inch14
+sys.path.append("/home/king/LCD_Module_RPI_code/RaspberryPi/python")
+from lib.LCD_1inch14 import LCD_1inch14
 
 PIPE = "/tmp/lcdpipe"
 READY_FLAG = "/tmp/display_server_ready"
