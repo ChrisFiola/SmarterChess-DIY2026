@@ -138,7 +138,7 @@ uart = UART(0, baudrate=115200, tx=Pin(0), rx=Pin(1), timeout=10)
 
 
 def cp_show_menu_choices_1to4():
-    cp.clear_small_panel()
+    # cp.clear_small_panel()
     cp_profile_main_menu()
 
 
@@ -604,7 +604,7 @@ class ChessboardUI:
         # feedback purely as a solid end_color (MAGENTA) for a smoother UX.
 
     def redraw_final_trail(self, uci, cap=False):
-        self.off()
+        # self.off()
         endc = MAGENTA if cap else None
         self.board.draw_trail(uci, GREEN, end_color=endc)
         # User request: capture blink should happen AFTER confirming the move
@@ -629,7 +629,7 @@ class ChessboardUI:
         self.overlay_active = True
         self.overlay_type = role
         self.overlay_move = move_uci
-        self.off()
+        # self.off()
         col = (
             color_override
             if color_override is not None
@@ -1002,7 +1002,7 @@ def hard_reset_board():
     disable_hint_irq()
     buttons.reset()
     cp_all_off()
-    ui_board.off()
+    # ui_board.off()
     ui_board.markings()
 
 
@@ -1601,7 +1601,7 @@ def collect_and_send_move():
             while isinstance(res, tuple) and res[0] == "backspace_confirm":
                 partial = res[1]  # can be len 3,2,1,0
 
-                ui_board.markings()
+                # ui_board.markings()
 
                 if len(partial) == 3:
                     # e2e -> keep FROM=e2, preset TO file='e', re-enter TO rank
@@ -1680,11 +1680,11 @@ def collect_and_send_move():
                 continue
 
             if res == "ok":
-                ui_board.redraw_final_trail(move, cap=preview_cap_flag)
+                # ui_board.redraw_final_trail(move, cap=preview_cap_flag)
                 time.sleep_ms(200)
                 send_to_pi(move)
                 preview_cap_flag = False
-                ui_board.markings()
+                # ui_board.markings()
                 return
 
             if isinstance(res, tuple) and res[0] == "redo":
@@ -2004,9 +2004,9 @@ def wait_for_setup():
                 return
 
             if msg.startswith("heyArduinoPlayerColor"):
+                ui_board.markings()
                 cp_show_coords_top(WHITE)
                 select_color_choice()
-                ui_board.markings()
                 return
 
             if msg.startswith("heyArduinoSetupComplete"):
@@ -2015,7 +2015,7 @@ def wait_for_setup():
                 suspend_until_new_game = False
                 # Entering gameplay: border coords ON for the full session.
                 cp_set_border(True)
-                ui_board.markings()
+                # ui_board.markings()
                 return
     finally:
         enable_hint_irq()
@@ -2261,7 +2261,7 @@ def main_loop():
                 engine_ack_pending = False
                 cp_only_ok(False)
                 clear_persistent_trail()
-                ui_board.markings()
+                # ui_board.markings()
 
                 if buffered_turn_msg:
                     turn_str = buffered_turn_msg.split("_", 1)[1].strip().lower()
@@ -2489,20 +2489,8 @@ def run():
     while game_state == GAME_SETUP:
         wait_for_setup()
 
-    ui_board.markings()
-    # Border coords are only shown when user input is allowed.
-    try:
-        cp.bars_set_dim(CP_BORDER_COLOR, on=False)
-    except Exception:
-        pass
-    enable_hint_irq()
-
     while True:
         main_loop()
 
 
 run()
-
-# If A–H or 1–8 appear reversed on your panel, flip either/both:
-# CP_FILES_LEDS = list(reversed([6, 7, 8, 9, 10, 11, 12, 13]))
-# CP_RANKS_LEDS = list(reversed([14, 15, 16, 17, 18, 19, 20, 21]))
