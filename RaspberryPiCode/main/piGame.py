@@ -776,6 +776,16 @@ def process_human_move(
     # 5) Push
     board.push(move)
 
+    # UX: if the move gives check, tell the Pico to blink the checked king square once.
+    # Sent only after the move is accepted/confirmed here.
+    try:
+        if board.is_check():
+            ksq = board.king(board.turn)  # side-to-move is the side in check
+            if ksq is not None:
+                link.sendtoboard(f"check_{chess.square_name(ksq)}")
+    except Exception:
+        pass
+
     # 6) Game over or handoff
     if board.is_game_over():
         report_game_over(link, display, board)

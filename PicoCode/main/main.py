@@ -122,6 +122,9 @@ puzzle_setup_active = False
 border_coords_ready = False
 border_coords_visible = False
 
+# Border coordinate brightness (user request: max brightness)
+CP_BORDER_COLOR = WHITE
+
 # ============================================================
 # =============== PERSISTENT OVERLAYS ========================
 # ============================================================
@@ -241,8 +244,8 @@ class ControlPanel:
     def choice(self, COLOR, on=True):
         self.fill(COLOR if on else BLACK, CP_COORD_START, 4)
 
-    def ok(self, on=True):
-        self.set(CP_OK_PIX, GREEN if on else BLACK)
+    def ok(self, on=True, color=GREEN):
+        self.set(CP_OK_PIX, (color if on else BLACK))
 
     def hint(self, on=True, color=YELLOW):
         self.set(CP_HINT_PIX, (color if on else BLACK))
@@ -481,6 +484,27 @@ class Chessboard:
             final_color=final_color,
         )
 
+    def blink_square_keep(self, sq, color_on, times=1, on_ms=200, off_ms=200):
+        """Blink a single algebraic square, then restore its previous color."""
+        xy = self.algebraic_to_xy(sq)
+        if not xy:
+            return
+        x, y = xy
+        try:
+            idx = self.xy_to_index(x, y)
+            prev = self.np[idx]
+        except Exception:
+            prev = None
+        self._blink_square_xy(
+            x,
+            y,
+            color_on,
+            times=times,
+            on_ms=on_ms,
+            off_ms=off_ms,
+            final_color=prev,
+        )
+
     # ---------- Prompts / Scenes ----------
 
     def draw_hline(self, x, y, length, color):
@@ -586,7 +610,21 @@ class ChessboardUI:
         self.off()
         endc = MAGENTA if cap else None
         self.board.draw_trail(uci, GREEN, end_color=endc)
-        # (see preview_trail() note)
+        # User request: capture blink should happen AFTER confirming the move
+        # (not during preview). So we only blink here.
+        if cap and isinstance(uci, str) and len(uci) >= 4:
+            try:
+                to_sq = uci[2:4]
+                self.board.blink_dest_algebraic(
+                    to_sq,
+                    MAGENTA,
+                    times=2,
+                    on_ms=140,
+                    off_ms=120,
+                    final_color=MAGENTA,
+                )
+            except Exception:
+                pass
 
     def overlay_show(
         self, role, move_uci, cap=False, color_override=None, end_color=None
@@ -761,7 +799,7 @@ def cp_bars_dim_on():
     global border_coords_visible
     border_coords_visible = True
     if border_coords_ready:
-        cp.bars_set_dim(DIMW, on=True)
+        cp.bars_set_dim(CP_BORDER_COLOR, on=True)
 
 
 def cp_only_ok(on=True):
@@ -771,8 +809,11 @@ def cp_only_ok(on=True):
     cp.clear_small_panel()
     # Turn OFF border coords (single write)
     if border_coords_ready:
-        cp.bars_set_dim(DIMW, on=False)
-    cp.ok(on)
+        cp.bars_set_dim(CP_BORDER_COLOR, on=False)
+
+    # Lichess online waiting UX: OK should be RED instead of GREEN.
+    col = RED if (game_mode == MODE_ONLINE) else GREEN
+    cp.ok(on, color=col)
 
 
 def cp_only_hint_and_coords_for_input():
@@ -793,7 +834,7 @@ def cp_only_hint_and_coords_for_input():
     # Border coords (A–H + 1–8) only once setup is complete.
     if border_coords_ready:
         for idx in CP_FILES_LEDS + CP_RANKS_LEDS:
-            cp._set_no_write(idx, DIMW)
+            cp._set_no_write(idx, CP_BORDER_COLOR)
 
     cp._write()
 
@@ -822,7 +863,7 @@ def cp_show_coords_top(COLOR):
 def cp_clear_choices():
     # Clear border coords (A–H + 1–8) and keep menu strips controlled separately.
     if border_coords_ready:
-        cp.bars_set_dim(DIMW, on=False)
+        cp.bars_set_dim(CP_BORDER_COLOR, on=False)
     else:
         for idx in CP_FILES_LEDS + CP_RANKS_LEDS:
             cp._set_no_write(idx, BLACK)
@@ -958,7 +999,7 @@ def cp_profile_puzzle_play():
     # Border coords only if setup complete
     if border_coords_ready:
         for idx in CP_FILES_LEDS + CP_RANKS_LEDS:
-            cp._set_no_write(idx, DIMW)
+            cp._set_no_write(idx, CP_BORDER_COLOR)
     else:
         for idx in CP_FILES_LEDS + CP_RANKS_LEDS:
             cp._set_no_write(idx, BLACK)
@@ -1787,15 +1828,8 @@ def _setup_back_cleanup():
     game_state = GAME_IDLE
     suspend_until_new_game = False
 
-    # Clear control panel LEDs and restore baseline menu look
-    try:
-        cp_all_off()
-    except Exception:
-        pass
-    try:
-        cp_bars_dim_on()
-    except Exception:
-        pass
+    # Avoid a visible CP "off -> on" flash during menu transitions.
+    # The next menu/profile render will take ownership of CP state.
 
     # Restore board markings and reset button edge detection
     try:
@@ -1816,15 +1850,7 @@ def _menu_back_cleanup_soft():
     game_state = GAME_SETUP
     suspend_until_new_game = True
 
-    # Just clean LEDs / edge states; do not change game_state
-    try:
-        cp_all_off()
-    except Exception:
-        pass
-    try:
-        cp_bars_dim_on()
-    except Exception:
-        pass
+    # Avoid CP "off -> on" flashes during menu transitions.
     try:
         ui_board.markings()
     except Exception:
@@ -1985,7 +2011,7 @@ def wait_for_setup():
                     return
                 send_to_pi(str(v))
                 time.sleep_ms(120)
-                ui_board.markings()
+                # Prevent a brief board flash between setup submenus.
                 return
 
             if msg.startswith("heyArduinoTimeControl"):
@@ -1996,7 +2022,7 @@ def wait_for_setup():
                     return
                 send_to_pi(str(v))
                 time.sleep_ms(120)
-                ui_board.markings()
+                # Prevent a brief board flash between setup submenus.
                 return
 
             if msg.startswith("heyArduinoPlayerColor"):
@@ -2014,7 +2040,7 @@ def wait_for_setup():
                 global border_coords_ready, border_coords_visible
                 border_coords_ready = True
                 border_coords_visible = False
-                cp.bars_set_dim(DIMW, on=False)
+                cp.bars_set_dim(CP_BORDER_COLOR, on=False)
                 ui_board.markings()
                 return
     finally:
@@ -2079,6 +2105,16 @@ def handle_puzzle_setup_cmd(msg):
         disable_hint_irq()
         buttons.reset()
         ok_last_val = BTN_OK.value()
+
+        # User request: while the LCD is prompting to set up pieces, keep the
+        # border coordinates ON (max brightness) and avoid any flashing.
+        try:
+            for idx in CP_FILES_LEDS + CP_RANKS_LEDS:
+                cp._set_no_write(idx, CP_BORDER_COLOR)
+            cp._write()
+        except Exception:
+            pass
+
         cp_only_ok(True)
         ui_board.markings()
         return True
@@ -2304,6 +2340,17 @@ def main_loop():
             hint_enabled = True
             continue
 
+        # One-shot "king in check" blink (Pi tells us the checked king square).
+        # Must happen only after a move is accepted/confirmed by the Pi.
+        if msg.startswith("heyArduinocheck_"):
+            sq = msg.split("_", 1)[1].strip() if "_" in msg else ""
+            if sq:
+                try:
+                    board.blink_square_keep(sq, BLUE, times=1, on_ms=220, off_ms=140)
+                except Exception:
+                    pass
+            continue
+
         if suspend_until_new_game or game_state != GAME_RUNNING:
             if not (
                 msg.startswith("heyArduinoChooseMode")
@@ -2471,7 +2518,7 @@ def run():
     ui_board.markings()
     # Border coords are only shown when user input is allowed.
     try:
-        cp.bars_set_dim(DIMW, on=False)
+        cp.bars_set_dim(CP_BORDER_COLOR, on=False)
     except Exception:
         pass
     enable_hint_irq()

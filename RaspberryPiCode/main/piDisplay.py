@@ -38,7 +38,7 @@ class Display:
         if any(k in m for k in ["illegal", "invalid", "game over", "promotion", "draw", "shutting down"]):
             return "critical"
         # High-salience prompts while user is actively entering a move
-        if any(k in m for k in ["enter from", "enter to", "confirm move", "ok to send", "press ok"]):
+        if any(k in m for k in ["enter from", "enter to", "confirm", "ok to send", "press ok"]):
             return "prompt"
         # Low-value transient status
         if any(k in m for k in ["engine thinking", "engine starting", "loading"]):
@@ -114,7 +114,11 @@ class Display:
 
         # Acquire/refresh prompt lock so the user can read it.
         if cat == "prompt":
-            self._lock_until = now + 0.45
+            m = (message or "").lower()
+            # Confirm prompts need longer (prevents "Engine Thinking..." from
+            # overwriting before you can read it).
+            hold = 1.15 if "confirm" in m or "ok to send" in m else 0.65
+            self._lock_until = now + hold
             self._locked_category = "prompt"
         elif cat == "critical":
             self._lock_until = 0.0
