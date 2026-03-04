@@ -94,7 +94,7 @@ def draw_centered_text_with_size(lines, size: int, spacing: int = 6, vpad: int =
     Draw 'lines' using font 'size' and 'spacing', centered on screen.
     """
     img = SCRATCH
-    img.paster(BLACK_BG)
+    img.paste(BLACK_BG)
     draw = ImageDraw.Draw(img)
     font = get_font(size)
 
