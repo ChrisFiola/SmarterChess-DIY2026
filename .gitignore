@@ -142,3 +142,8 @@ README.txt
 # vscode settings
 .vscode
 docs/prompt
+
+# Project folders
+singleFile/
+docs/
+console/
