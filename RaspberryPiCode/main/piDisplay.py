@@ -5,6 +5,7 @@ Display abstraction for SmarterChess (modular version)
 - Preserves the same UI messaging style as the single-file version.
 """
 import os
+import sys
 import time
 import subprocess
 
@@ -58,10 +59,11 @@ class Display:
                 os.mkfifo(self.pipe_path)
             except FileExistsError:
                 pass
+        log = open("/tmp/display_server.log", "a")
         subprocess.Popen(
-            ["python3", DISPLAY_SERVER_SCRIPT],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            [sys.executable, DISPLAY_SERVER_SCRIPT],
+            stdout=log,
+            stderr=log,
         )
 
     def wait_ready(self, timeout_s: float = 10.0) -> None:
