@@ -620,7 +620,6 @@ class DailyPuzzleController:
                 return False
             return True
 
-
         # 0) Opening-tag index path (preferred for openings menu)
         # If the angle looks like an opening name and we have a local index file,
         # we pick an unseen puzzle ID from that file and fetch it directly.
@@ -648,7 +647,12 @@ class DailyPuzzleController:
                     served_angle = self._seen_by_angle.get(angle, set())
                     served_global = self._seen_global
 
-                    avoid = seen_global | seen_angle | set(served_global) | set(served_angle)
+                    avoid = (
+                        seen_global
+                        | seen_angle
+                        | set(served_global)
+                        | set(served_angle)
+                    )
 
                     unseen = [pid for pid in ids if pid not in avoid]
 
@@ -657,7 +661,9 @@ class DailyPuzzleController:
                         reset_seen_puzzles(angle)
                         self._seen_by_angle.pop(angle, None)
                         served_angle = set()
-                        avoid = set(served_global)  # keep global served to avoid immediate repeats in-session
+                        avoid = set(
+                            served_global
+                        )  # keep global served to avoid immediate repeats in-session
                         unseen = [pid for pid in ids if pid not in avoid]
 
                     if unseen:
@@ -1038,7 +1044,7 @@ class DailyPuzzleController:
             u = "".join(ch for ch in u if ch.isalnum())
 
             if len(u) < 4:
-                display.send(f"Wrong {side_prefix} move\nPut it back + OK")
+                display.send(f"Wrong move\nPut it back + OK")
                 link.sendtoboard("puzzle_wrong_")
                 return _wait_ack_ok()
 
@@ -1052,7 +1058,7 @@ class DailyPuzzleController:
             except Exception:
                 pass
 
-            display.send(f"Wrong move:\n{piece_txt} {frm}->{to}\nPut it back + OK")
+            display.send(f"Incorrect move:\n{piece_txt} {frm}->{to}\nPut it back + OK")
             # Trail from TO back to FROM so the user knows where to return it
             link.sendtoboard(f"puzzle_wrong_{to}{frm}")
             return _wait_ack_ok()
@@ -1065,7 +1071,7 @@ class DailyPuzzleController:
             u = "".join(ch for ch in u if ch.isalnum())
 
             if len(u) < 4:
-                display.send(f"Illegal {side_prefix} move\nOK = continue")
+                display.send(f"Illegal move\nOK = continue")
                 return _wait_ack_ok()
 
             frm, to = u[:2], u[2:4]

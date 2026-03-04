@@ -150,7 +150,7 @@ def illegal_putback_flow(
         pass
 
     if frm and to:
-        display.send(f"{label}\n: {piece_txt} {frm}->{to}\nPress OK")
+        display.send(f"{label} move: {piece_txt} {frm}->{to}\nPress OK")
         link.sendtoboard(f"puzzle_wrong_{to}{frm}")
     else:
         display.send(f"{side_prefix}\n{label} move\nPress OK")
