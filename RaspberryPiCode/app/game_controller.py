@@ -17,8 +17,8 @@ from .stockfish_opponent import StockfishOpponent
 
 @dataclass
 class LoopDeps:
-    link: "BoardLink"      # from piSerial
-    display: "Display"     # from piDisplay
+    link: "BoardLink"  # from piSerial
+    display: "Display"  # from piDisplay
     opponent: StockfishOpponent
 
 
@@ -73,11 +73,14 @@ class GameController:
             evt = parse_payload(payload)
             self._handle_event(evt.type, evt.payload)
 
-    def _handle_event(self, typ: EventType, payload: str, nonblocking: bool = False) -> None:
+    def _handle_event(
+        self, typ: EventType, payload: str, nonblocking: bool = False
+    ) -> None:
         from piGame import GoToModeSelect  # keep exception class stable
 
         if typ == EventType.SHUTDOWN:
             from piGame import shutdown_pi
+
             shutdown_pi(self.deps.link, self.deps.display)
             raise GoToModeSelect()
 
@@ -86,6 +89,7 @@ class GameController:
 
         if typ == EventType.TYPING:
             from piGame import handle_typing_preview
+
             handle_typing_preview(self.deps.display, payload, self.board)
             return
 
@@ -96,9 +100,9 @@ class GameController:
             self.deps.display.prompt_move(side)
             return
 
-
         if typ == EventType.CAPTURE_QUERY:
             from piGame import compute_capture_preview
+
             try:
                 cap = compute_capture_preview(self.board, payload)
             except Exception:
@@ -108,19 +112,33 @@ class GameController:
 
         if typ == EventType.HINT:
             from piGame import send_hint_to_board, RuntimeState, GameConfig
+
             state = RuntimeState(board=self.board, mode="stockfish")
-            cfg = GameConfig(skill_level=5, move_time_ms=int(self.deps.opponent.move_time_ms), human_is_white=self.human_is_white)
-            send_hint_to_board(self.deps.link, self.deps.display, self.deps.opponent.ctx, state, cfg)
+            cfg = GameConfig(
+                skill_level=5,
+                move_time_ms=int(self.deps.opponent.move_time_ms),
+                human_is_white=self.human_is_white,
+            )
+            send_hint_to_board(
+                self.deps.link, self.deps.display, self.deps.opponent.ctx, state, cfg
+            )
             return
 
         if typ == EventType.MOVE:
             from piGame import process_human_move
-            process_human_move(link=self.deps.link, display=self.deps.display, board=self.board, uci=payload)
+
+            process_human_move(
+                link=self.deps.link,
+                display=self.deps.display,
+                board=self.board,
+                uci=payload,
+            )
             return
 
         # Unknown messages: ignore in nonblocking mode, else show as invalid
         if not nonblocking:
             from piGame import parse_move_payload
+
             if not parse_move_payload(payload):
                 self.deps.link.sendtoboard(f"error_invalid_{payload}")
                 self.deps.display.show_invalid(payload)
@@ -135,10 +153,17 @@ class GameController:
         self.board.push(mv)
 
         from piGame import report_game_over, handoff_next_turn, GameConfig
+
         if self.board.is_game_over():
             report_game_over(self.deps.link, self.deps.display, self.board)
             return
 
         # Preserve OLED arrow/status behavior
-        dummy_cfg = GameConfig(skill_level=5, move_time_ms=int(self.deps.opponent.move_time_ms), human_is_white=self.human_is_white)
-        handoff_next_turn(self.deps.link, self.deps.display, self.board, "stockfish", dummy_cfg, uci)
+        dummy_cfg = GameConfig(
+            skill_level=5,
+            move_time_ms=int(self.deps.opponent.move_time_ms),
+            human_is_white=self.human_is_white,
+        )
+        handoff_next_turn(
+            self.deps.link, self.deps.display, self.board, "stockfish", dummy_cfg, uci
+        )

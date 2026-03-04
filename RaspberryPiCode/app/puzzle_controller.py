@@ -1058,7 +1058,9 @@ class DailyPuzzleController:
             except Exception:
                 pass
 
-            display.send(f"Incorrect move:\n{piece_txt} {frm}->{to}\nPut it back + OK")
+            display.send(
+                f"Incorrect move: \n {piece_txt} {frm}->{to}\nPut it back + OK"
+            )
             # Trail from TO back to FROM so the user knows where to return it
             link.sendtoboard(f"puzzle_wrong_{to}{frm}")
             return _wait_ack_ok()
@@ -1084,7 +1086,7 @@ class DailyPuzzleController:
             except Exception:
                 pass
 
-            display.send(f"Illegal move:\n{piece_txt} {frm}->{to}\nPut it back + OK")
+            display.send(f"Illegal move: \n {piece_txt} {frm}->{to}\nPut it back + OK")
             # Trail from TO back to FROM so the user knows where to return it
             link.sendtoboard(f"puzzle_wrong_{to}{frm}")
             return _wait_ack_ok()
