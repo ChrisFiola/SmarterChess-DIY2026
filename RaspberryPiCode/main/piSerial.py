@@ -4,7 +4,7 @@ Serial link wrapper for Pico <-> Pi protocol (modular version)
 - Preserves UART protocol strings (heyArduino / heypi / heypixshutdown).
 """
 from typing import Optional
-import serial  # type: ignore
+import serial
 
 SERIAL_PORT: str = "/dev/serial0"
 BAUD: int = 115200

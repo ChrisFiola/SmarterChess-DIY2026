@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Optional
 import time
-import chess  # type: ignore
+import chess
 
 from .lichess_client import LichessClient
 from .lichess_game import extract_moves, extract_players, extract_status, extract_winner

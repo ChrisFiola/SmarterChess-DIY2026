@@ -7,7 +7,7 @@ This is the clean extension point for Lichess later.
 from __future__ import annotations
 
 from typing import Optional
-import chess  # type: ignore
+import chess
 
 
 class Opponent:

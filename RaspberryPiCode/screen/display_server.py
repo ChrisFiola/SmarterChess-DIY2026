@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 # Optional QR rendering (pure python, bundled)
 try:
-    from qrgen import encode_text as _qr_encode_text  # type: ignore
+    from qrgen import encode_text as _qr_encode_text
 except Exception:
     _qr_encode_text = None
 

@@ -32,8 +32,8 @@ def _slugify_angle(a: str) -> str:
 
 
 from typing import Dict, Any, Iterator, Optional
-import requests  # type: ignore
-from requests.exceptions import RequestException  # type: ignore
+import requests
+from requests.exceptions import RequestException
 
 LICHESS_BASE = "https://lichess.org"
 

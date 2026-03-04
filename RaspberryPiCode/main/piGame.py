@@ -19,7 +19,7 @@ import os
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-import chess  # type: ignore
+import chess
 
 from piDisplay import Display
 from piSerial import BoardLink

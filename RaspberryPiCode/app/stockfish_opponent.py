@@ -4,12 +4,13 @@
 from __future__ import annotations
 
 from typing import Optional
-import chess  # type: ignore
+import chess
 
 from .opponent import Opponent
 from piEngine import EngineContext, engine_bestmove
 
 print("LOADED StockfishOpponent from:", __file__, flush=True)
+
 
 def clamp(n: int, lo: int, hi: int) -> int:
     return lo if n < lo else hi if n > hi else n
@@ -28,6 +29,7 @@ def map_skill_to_elo(skill_level: int) -> int:
 
     elo_steps = [650, 850, 1050, 1250, 1450, 1650, 1850, 2050]
     return elo_steps[clamp(idx, 0, 7)]
+
 
 def map_raw_skill_to_beginner_skill(raw_0_20: int) -> int:
     """
@@ -76,13 +78,20 @@ class StockfishOpponent(Opponent):
         engine = self.ctx.ensure()
 
         # Print BEFORE we try anything
-        print(f"[ENGINE CONFIG] about to configure. skill={self.skill_level} use_elo={self.use_elo}",
-            file=sys.stderr, flush=True)
+        print(
+            f"[ENGINE CONFIG] about to configure. skill={self.skill_level} use_elo={self.use_elo}",
+            file=sys.stderr,
+            flush=True,
+        )
 
         try:
             if self.use_elo:
                 elo = map_skill_to_elo(self.skill_level)
-                print(f"[ENGINE CONFIG] requesting UCI_Elo={elo}", file=sys.stderr, flush=True)
+                print(
+                    f"[ENGINE CONFIG] requesting UCI_Elo={elo}",
+                    file=sys.stderr,
+                    flush=True,
+                )
 
                 engine.configure({"UCI_LimitStrength": True, "UCI_Elo": elo})
 
@@ -97,7 +106,9 @@ class StockfishOpponent(Opponent):
 
                 engine.configure({"UCI_LimitStrength": False, "Skill Level": mapped})
 
-                print("[ENGINE CONFIG] configure OK (skill)", file=sys.stderr, flush=True)
+                print(
+                    "[ENGINE CONFIG] configure OK (skill)", file=sys.stderr, flush=True
+                )
 
         except Exception as e:
             print("[ENGINE CONFIG ERROR]", repr(e), file=sys.stderr, flush=True)
@@ -112,6 +123,7 @@ class StockfishOpponent(Opponent):
 
     def get_move(self, board: chess.Board) -> Optional[str]:
         import sys
+
         print("[DEBUG] StockfishOpponent.get_move called", file=sys.stderr, flush=True)
         self._ensure_configured()
         return engine_bestmove(self.ctx, board, self.move_time_ms)

@@ -14,8 +14,6 @@ import queue
 from dataclasses import dataclass
 from typing import Optional, Tuple, List
 
-import chess  # type: ignore
-
 from .lichess_client import LichessClient
 
 
@@ -52,9 +50,17 @@ class LichessOpponent:
                     if not first or first.get("type") != "gameFull":
                         # continue waiting; rare but safe
                         continue
-                    white_name = (first.get("white", {}).get("name") or first.get("white", {}).get("id") or "").lower()
-                    black_name = (first.get("black", {}).get("name") or first.get("black", {}).get("id") or "").lower()
-                    is_white = (white_name == self.username)
+                    white_name = (
+                        first.get("white", {}).get("name")
+                        or first.get("white", {}).get("id")
+                        or ""
+                    ).lower()
+                    black_name = (
+                        first.get("black", {}).get("name")
+                        or first.get("black", {}).get("id")
+                        or ""
+                    ).lower()
+                    is_white = white_name == self.username
                     opp = black_name if is_white else white_name
                     self.game = OnlineGame(game_id=gid, is_white=is_white, opponent=opp)
                     # Prime seen moves
@@ -80,12 +86,12 @@ class LichessOpponent:
             if t not in ("gameState", "gameFull"):
                 continue
             state = evt.get("state", evt)  # gameFull nests state
-            moves_str = (state.get("moves") or "")
+            moves_str = state.get("moves") or ""
             moves = [m for m in moves_str.split() if m]
             if len(moves) <= len(self._seen_moves):
                 continue
             # enqueue new moves
-            for mv in moves[len(self._seen_moves):]:
+            for mv in moves[len(self._seen_moves) :]:
                 self._moves_q.put(mv)
             self._seen_moves = moves
 

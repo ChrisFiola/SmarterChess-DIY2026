@@ -45,7 +45,7 @@ def main():
         mode_dispatch,
         GoToModeSelect,
     )
-    import chess  # type: ignore
+    import chess
 
     link = BoardLink()
     cfg = GameConfig()

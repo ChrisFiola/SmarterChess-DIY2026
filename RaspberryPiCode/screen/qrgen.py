@@ -50,7 +50,9 @@ class QrCode:
     MIN_VERSION = 1
     MAX_VERSION = 40
 
-    def __init__(self, version: int, errcorlvl: "QrCode.Ecc", data_codewords: bytes, mask: int):
+    def __init__(
+        self, version: int, errcorlvl: "QrCode.Ecc", data_codewords: bytes, mask: int
+    ):
         if version < self.MIN_VERSION or version > self.MAX_VERSION:
             raise ValueError("Version out of range")
         if mask < -1 or mask > 7:
@@ -87,7 +89,14 @@ class QrCode:
         return bool(self._modules[y][x])
 
     @staticmethod
-    def encode_segments(segs: List["QrSegment"], ecl: "QrCode.Ecc", min_version: int = 1, max_version: int = 40, mask: int = -1, boost_ecl: bool = True) -> "QrCode":
+    def encode_segments(
+        segs: List["QrSegment"],
+        ecl: "QrCode.Ecc",
+        min_version: int = 1,
+        max_version: int = 40,
+        mask: int = -1,
+        boost_ecl: bool = True,
+    ) -> "QrCode":
         if not (QrCode.MIN_VERSION <= min_version <= max_version <= QrCode.MAX_VERSION):
             raise ValueError("Version range")
         if mask < -1 or mask > 7:
@@ -100,7 +109,11 @@ class QrCode:
             if used_bits is not None and used_bits <= data_capacity_bits:
                 # Boost ECC if possible
                 if boost_ecl:
-                    for new_ecl in (QrCode.Ecc.MEDIUM, QrCode.Ecc.QUARTILE, QrCode.Ecc.HIGH):
+                    for new_ecl in (
+                        QrCode.Ecc.MEDIUM,
+                        QrCode.Ecc.QUARTILE,
+                        QrCode.Ecc.HIGH,
+                    ):
                         if new_ecl.format_bits == ecl.format_bits:
                             continue
                         cap2 = QrCode._get_num_data_codewords(version, new_ecl) * 8
@@ -145,7 +158,11 @@ class QrCode:
         pos = QrCode._get_alignment_pattern_positions(self.version)
         for i in range(len(pos)):
             for j in range(len(pos)):
-                if (i == 0 and j == 0) or (i == 0 and j == len(pos) - 1) or (i == len(pos) - 1 and j == 0):
+                if (
+                    (i == 0 and j == 0)
+                    or (i == 0 and j == len(pos) - 1)
+                    or (i == len(pos) - 1 and j == 0)
+                ):
                     continue
                 self._draw_alignment_pattern(pos[i], pos[j])
 
@@ -311,7 +328,12 @@ class QrCode:
         for y in range(self.size - 1):
             for x in range(self.size - 1):
                 c = bool(self._modules[y][x])
-                if c == bool(self._modules[y][x + 1]) == bool(self._modules[y + 1][x]) == bool(self._modules[y + 1][x + 1]):
+                if (
+                    c
+                    == bool(self._modules[y][x + 1])
+                    == bool(self._modules[y + 1][x])
+                    == bool(self._modules[y + 1][x + 1])
+                ):
                     result += 3
 
         # Balance of black modules
@@ -339,10 +361,14 @@ class QrCode:
         blocks: List[bytes] = []
         k = 0
         for i in range(num_blocks):
-            dat_len = short_block_len - block_ecc_len + (0 if i < num_short_blocks else 1)
+            dat_len = (
+                short_block_len - block_ecc_len + (0 if i < num_short_blocks else 1)
+            )
             dat = data[k : k + dat_len]
             k += dat_len
-            ecc = _reed_solomon_compute_remainder(dat, QrCode._reed_solomon_divisor(block_ecc_len))
+            ecc = _reed_solomon_compute_remainder(
+                dat, QrCode._reed_solomon_divisor(block_ecc_len)
+            )
             blocks.append(dat + ecc)
 
         result = bytearray()
@@ -378,7 +404,11 @@ class QrCode:
 
     @staticmethod
     def _get_num_data_codewords(version: int, ecl: "QrCode.Ecc") -> int:
-        return QrCode._get_num_raw_data_modules(version) // 8 - QrCode._ECC_CODEWORDS_PER_BLOCK[ecl.format_bits][version] * QrCode._NUM_ERROR_CORRECTION_BLOCKS[ecl.format_bits][version]
+        return (
+            QrCode._get_num_raw_data_modules(version) // 8
+            - QrCode._ECC_CODEWORDS_PER_BLOCK[ecl.format_bits][version]
+            * QrCode._NUM_ERROR_CORRECTION_BLOCKS[ecl.format_bits][version]
+        )
 
 
 class QrSegment:
@@ -434,7 +464,7 @@ class _BitBuffer(list):
         for i in reversed(range(length)):
             self.append((val >> i) & 1)
 
-    def extend(self, bits: List[int]) -> None:  # type: ignore
+    def extend(self, bits: List[int]) -> None:
         super().extend(bits)
 
     def to_bytes(self) -> bytes:
@@ -509,30 +539,358 @@ _init_tables()
 # Tables indexed by [ecl.format_bits][version]
 QrCode._ECC_CODEWORDS_PER_BLOCK = [
     # M
-    [0,
-     10, 16, 26, 18, 24, 16, 18, 22, 22, 26, 30, 22, 22, 24, 24, 28, 28, 26, 26, 26, 26, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28],
+    [
+        0,
+        10,
+        16,
+        26,
+        18,
+        24,
+        16,
+        18,
+        22,
+        22,
+        26,
+        30,
+        22,
+        22,
+        24,
+        24,
+        28,
+        28,
+        26,
+        26,
+        26,
+        26,
+        28,
+        28,
+        28,
+        28,
+        28,
+        28,
+        28,
+        28,
+        28,
+        28,
+        28,
+        28,
+        28,
+        28,
+        28,
+        28,
+        28,
+        28,
+        28,
+    ],
     # L
-    [0,
-     7, 10, 15, 20, 26, 18, 20, 24, 30, 18, 20, 24, 26, 30, 22, 24, 28, 30, 28, 28, 28, 28, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30],
+    [
+        0,
+        7,
+        10,
+        15,
+        20,
+        26,
+        18,
+        20,
+        24,
+        30,
+        18,
+        20,
+        24,
+        26,
+        30,
+        22,
+        24,
+        28,
+        30,
+        28,
+        28,
+        28,
+        28,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+    ],
     # H
-    [0,
-     17, 28, 22, 16, 22, 28, 26, 26, 24, 28, 24, 28, 22, 24, 24, 30, 28, 28, 26, 28, 30, 24, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30],
+    [
+        0,
+        17,
+        28,
+        22,
+        16,
+        22,
+        28,
+        26,
+        26,
+        24,
+        28,
+        24,
+        28,
+        22,
+        24,
+        24,
+        30,
+        28,
+        28,
+        26,
+        28,
+        30,
+        24,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+    ],
     # Q
-    [0,
-     13, 22, 18, 26, 18, 24, 18, 22, 20, 24, 28, 26, 24, 20, 30, 24, 28, 28, 26, 30, 28, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30],
+    [
+        0,
+        13,
+        22,
+        18,
+        26,
+        18,
+        24,
+        18,
+        22,
+        20,
+        24,
+        28,
+        26,
+        24,
+        20,
+        30,
+        24,
+        28,
+        28,
+        26,
+        30,
+        28,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+    ],
 ]
 
 QrCode._NUM_ERROR_CORRECTION_BLOCKS = [
     # M
-    [0,
-     1, 1, 1, 2, 2, 4, 4, 4, 5, 5, 5, 8, 9, 9, 10, 10, 11, 13, 14, 16, 17, 17, 18, 20, 21, 23, 25, 26, 28, 29, 31, 33, 35, 37, 38, 40, 43, 45, 47, 49],
+    [
+        0,
+        1,
+        1,
+        1,
+        2,
+        2,
+        4,
+        4,
+        4,
+        5,
+        5,
+        5,
+        8,
+        9,
+        9,
+        10,
+        10,
+        11,
+        13,
+        14,
+        16,
+        17,
+        17,
+        18,
+        20,
+        21,
+        23,
+        25,
+        26,
+        28,
+        29,
+        31,
+        33,
+        35,
+        37,
+        38,
+        40,
+        43,
+        45,
+        47,
+        49,
+    ],
     # L
-    [0,
-     1, 1, 1, 1, 1, 2, 2, 2, 2, 4, 4, 4, 4, 4, 6, 6, 6, 6, 7, 8, 8, 9, 9, 10, 12, 12, 12, 13, 14, 15, 16, 17, 18, 19, 19, 20, 21, 22, 24, 25],
+    [
+        0,
+        1,
+        1,
+        1,
+        1,
+        1,
+        2,
+        2,
+        2,
+        2,
+        4,
+        4,
+        4,
+        4,
+        4,
+        6,
+        6,
+        6,
+        6,
+        7,
+        8,
+        8,
+        9,
+        9,
+        10,
+        12,
+        12,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        19,
+        20,
+        21,
+        22,
+        24,
+        25,
+    ],
     # H
-    [0,
-     1, 1, 2, 4, 4, 4, 5, 6, 8, 8, 11, 11, 16, 16, 18, 16, 19, 21, 25, 25, 25, 34, 30, 32, 35, 37, 40, 42, 45, 48, 51, 54, 57, 60, 63, 66, 70, 74, 77, 81],
+    [
+        0,
+        1,
+        1,
+        2,
+        4,
+        4,
+        4,
+        5,
+        6,
+        8,
+        8,
+        11,
+        11,
+        16,
+        16,
+        18,
+        16,
+        19,
+        21,
+        25,
+        25,
+        25,
+        34,
+        30,
+        32,
+        35,
+        37,
+        40,
+        42,
+        45,
+        48,
+        51,
+        54,
+        57,
+        60,
+        63,
+        66,
+        70,
+        74,
+        77,
+        81,
+    ],
     # Q
-    [0,
-     1, 1, 2, 2, 4, 4, 6, 6, 8, 8, 8, 10, 12, 16, 12, 17, 16, 18, 21, 20, 23, 23, 25, 27, 29, 34, 34, 35, 38, 40, 43, 45, 48, 51, 53, 56, 59, 62, 65, 68],
+    [
+        0,
+        1,
+        1,
+        2,
+        2,
+        4,
+        4,
+        6,
+        6,
+        8,
+        8,
+        8,
+        10,
+        12,
+        16,
+        12,
+        17,
+        16,
+        18,
+        21,
+        20,
+        23,
+        23,
+        25,
+        27,
+        29,
+        34,
+        34,
+        35,
+        38,
+        40,
+        43,
+        45,
+        48,
+        51,
+        53,
+        56,
+        59,
+        62,
+        65,
+        68,
+    ],
 ]

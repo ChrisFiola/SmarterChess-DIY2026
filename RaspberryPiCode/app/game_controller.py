@@ -9,7 +9,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import time
-import chess  # type: ignore
+from RaspberryPiCode.main.piDisplay import Display
+from RaspberryPiCode.main.piSerial import BoardLink
+import chess
 
 from .protocol import EventType, parse_payload, format_capture_reply, format_engine_move
 from .stockfish_opponent import StockfishOpponent

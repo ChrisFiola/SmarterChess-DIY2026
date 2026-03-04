@@ -160,7 +160,7 @@ def send_to_pi(kind, payload=""):
 def read_from_pi():
     if uart.any():
         try:
-            return uart.readline().decode().strip()  # type: ignore
+            return uart.readline().decode().strip()
         except:
             return None
     return None
@@ -686,7 +686,7 @@ class ButtonManager:
 # ============================================================
 
 # If None: all buttons are accepted. Otherwise: only listed button numbers (1..10).
-allowed_buttons = None  # type: ignore
+allowed_buttons = None
 
 
 def set_allowed_buttons(btns):

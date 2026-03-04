@@ -21,8 +21,8 @@ import os
 import json
 import random
 
-import chess  # type: ignore
-import chess.pgn  # type: ignore
+import chess
+import chess.pgn
 
 from piDisplay import Display
 from piSerial import BoardLink
