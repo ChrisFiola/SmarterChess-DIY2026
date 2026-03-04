@@ -10,24 +10,31 @@ import time
 STOCKFISH_PATH: str = "/usr/games/stockfish"
 
 if TYPE_CHECKING:
-    import chess  # type: ignore
-    import chess.engine  # type: ignore
+    import chess
+    import chess.engine
 
 
 class EngineContext:
     def __init__(self):
         self.engine: Optional["chess.engine.SimpleEngine"] = None
+        self._chess_engine = None  # cached module
+
+    def _engine_mod(self):
+        if self._chess_engine is None:
+            import chess.engine
+
+            self._chess_engine = chess.engine
+        return self._chess_engine
 
     def ensure(self, path: str = STOCKFISH_PATH) -> "chess.engine.SimpleEngine":
         if self.engine is not None:
             return self.engine
 
-        # Local import: only pay import cost when actually starting the engine
-        import chess.engine  # type: ignore
+        chess_engine = self._engine_mod()
 
         while True:
             try:
-                self.engine = chess.engine.SimpleEngine.popen_uci(
+                self.engine = chess_engine.SimpleEngine.popen_uci(
                     path, stderr=None, timeout=None
                 )
                 return self.engine
@@ -44,27 +51,28 @@ class EngineContext:
 
 
 def engine_bestmove(ctx: EngineContext, brd: "chess.Board", ms: int) -> Optional[str]:
-    # Local import: only pay import cost when actually starting the engine
-    import chess.engine  # type: ignore
-
     if brd.is_game_over():
         return None
+
+    chess_engine = ctx._engine_mod()
+
     engine = ctx.ensure(STOCKFISH_PATH)
-    limit = chess.engine.Limit(time=max(0.01, ms / 1000.0))
-    result = engine.play(brd, limit)  # type: ignore
+    limit = chess_engine.Limit(time=max(0.01, ms / 1000.0))
+
+    result = engine.play(brd, limit)
     return result.move.uci() if result.move else None
 
 
 def engine_hint(ctx: EngineContext, brd: "chess.Board", ms: int) -> Optional[str]:
-    # Local import: only pay import cost when actually starting the engine
-    import chess.engine  # type: ignore
+    chess_engine = ctx._engine_mod()
 
     try:
         engine = ctx.ensure(STOCKFISH_PATH)
-        info = engine.analyse(brd, chess.engine.Limit(time=max(0.01, ms / 1000.0)))  # type: ignore
+        info = engine.analyse(brd, chess_engine.Limit(time=max(0.01, ms / 1000.0)))
         pv = info.get("pv")
         if pv:
             return pv[0].uci()
     except Exception:
         pass
+
     return engine_bestmove(ctx, brd, ms)
