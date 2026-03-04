@@ -2,3 +2,12 @@ python-chess
 pyserial
 requests
 Pillow
+os
+sys
+time
+spidev
+logging
+numpy
+gpiozero
+neopixel
+chess

@@ -151,4 +151,3 @@ console/
 # Project files
 .micropico
 __init__.py
-requirements.txt
