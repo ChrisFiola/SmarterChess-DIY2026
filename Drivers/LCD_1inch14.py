@@ -1,5 +1,5 @@
 import time
-from . import lcdconfig
+from Drivers import lcdconfig
 
 
 class LCD_1inch14(lcdconfig.RaspberryPi):

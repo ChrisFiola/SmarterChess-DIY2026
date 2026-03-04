@@ -13,9 +13,14 @@ from typing import Callable, Optional
 import time
 import chess
 
-from .lichess_client import LichessClient
-from .lichess_game import extract_moves, extract_players, extract_status, extract_winner
-from .net_utils import is_ap_mode, wifi_config_url
+from app.lichess_client import LichessClient
+from app.lichess_game import (
+    extract_moves,
+    extract_players,
+    extract_status,
+    extract_winner,
+)
+from app.net_utils import is_ap_mode, wifi_config_url
 
 
 @dataclass

@@ -116,11 +116,8 @@ hint_enabled = True
 # --- Puzzle setup mode (Pi-driven LED guidance) ---
 puzzle_setup_active = False
 
-# Border coordinates (A–H + 1–8) should only be available once setup is done
-# and the game has started. Even then, we keep them OFF unless the user is
-# actively allowed to input something (keeps CP clean + consistent).
-border_coords_ready = False
-border_coords_visible = False
+# Border coordinates (A–H + 1–8): OFF only in menus, ON during the whole game.
+border_coords_on = False
 
 # Border coordinate brightness (user request: max brightness)
 CP_BORDER_COLOR = WHITE
@@ -789,37 +786,59 @@ BTN_HINT.irq(trigger=Pin.IRQ_FALLING, handler=hint_irq)
 # ============================================================
 
 
+# ---- CP write coalescing / border helpers ----
+_cp_last = None  # list[tuple] snapshot of last-written CP colors
+
+
+def _cp_snapshot():
+    return [tuple(cp.np[i]) for i in range(cp.count)]
+
+
+def cp_apply_if_changed(force=False):
+    """Write CP neopixels only if buffer differs from last written snapshot."""
+    global _cp_last
+    cur = _cp_snapshot()
+    if force or (_cp_last is None) or (cur != _cp_last):
+        cp._write()
+        _cp_last = cur
+
+
+def cp_set_border(on=True, color=WHITE):
+    """Set A-H and 1-8 border LEDs on the control panel."""
+    col = color if on else BLACK
+    for idx in CP_FILES_LEDS + CP_RANKS_LEDS:
+        if 0 <= idx < cp.count:
+            cp._set_no_write(idx, col)
+    # Do not force: avoid flicker if no change.
+    cp_apply_if_changed()
+
+
 def cp_all_off():
     # Single write (avoid flicker)
-    cp.fill(BLACK)
+    for i in range(cp.count):
+        cp._set_no_write(i, BLACK)
+    cp_apply_if_changed()
 
 
 def cp_bars_dim_on():
-    # Only show border coords when allowed by the current UI state.
-    global border_coords_visible
-    border_coords_visible = True
-    if border_coords_ready:
-        cp.bars_set_dim(CP_BORDER_COLOR, on=True)
+    cp_set_border(True)
 
 
 def cp_only_ok(on=True):
-    # Only OK is actionable
-    global border_coords_visible
-    border_coords_visible = False
-    cp.clear_small_panel()
-    # Turn OFF border coords (single write)
-    if border_coords_ready:
-        cp.bars_set_dim(CP_BORDER_COLOR, on=False)
-
-    # Lichess online waiting UX: OK should be RED instead of GREEN.
+    # Only OK is actionable. Do NOT touch border coords here.
     col = RED if (game_mode == MODE_ONLINE) else GREEN
-    cp.ok(on, color=col)
+    cp._set_no_write(0, BLACK)
+    cp._set_no_write(1, BLACK)
+    cp._set_no_write(2, BLACK)
+    cp._set_no_write(3, BLACK)
+    cp._set_no_write(CP_OK_PIX, col if on else BLACK)
+    cp._set_no_write(CP_HINT_PIX, BLACK)
+    cp_apply_if_changed()
 
 
 def cp_only_hint_and_coords_for_input():
     # User is allowed to input (coords + hint + OK backspace)
-    global border_coords_visible
-    border_coords_visible = True
+    cp_set_border(True)
 
     # Batch updates to reduce visible "flash" on input.
     # Buttons 1–4 share a strip (CP 0..1) and 5–8 share a strip (CP 2..3).
@@ -831,28 +850,18 @@ def cp_only_hint_and_coords_for_input():
     cp._set_no_write(CP_OK_PIX, RED)
     cp._set_no_write(CP_HINT_PIX, YELLOW)
 
-    # Border coords (A–H + 1–8) only once setup is complete.
-    if border_coords_ready:
-        for idx in CP_FILES_LEDS + CP_RANKS_LEDS:
-            cp._set_no_write(idx, CP_BORDER_COLOR)
-
-    cp._write()
+    cp_apply_if_changed()
 
 
 def cp_show_coords_top(COLOR):
-    global border_coords_visible
-    border_coords_visible = False
+    # Menus: border coords off.
+    cp_set_border(False)
     # Only buttons 1–4 available (top strip). Turn off 5–8 strip.
     cp._set_no_write(0, COLOR)
     cp._set_no_write(1, COLOR)
     cp._set_no_write(2, BLACK)
     cp._set_no_write(3, BLACK)
-    # Keep OK/HINT as-is (profiles manage them)
-    # Ensure border coords are off during setup/menu.
-    if border_coords_ready:
-        for idx in CP_FILES_LEDS + CP_RANKS_LEDS:
-            cp._set_no_write(idx, BLACK)
-    cp._write()
+    cp_apply_if_changed()
 
 
 # ============================================================
@@ -861,13 +870,8 @@ def cp_show_coords_top(COLOR):
 
 
 def cp_clear_choices():
-    # Clear border coords (A–H + 1–8) and keep menu strips controlled separately.
-    if border_coords_ready:
-        cp.bars_set_dim(CP_BORDER_COLOR, on=False)
-    else:
-        for idx in CP_FILES_LEDS + CP_RANKS_LEDS:
-            cp._set_no_write(idx, BLACK)
-        cp._write()
+    # In menus we keep border coords OFF.
+    cp_set_border(False)
 
 
 def cp_choice_lane(n, color):
@@ -884,12 +888,11 @@ def cp_choice_lane(n, color):
     cp._set_no_write(1, col_top)
     cp._set_no_write(2, col_bot)
     cp._set_no_write(3, col_bot)
-    cp._write()
+    cp_apply_if_changed()
 
 
 def cp_profile_main_menu():
-    global border_coords_visible
-    border_coords_visible = False
+    cp_set_border(False)
     # Buttons 1–4 only (top strip). Everything else off.
     cp._set_no_write(0, WHITE)
     cp._set_no_write(1, WHITE)
@@ -897,16 +900,12 @@ def cp_profile_main_menu():
     cp._set_no_write(3, BLACK)
     cp._set_no_write(CP_OK_PIX, BLACK)
     cp._set_no_write(CP_HINT_PIX, BLACK)
-    # Border coords off
-    for idx in CP_FILES_LEDS + CP_RANKS_LEDS:
-        cp._set_no_write(idx, BLACK)
-    cp._write()
+    cp_apply_if_changed()
     set_allowed_buttons([1, 2, 3, 4])
 
 
 def cp_profile_vs_strength_time():
-    global border_coords_visible
-    border_coords_visible = False
+    cp_set_border(False)
     # Buttons 1–8 only (both strips). OK = back (RED). Hint off.
     cp._set_no_write(0, WHITE)
     cp._set_no_write(1, WHITE)
@@ -914,16 +913,12 @@ def cp_profile_vs_strength_time():
     cp._set_no_write(3, WHITE)
     cp._set_no_write(CP_OK_PIX, RED)
     cp._set_no_write(CP_HINT_PIX, BLACK)
-    # Border coords off during setup
-    for idx in CP_FILES_LEDS + CP_RANKS_LEDS:
-        cp._set_no_write(idx, BLACK)
-    cp._write()
+    cp_apply_if_changed()
     set_allowed_buttons([1, 2, 3, 4, 5, 6, 7, 8, 9])
 
 
 def cp_profile_vs_color():
-    global border_coords_visible
-    border_coords_visible = False
+    cp_set_border(False)
     # Buttons 1–4 only. OK = back (RED).
     cp._set_no_write(0, WHITE)
     cp._set_no_write(1, WHITE)
@@ -931,32 +926,26 @@ def cp_profile_vs_color():
     cp._set_no_write(3, BLACK)
     cp._set_no_write(CP_OK_PIX, RED)
     cp._set_no_write(CP_HINT_PIX, BLACK)
-    for idx in CP_FILES_LEDS + CP_RANKS_LEDS:
-        cp._set_no_write(idx, BLACK)
-    cp._write()
+    cp_apply_if_changed()
     set_allowed_buttons([1, 2, 3, 9])
 
 
 def cp_profile_puzzle_top():
     # Puzzle submenu: 1..3 + OK (back). LEDs show 1..4 white + OK red.
-    global border_coords_visible
-    border_coords_visible = False
+    cp_set_border(False)
     cp._set_no_write(0, WHITE)
     cp._set_no_write(1, WHITE)
     cp._set_no_write(2, BLACK)
     cp._set_no_write(3, BLACK)
     cp._set_no_write(CP_OK_PIX, RED)
     cp._set_no_write(CP_HINT_PIX, BLACK)
-    for idx in CP_FILES_LEDS + CP_RANKS_LEDS:
-        cp._set_no_write(idx, BLACK)
-    cp._write()
+    cp_apply_if_changed()
     set_allowed_buttons([1, 2, 3, 9])
 
 
 def cp_profile_menu_paged():
     # Paged menus: 1..4 select, HINT next page, OK back
-    global border_coords_visible
-    border_coords_visible = False
+    cp_set_border(False)
     # Buttons 1–4 + HINT(next page) + OK(back)
     cp._set_no_write(0, WHITE)
     cp._set_no_write(1, WHITE)
@@ -964,15 +953,12 @@ def cp_profile_menu_paged():
     cp._set_no_write(3, BLACK)
     cp._set_no_write(CP_OK_PIX, RED)
     cp._set_no_write(CP_HINT_PIX, BLUE)
-    for idx in CP_FILES_LEDS + CP_RANKS_LEDS:
-        cp._set_no_write(idx, BLACK)
-    cp._write()
+    cp_apply_if_changed()
     set_allowed_buttons([1, 2, 3, 4, 9, 10])
 
 
 def cp_profile_only_ok_green():
-    global border_coords_visible
-    border_coords_visible = False
+    # Border controlled externally.
     # Only OK (GREEN)
     cp._set_no_write(0, BLACK)
     cp._set_no_write(1, BLACK)
@@ -980,15 +966,12 @@ def cp_profile_only_ok_green():
     cp._set_no_write(3, BLACK)
     cp._set_no_write(CP_OK_PIX, GREEN)
     cp._set_no_write(CP_HINT_PIX, BLACK)
-    for idx in CP_FILES_LEDS + CP_RANKS_LEDS:
-        cp._set_no_write(idx, BLACK)
-    cp._write()
+    cp_apply_if_changed()
     set_allowed_buttons([9])
 
 
 def cp_profile_puzzle_play():
-    global border_coords_visible
-    border_coords_visible = True
+    cp_set_border(True)
     # Puzzle play: 1–8 enter (both strips), OK red, HINT yellow.
     cp._set_no_write(0, WHITE)
     cp._set_no_write(1, WHITE)
@@ -996,14 +979,7 @@ def cp_profile_puzzle_play():
     cp._set_no_write(3, WHITE)
     cp._set_no_write(CP_OK_PIX, RED)
     cp._set_no_write(CP_HINT_PIX, YELLOW)
-    # Border coords only if setup complete
-    if border_coords_ready:
-        for idx in CP_FILES_LEDS + CP_RANKS_LEDS:
-            cp._set_no_write(idx, CP_BORDER_COLOR)
-    else:
-        for idx in CP_FILES_LEDS + CP_RANKS_LEDS:
-            cp._set_no_write(idx, BLACK)
-    cp._write()
+    cp_apply_if_changed()
     set_allowed_buttons([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 
 
@@ -1741,8 +1717,10 @@ def game_over_wait_ok_and_ack(result_str):
             now = time.ticks_ms()
             if time.ticks_diff(now, last) > 400:
                 blink = not blink
-                cp.clear_small_panel()
-                cp.ok(blink)
+                for i in range(0, 6):
+                    cp._set_no_write(i, BLACK)
+                cp._set_no_write(CP_OK_PIX, GREEN if blink else BLACK)
+                cp_apply_if_changed()
                 last = now
 
             if is_shutdown_held():
@@ -2035,12 +2013,8 @@ def wait_for_setup():
                 game_state = GAME_RUNNING
                 in_setup = False
                 suspend_until_new_game = False
-                # Setup is done: border coords may now be used, but keep them
-                # OFF unless the UI explicitly enables input.
-                global border_coords_ready, border_coords_visible
-                border_coords_ready = True
-                border_coords_visible = False
-                cp.bars_set_dim(CP_BORDER_COLOR, on=False)
+                # Entering gameplay: border coords ON for the full session.
+                cp_set_border(True)
                 ui_board.markings()
                 return
     finally:

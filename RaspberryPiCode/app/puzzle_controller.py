@@ -24,9 +24,9 @@ import random
 import chess
 import chess.pgn
 
-from piDisplay import Display
-from piSerial import BoardLink
-from .lichess_client import LichessClient
+from main.piDisplay import Display
+from main.piSerial import BoardLink
+from app.lichess_client import LichessClient
 
 
 def _pgn_opening_info(pgn_text: str) -> Tuple[str, str]:
@@ -475,9 +475,29 @@ class DailyPuzzleController:
             pass
 
     def fetch_daily(self) -> Tuple[Optional[PuzzleState], Optional[str]]:
+        # Daily puzzle occasionally fails transiently (Wi‑Fi bring-up, DNS hiccup,
+        # Lichess 5xx). Retry once to avoid bouncing back to the main menu.
         payload = self.client.get_daily_puzzle()
         if not isinstance(payload, dict) or payload.get("_error"):
-            return None, str(payload.get("_error") or "Unknown error")
+            err0 = str(payload.get("_error") if isinstance(payload, dict) else payload)
+            try:
+                print(f"[PUZZLE DAILY ERROR] first_attempt={err0!r}", flush=True)
+            except Exception:
+                pass
+            try:
+                __import__("time").sleep(1.0)
+            except Exception:
+                pass
+            payload = self.client.get_daily_puzzle()
+            if not isinstance(payload, dict) or payload.get("_error"):
+                err1 = str(
+                    payload.get("_error") if isinstance(payload, dict) else payload
+                )
+                try:
+                    print(f"[PUZZLE DAILY ERROR] second_attempt={err1!r}", flush=True)
+                except Exception:
+                    pass
+                return None, (err1 or err0 or "Unknown error")
 
         puzzle = payload.get("puzzle") or {}
         game = payload.get("game") or {}
@@ -875,6 +895,24 @@ class DailyPuzzleController:
         if err or st is None:
             display.send("Puzzle error\n" + (err or "unknown"))
             link.sendtoboard("error_puzzle_fetch")
+
+            # Keep the error visible until the user acknowledges with OK.
+            # This also makes the underlying error easier to read.
+            try:
+                from app.protocol import parse_payload, EventType
+                import time
+
+                while True:
+                    raw = link.getboard_nonblocking()
+                    if raw:
+                        ev = parse_payload(raw)
+                        if ev.type == EventType.OK:
+                            break
+                        if ev.type == EventType.SHUTDOWN:
+                            break
+                    time.sleep(0.05)
+            except Exception:
+                pass
             return
 
         # 2) Guided setup on an EMPTY board
