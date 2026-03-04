@@ -50,109 +50,6 @@ def _pgn_opening_info(pgn_text: str) -> Tuple[str, str]:
 
 PUZZLE_IDS_PATH = os.path.join(os.path.dirname(__file__), "puzzle_ids.txt")
 
-# Optional local puzzle index for openings (generated offline)
-# Structure: opening_tag__<slug>.txt containing one puzzle id per line.
-
-
-def _slugify_opening_name(name: str) -> str:
-    """Best-effort mapping from UI opening name -> our index filename slug."""
-    s = (name or "").strip().lower()
-    if not s:
-        return ""
-    s = s.replace("&", " and ")
-    # Remove apostrophes so "queen's" matches "queens"
-    s = s.replace("'", "")
-    # Replace separators/punctuation with spaces
-    s = re.sub(r"[^a-z0-9]+", " ", s)
-    s = "_".join([t for t in s.split() if t])
-    s = re.sub(r"_+", "_", s).strip("_")
-    return s
-
-
-def _resolve_opening_index_file(opening_name: str) -> Optional[str]:
-    """Return path to opening_tag__*.txt for the given opening display name."""
-    base = PUZZLE_INDEX_DIR
-    if not base:
-        return None
-    try:
-        if not os.path.isdir(base):
-            return None
-    except Exception:
-        return None
-
-    slug = _slugify_opening_name(opening_name)
-    if not slug:
-        return None
-
-    # 1) Exact match
-    exact = os.path.join(base, f"opening_tag__{slug}.txt")
-    if os.path.exists(exact):
-        return exact
-
-    # 2) Common pluralization aliases seen in opening taxonomy
-    aliases = []
-    if "two_pawns_attack" in slug:
-        aliases.append(slug.replace("two_pawns_attack", "two_pawn_attack"))
-    if "two_pawn_attack" in slug:
-        aliases.append(slug.replace("two_pawn_attack", "two_pawns_attack"))
-    if "four_pawns_attack" in slug:
-        aliases.append(slug.replace("four_pawns_attack", "four_pawn_attack"))
-    if "four_pawn_attack" in slug:
-        aliases.append(slug.replace("four_pawn_attack", "four_pawns_attack"))
-
-    for a in aliases:
-        p = os.path.join(base, f"opening_tag__{a}.txt")
-        if os.path.exists(p):
-            return p
-
-    # 3) Prefix match fallback: choose the shortest filename that starts with opening_tag__<slug>
-    # Useful if UI label slightly differs but files exist for sub-variations.
-    try:
-        prefix = f"opening_tag__{slug}"
-        cands = [
-            fn
-            for fn in os.listdir(base)
-            if fn.startswith(prefix) and fn.endswith(".txt")
-        ]
-        if not cands:
-            return None
-        cands.sort(key=lambda x: (len(x), x))
-        return os.path.join(base, cands[0])
-    except Exception:
-        return None
-
-
-def _pick_random_unseen_id_from_file(
-    path: str,
-    seen_global: set[str],
-    seen_angle: set[str],
-    *,
-    max_tries: int = 60,
-) -> str:
-    """Pick a random puzzle id from a newline-delimited file, skipping seen ids."""
-    if not path or not os.path.exists(path):
-        return ""
-
-    for _ in range(max_tries):
-        pid = _pick_random_line_seek(path)
-        pid = "".join(ch for ch in (pid or "") if ch.isalnum())
-        if not pid:
-            continue
-        if pid in seen_global or pid in seen_angle:
-            continue
-        return pid
-
-    # Slow fallback: load file and pick from remaining
-    try:
-        with open(path, "r", encoding="utf-8", errors="ignore") as f:
-            ids = ["".join(ch for ch in ln.strip() if ch.isalnum()) for ln in f]
-        ids = [x for x in ids if x and x not in seen_global and x not in seen_angle]
-        if not ids:
-            return ""
-        return random.choice(ids)
-    except Exception:
-        return ""
-
 
 # -------------------- Seen-puzzle cache (avoid repeats) --------------------
 # Lichess /api/puzzle/next can legitimately return the same puzzle multiple
@@ -184,11 +81,6 @@ def _stable_home_dir() -> str:
     return os.path.expanduser("~")
 
 
-PUZZLE_INDEX_DIR = os.environ.get(
-    "SMARTCHESS_PUZZLE_INDEX_DIR",
-    os.path.join(_stable_home_dir(), ".cache/smartchess/puzzle_index"),
-)
-
 SEEN_CACHE_PATH = os.path.join(
     _stable_home_dir(),
     ".cache",
@@ -196,6 +88,79 @@ SEEN_CACHE_PATH = os.path.join(
     "seen_puzzles.json",
 )
 
+
+
+# -------------------- Opening index (local files) --------------------
+# If you have a local puzzle index folder like:
+#   ~/.cache/smartchess/puzzle_index/opening_tag__<slug>.txt
+# we can use it to choose a puzzle ID for a selected opening.
+#
+# Override path (recommended for systemd) with:
+#   SMARTCHESS_PUZZLE_INDEX_DIR=/home/king/.cache/smartchess/puzzle_index
+PUZZLE_INDEX_DIR = os.environ.get("SMARTCHESS_PUZZLE_INDEX_DIR") or os.path.join(
+    _stable_home_dir(), ".cache", "smartchess", "puzzle_index"
+)
+
+def _slugify_opening_name(name: str) -> str:
+    """Convert display opening name to the index filename slug.
+    Example: "Amar Opening" -> "amar_opening"
+    """
+    s = (name or "").strip().lower()
+    # drop apostrophes
+    s = s.replace("’", "'").replace("'", "")
+    # normalize separators to underscores
+    s = re.sub(r"[^a-z0-9]+", "_", s)
+    s = re.sub(r"_+", "_", s).strip("_")
+    return s
+
+def _resolve_opening_index_file(opening_name: str) -> str | None:
+    """Return full path to opening_tag__<slug>.txt if it exists."""
+    if not opening_name:
+        return None
+    slug = _slugify_opening_name(opening_name)
+    if not slug:
+        return None
+
+    # primary candidate
+    candidates = [f"opening_tag__{slug}.txt"]
+
+    # small pluralization fallbacks seen in some datasets
+    if "_two_pawn_attack" in slug and "_two_pawns_attack" not in slug:
+        candidates.append(f"opening_tag__{slug.replace('_two_pawn_attack','_two_pawns_attack')}.txt")
+    if "_two_pawns_attack" in slug and "_two_pawn_attack" not in slug:
+        candidates.append(f"opening_tag__{slug.replace('_two_pawns_attack','_two_pawn_attack')}.txt")
+    if "_four_pawn_attack" in slug and "_four_pawns_attack" not in slug:
+        candidates.append(f"opening_tag__{slug.replace('_four_pawn_attack','_four_pawns_attack')}.txt")
+    if "_four_pawns_attack" in slug and "_four_pawn_attack" not in slug:
+        candidates.append(f"opening_tag__{slug.replace('_four_pawns_attack','_four_pawn_attack')}.txt")
+
+    for fn in candidates:
+        p = os.path.join(PUZZLE_INDEX_DIR, fn)
+        if os.path.isfile(p):
+            return p
+    return None
+
+def _pick_random_unseen_id_from_file(path: str, seen_global: set[str]) -> str | None:
+    """Pick a random puzzle id from a newline-delimited file, skipping seen_global."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            ids = [ln.strip() for ln in f if ln.strip()]
+    except Exception:
+        return None
+    if not ids:
+        return None
+
+    # random sampling without loading huge sets into memory
+    # try a few random picks first, then fall back to linear scan
+    for _ in range(min(32, len(ids))):
+        pid = random.choice(ids)
+        if pid and pid not in seen_global:
+            return pid
+
+    for pid in ids:
+        if pid and pid not in seen_global:
+            return pid
+    return None
 
 def _load_seen_cache() -> dict:
     try:
@@ -503,6 +468,7 @@ class DailyPuzzleController:
         self.mode = (mode or "daily").strip().lower()
         self.theme = (theme or "").strip() or None
         self.theme_label = (theme_label or "").strip() or None
+        self._current_angle: str | None = None
         # Track last /api/puzzle/next result to avoid returning the exact same
         # puzzle when the user switches angles quickly.
         self._last_next_angle: Optional[str] = None
@@ -513,6 +479,10 @@ class DailyPuzzleController:
 
         # Seen puzzle IDs (persisted)
         self._seen_cache = _load_seen_cache()
+        try:
+            print(f"[PUZZLE SEEN] path={SEEN_CACHE_PATH!r} global={len(self._seen_cache.get('global') or [])} by_angle={len(self._seen_cache.get('by_angle') or {})}", flush=True)
+        except Exception:
+            pass
         self._seen_global = set(
             [str(x) for x in (self._seen_cache.get("global") or [])]
         )
@@ -676,6 +646,8 @@ class DailyPuzzleController:
         if not angle:
             return None, "Theme missing"
 
+        self._current_angle = angle
+
         PHASE_TAGS = {
             "opening",
             "middlegame",
@@ -703,25 +675,64 @@ class DailyPuzzleController:
         last_for_angle = self._last_next_id_by_angle.get(angle)
         seen_set = self._seen_by_angle.get(angle, set())
 
-        # If this looks like an opening name and we have a local opening index,
-        # prefer it (exact, fast, offline-curated).
-        opening_index = (
-            _resolve_opening_index_file(angle) if _is_opening_name(angle) else None
-        )
-        if opening_index:
-            pid = _pick_random_unseen_id_from_file(
-                opening_index, self._seen_global, seen_set
-            )
-            if pid:
-                payload = self.client.get_puzzle(pid) or {}
-                if isinstance(payload, dict) and not payload.get("_error"):
-                    passed_checks = True
-                    # Track last returned id for this angle to reduce repeats.
-                    self._last_next_id_by_angle[angle] = pid
-                    last_for_angle = pid
+
+        # 0) Opening index fast-path (local files)
+        # If this looks like an opening name and we have an index file for it,
+        # pick a random UNSEEN puzzle ID from that file and fetch it directly.
+        if _is_opening_name(angle):
+            idx_path = _resolve_opening_index_file(angle)
+            try:
+                print(f"[PUZZLE INDEX] angle={angle!r} dir={PUZZLE_INDEX_DIR!r} file={idx_path!r}", flush=True)
+            except Exception:
+                pass
+
+            if idx_path:
+                pid = _pick_random_unseen_id_from_file(idx_path, self._seen_global)
+                if pid:
+                    payload0 = self.client.get_puzzle(pid) or {}
+                    try:
+                        pid0 = str(((payload0.get("puzzle") or {}).get("id")) or "")
+                    except Exception:
+                        pid0 = ""
+                    if pid0 and pid0 not in self._seen_global:
+                        # keep per-angle last id to avoid immediate repeats
+                        self._last_next_id_by_angle[angle] = pid0
+                        puzzle = payload0.get("puzzle") or {}
+                        game = payload0.get("game") or {}
+
+                        puzzle_id = str(puzzle.get("id") or "")
+                        pgn = str(game.get("pgn") or "")
+                        initial_ply = int(puzzle.get("initialPly") or 0)
+                        solution = puzzle.get("solution") or []
+                        themes = puzzle.get("themes") or []
+                        rating = puzzle.get("rating")
+
+                        eco, opening = _pgn_opening_info(pgn)
+
+                        try:
+                            print(
+                                f"[PUZZLE NEXT] (index) angle={angle!r} id={puzzle_id!r} rating={rating!r} eco={eco!r} opening={opening!r} themes={themes!r}",
+                                flush=True,
+                            )
+                        except Exception:
+                            pass
+
+                        st, err = self._parse_puzzle_payload(
+                            puzzle_id=puzzle_id,
+                            pgn=pgn,
+                            initial_ply=initial_ply,
+                            solution=solution,
+                            themes=themes,
+                            rating=rating,
+                            eco=eco,
+                            opening=opening,
+                        )
+                        return st, err
                 else:
-                    # If the indexed id fetch fails, fall back to /api/puzzle/next.
-                    payload = {}
+                    try:
+                        print(f"[PUZZLE INDEX] no unseen ids left for {angle!r}", flush=True)
+                    except Exception:
+                        pass
 
         def _try_next_batch(tries: int) -> None:
             nonlocal payload, passed_checks, seen_skips, last_for_angle, seen_set
@@ -1130,7 +1141,7 @@ class DailyPuzzleController:
         while True:
             if st.idx >= len(st.solution):
                 try:
-                    angle_key = (self.theme or self.mode or "").strip()
+                    angle_key = (self._current_angle or self.theme_label or self.theme or self.mode or "").strip()
                     self._mark_seen(angle_key, st.puzzle_id)
                 except Exception:
                     pass
