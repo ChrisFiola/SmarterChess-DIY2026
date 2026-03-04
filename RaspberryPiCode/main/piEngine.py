@@ -64,14 +64,20 @@ def engine_bestmove(ctx: EngineContext, brd: "chess.Board", ms: int) -> Optional
 
 
 def engine_hint(ctx: EngineContext, brd: "chess.Board", ms: int) -> Optional[str]:
+    if brd.is_game_over():
+        return None
+
     chess_engine = ctx._engine_mod()
+    limit = chess_engine.Limit(time=max(0.01, ms / 1000.0))
 
     try:
         engine = ctx.ensure(STOCKFISH_PATH)
-        info = engine.analyse(brd, chess_engine.Limit(time=max(0.01, ms / 1000.0)))
+        info = engine.analyse(brd, limit, multipv=1)
+
         pv = info.get("pv")
         if pv:
             return pv[0].uci()
+
     except Exception:
         pass
 
