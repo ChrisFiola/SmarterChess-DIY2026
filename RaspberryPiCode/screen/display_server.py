@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import os, sys, time
+import os, sys, time, select
 from PIL import Image, ImageDraw, ImageFont
 
 # Ensure local imports (e.g. qrgen.py) work regardless of CWD
@@ -32,13 +32,15 @@ disp.clear()
 W, H = disp.width, disp.height
 FONT_PATH = "/home/king/LCD_Module_RPI_code/RaspberryPi/python/Font/Font00.ttf"
 BLACK_BG = Image.new("RGB", (W, H), "BLACK")
+DRAW_MEASURE = ImageDraw.Draw(BLACK_BG)
+MEASURE_CACHE = {}  # (size, text) -> (w,h)
 
 # Font cache
 FONTS = {}
 
 
 def open_fifo_blocking(path: str):
-    fd = os.open(path, os.O_RDONLY)  # blocking until writer connects
+    fd = os.open(path, os.O_RDWR)
     return os.fdopen(fd, "r", buffering=1)
 
 
@@ -52,35 +54,35 @@ def get_font(size: int):
 # AUTO FONT SCALING
 # ------------------------------------------------------
 def find_best_font_size(lines, min_size=14, max_size=28, vpad=4, spacing=6):
-    """
-    Choose the largest font size that fits both width and height with given padding & spacing.
-    Returns: (size, spacing)
-    """
-    # Try from biggest → smallest
     for size in range(max_size, min_size - 1, -1):
         font = get_font(size)
-        draw = ImageDraw.Draw(BLACK_BG)
 
         total_h = 0
         max_w = 0
 
         for ln in lines:
             if not ln:
-                h = size  # blank line spacing approximated to size
+                h = size
                 w = 0
             else:
-                bbox = draw.textbbox((0, 0), ln, font=font)
-                w = bbox[2] - bbox[0]
-                h = bbox[3] - bbox[1]
-            total_h += h + spacing
-            max_w = max(max_w, w)
+                key = (size, ln)
+                wh = MEASURE_CACHE.get(key)
 
-        total_h -= spacing  # remove extra spacing after last line
+                if wh is None:
+                    bbox = DRAW_MEASURE.textbbox((0, 0), ln, font=font)
+                    wh = (bbox[2] - bbox[0], bbox[3] - bbox[1])
+                    MEASURE_CACHE[key] = wh
+
+                w, h = wh
+                total_h += h + spacing
+                max_w = max(max_w, w)
+
+        total_h -= spacing
 
         if total_h <= (H - 2 * vpad) and max_w <= (W - 2 * vpad):
             return size, spacing
 
-    return min_size, spacing  # fallback
+    return min_size, spacing
 
 
 # ------------------------------------------------------
@@ -184,7 +186,9 @@ def draw_qr(data: str, caption_lines):
                 if qr.get_module(x, y):
                     x0 = ox + x * scale
                     y0 = oy + y * scale
-                    draw.rectangle([x0, y0, x0 + scale - 1, y0 + scale - 1], fill="BLACK")
+                    draw.rectangle(
+                        [x0, y0, x0 + scale - 1, y0 + scale - 1], fill="BLACK"
+                    )
 
         # Caption under QR
         if caption_lines:
@@ -234,36 +238,63 @@ with open(READY_FLAG, "w") as f:
 # Main loop
 # ------------------------------------------------------
 pipe = open_fifo_blocking(PIPE)
-last_msg = None
+FPS_CAP = 10.0
+MIN_DT = 1.0 / FPS_CAP
+
+last_draw_t = 0.0
+last_drawn = None  # last message actually drawn
+pending_msg = None  # newest message waiting to be drawn
 
 while True:
-    line = pipe.readline()
+    # Wait for input, but wake periodically so we can draw pending messages
+    r, _, _ = select.select([pipe], [], [], 0.05)
 
-    if line == "":
-        # Writer closed (EOF) -> reopen FIFO and back off (prevents CPU spin)
-        try:
-            pipe.close()
-        except Exception:
-            pass
-        time.sleep(0.1)
-        pipe = open_fifo_blocking(PIPE)  # blocks until a writer connects
-        last_msg = None
+    if r:
+        # Drain all available lines quickly (coalesce bursts)
+        while True:
+            line = pipe.readline()
+
+            if line == "":
+                # With O_RDWR this usually won't happen, but keep it safe
+                try:
+                    pipe.close()
+                except Exception:
+                    pass
+                time.sleep(0.1)
+                pipe = open_fifo_blocking(PIPE)
+                pending_msg = None
+                last_drawn = None
+                break
+
+            msg = line.strip()
+            if msg:
+                pending_msg = msg  # keep only the latest
+
+            # If no more data immediately available, stop draining
+            r2, _, _ = select.select([pipe], [], [], 0)
+            if not r2:
+                break
+
+    # Nothing pending → keep waiting
+    if pending_msg is None:
         continue
 
-    msg = line.strip()  # normalize (removes \n and trailing spaces)
-
-    # Skip duplicates after normalization
-    if msg == last_msg:
-        continue
-    last_msg = msg
-
-    # Optional: cap refresh rate (huge win on Pi Zero)
+    # FPS cap: if too soon, don't draw yet (but keep pending_msg!)
     now = time.monotonic()
-    if "last_draw_t" not in globals():
-        globals()["last_draw_t"] = 0.0
-    if now - globals()["last_draw_t"] < 0.10:  # 0.10s = 10 fps cap
+    if now - last_draw_t < MIN_DT:
         continue
-    globals()["last_draw_t"] = now
+
+    # Draw the newest pending message
+    msg = pending_msg
+    pending_msg = None
+
+    # Skip redraw if identical to last drawn (saves CPU + SPI)
+    if msg == last_drawn:
+        last_draw_t = now
+        continue
+
+    last_drawn = msg
+    last_draw_t = now
 
     # Parse message: "L1|L2|L3|L4|size"
     parts = msg.split("|")
@@ -271,14 +302,8 @@ while True:
         continue
 
     raw_size = parts[-1].strip() if parts[-1] else "auto"
-    # Support up to 4 lines; ignore extras gracefully
     lines = [p for p in parts[:-1]]
 
-    # Normalize trailing empty lines (optional)
-    # while lines and lines[-1] == "":
-    #     lines.pop()
-
-    # Decide between fixed size or auto
     try:
         if raw_size.lower() == "qr":
             qr_data = (lines[0] if lines else "").strip()
@@ -290,5 +315,4 @@ while True:
             size = int(raw_size)
             draw_centered_text_with_size(lines, size=size, spacing=6)
     except Exception:
-        # Fallback to safe auto on any parse/draw error
         draw_centered_text_auto(lines)

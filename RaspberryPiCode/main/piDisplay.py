@@ -7,7 +7,6 @@ Display abstraction for SmarterChess (modular version)
 import os
 import time
 import subprocess
-from typing import Optional
 
 PIPE_PATH: str = "/tmp/lcdpipe"
 READY_FLAG_PATH: str = "/tmp/display_server_ready"
@@ -24,8 +23,29 @@ class Display:
     def __init__(self, pipe_path: str = PIPE_PATH, ready_flag: str = READY_FLAG_PATH):
         self.pipe_path = pipe_path
         self.ready_flag = ready_flag
+        self._pipe = None
+        self._last_payload = None
+        self._last_send_t = 0.0
+
+    def _ensure_pipe(self) -> None:
+        if self._pipe is None:
+            if not os.path.exists(self.pipe_path):
+                try:
+                    os.mkfifo(self.pipe_path)
+                except FileExistsError:
+                    pass
+            self._pipe = open(self.pipe_path, "w", buffering=1)
 
     def restart_server(self) -> None:
+        # Close our writer end first
+        try:
+            if self._pipe:
+                self._pipe.close()
+        except Exception:
+            pass
+        self._pipe = None
+        self._last_payload = None
+
         subprocess.Popen(
             "pkill -f display_server.py",
             shell=True,
@@ -54,8 +74,38 @@ class Display:
     def send(self, message: str, size: str = "auto") -> None:
         parts = message.split("\n")
         payload = "|".join(parts) + f"|{size}\n"
-        with open(self.pipe_path, "w") as pipe:
-            pipe.write(payload)
+
+        # Client-side de-dupe: don’t spam identical frames
+        if payload == self._last_payload:
+            return
+
+        # (Optional) client-side rate limit (lets server stay quieter too)
+        # Comment out if you don't want it here.
+        # now = time.monotonic()
+        # if now - self._last_send_t < 0.02:   # 50 msg/s max
+        #     return
+        # self._last_send_t = now
+
+        try:
+            self._ensure_pipe()
+            self._pipe.write(payload)
+            self._last_payload = payload
+        except (BrokenPipeError, OSError, ValueError):
+            # Server restarted or pipe broke: reopen and retry once
+            try:
+                if self._pipe:
+                    self._pipe.close()
+            except Exception:
+                pass
+            self._pipe = None
+            try:
+                self._ensure_pipe()
+                self._pipe.write(payload)
+                self._last_payload = payload
+            except Exception:
+                # Avoid crashing game loop if display is down
+                self._pipe = None
+                return
 
     def show_qr(self, data: str, *caption_lines: str) -> None:
         """Render a QR code on the LCD.
@@ -145,3 +195,11 @@ class Display:
             self.send(f"DRAW\n{reason}\nMove {move_no}")
         else:
             self.send(f"DRAW\nMove {move_no}")
+
+    def close(self):
+        try:
+            if self._pipe:
+                self._pipe.close()
+        except Exception:
+            pass
+        self._pipe = None
