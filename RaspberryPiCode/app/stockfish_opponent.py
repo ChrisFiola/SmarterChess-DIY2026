@@ -6,8 +6,8 @@ from __future__ import annotations
 from typing import Optional
 import chess
 
-from .opponent import Opponent
-from piEngine import EngineContext, engine_bestmove
+from app.opponent import Opponent
+from main.piEngine import EngineContext, engine_bestmove
 
 print("LOADED StockfishOpponent from:", __file__, flush=True)
 

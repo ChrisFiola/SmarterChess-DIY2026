@@ -12,7 +12,7 @@ import neopixel
 
 # Buttons (active-low) wiring stays unchanged
 BUTTON_PINS = [2, 3, 4, 5, 10, 8, 7, 6, 9, 11]  # 1–8=coords, 9=A1(OK), 11=Hint IRQ
-DEBOUNCE_MS = 300
+DEBOUNCE_MS = 150
 
 
 # OK long-hold threshold for backspace during move entry
@@ -39,15 +39,15 @@ MATRIX_ZIGZAG = True
 
 # Colors (keep standard palette)
 BLACK = (0, 0, 0)
-WHITE = (255, 255, 255)
+WHITE = (128, 128, 128)
 DIMW = (10, 10, 10)
-RED = (255, 0, 0)
-GREEN = (0, 255, 0)
-BLUE = (0, 0, 255)
-CYAN = (0, 255, 255)
-MAGENTA = (255, 0, 255)
-YELLOW = (255, 255, 0)
-ORANGE = (255, 130, 0)
+RED = (128, 0, 0)
+GREEN = (0, 128, 0)
+BLUE = (0, 0, 128)
+CYAN = (0, 128, 128)
+MAGENTA = (128, 0, 128)
+YELLOW = (128, 128, 0)
+ORANGE = (128, 65, 0)
 
 ENGINE_COLOR = BLUE  # Deep blue for computer moves
 
@@ -116,14 +116,11 @@ hint_enabled = True
 # --- Puzzle setup mode (Pi-driven LED guidance) ---
 puzzle_setup_active = False
 
-# Border coordinates (A–H + 1–8) should only be available once setup is done
-# and the game has started. Even then, we keep them OFF unless the user is
-# actively allowed to input something (keeps CP clean + consistent).
-border_coords_ready = False
-border_coords_visible = False
+# Border coordinates (A–H + 1–8): OFF only in menus, ON during the whole game.
+border_coords_on = False
 
 # Border coordinate brightness (user request: max brightness)
-CP_BORDER_COLOR = WHITE
+CP_BORDER_COLOR = (40, 40, 40)
 
 # ============================================================
 # =============== PERSISTENT OVERLAYS ========================
@@ -132,6 +129,7 @@ CP_BORDER_COLOR = WHITE
 persistent_trail_active = False
 persistent_trail_type = None  # 'hint' or 'engine'
 persistent_trail_move = None  # e.g., 'e2e4'
+persistent_trail_end_color = None  # None or a color tuple (e.g., MAGENTA for capture)
 
 # ============================================================
 # =============== UART (Pico <-> Pi) =========================
@@ -141,7 +139,7 @@ uart = UART(0, baudrate=115200, tx=Pin(0), rx=Pin(1), timeout=10)
 
 
 def cp_show_menu_choices_1to4():
-    cp.clear_small_panel()
+    # cp.clear_header()
     cp_profile_main_menu()
 
 
@@ -208,60 +206,69 @@ def _handle_pi_overlay_or_gameover(msg):
 
 
 class ControlPanel:
+    """Control panel NeoPixel strip (buttons + border).
+
+    Low-level behavior-stable primitives:
+      - set_pixel(): set one LED and write immediately
+      - fill_range(): fill a range and write immediately
+      - set_pixel_no_write(): stage a change
+      - write(): flush staged changes
+
+    Semantic helpers:
+      - set_ok(), set_hint()
+      - set_border_dim() for A-H + 1-8 border LEDs
+      - clear_header() for the first 6 pixels (coords + OK + Hint)
+    """
+
     def __init__(self, pin, count):
         self.np = neopixel.NeoPixel(Pin(pin, Pin.OUT), count)
         self.count = count
 
-    def set(self, i, c):
-        if 0 <= i < self.count:
-            self.np[i] = c
-            self.np.write()
+    # ----------------------------
+    # Low-level pixel primitives
+    # ----------------------------
+    def set_pixel(self, i, color):
+        """Stage one pixel update (no immediate write).
 
-    def fill(self, c, start=0, count=None):
+        Use write() / cp_apply_if_changed() to flush.
+        """
+        if 0 <= i < self.count:
+            self.np[i] = color
+
+    def fill_range(self, color, start=0, count=None):
+        """Stage a contiguous range update (no immediate write)."""
         if count is None:
             count = self.count - start
         end = min(self.count, start + count)
         for i in range(start, end):
-            self.np[i] = c
-        self.np.write()
+            self.np[i] = color
 
-    def _set_no_write(self, i, c):
+    def set_pixel_no_write(self, i, color):
         if 0 <= i < self.count:
-            self.np[i] = c
+            self.np[i] = color
 
-    def _write(self):
+    def write(self):
         self.np.write()
 
-    def coord(self, COLOR, on=True):
-        self.fill(COLOR if on else BLACK, CP_COORD_START, 4)
+    # ----------------------------
+    # Semantic helpers
+    # ----------------------------
+    def set_ok(self, on=True, color=GREEN):
+        self.set_pixel_no_write(CP_OK_PIX, (color if on else BLACK))
 
-    def coordTop(self, COLOR, on=True):
-        self.fill(COLOR if on else BLACK, CP_COORD_START, 2)
+    def set_hint(self, on=True, color=YELLOW):
+        self.set_pixel_no_write(CP_HINT_PIX, (color if on else BLACK))
 
-    def coordDown(self, COLOR, on=True):
-        self.fill(COLOR if on else BLACK, CP_COORD_START + 2, 2)
-
-    def choice(self, COLOR, on=True):
-        self.fill(COLOR if on else BLACK, CP_COORD_START, 4)
-
-    def ok(self, on=True, color=GREEN):
-        self.set(CP_OK_PIX, (color if on else BLACK))
-
-    def hint(self, on=True, color=YELLOW):
-        self.set(CP_HINT_PIX, (color if on else BLACK))
-
-    def bars_set_dim(self, dim_color, on=True):
+    def set_border_dim(self, dim_color, on=True):
         col = dim_color if on else BLACK
         for idx in CP_FILES_LEDS + CP_RANKS_LEDS:
             if 0 <= idx < self.count:
-                self._set_no_write(idx, col)
-        self._write()
+                self.set_pixel_no_write(idx, col)
 
-    def clear_small_panel(self):
+    def clear_header(self):
         for i in range(0, 6):
             if i < self.count:
-                self._set_no_write(i, BLACK)
-        self._write()
+                self.set_pixel_no_write(i, BLACK)
 
 
 class Chessboard:
@@ -272,8 +279,8 @@ class Chessboard:
         self.np = neopixel.NeoPixel(Pin(pin, Pin.OUT), w * h)
 
         self._marking_cache = [BLACK] * (w * h)
-        LIGHT = (100, 100, 100)
-        DARK = (3, 3, 3)
+        LIGHT = (40, 40, 40)
+        DARK = (0, 0, 0)
         for y in range(self.h):
             for x in range(self.w):
                 col = DARK if ((x + y) % 2 == 0) else LIGHT
@@ -491,7 +498,7 @@ class Chessboard:
             return
         x, y = xy
         try:
-            idx = self.xy_to_index(x, y)
+            idx = self._xy_to_index(x, y)
             prev = self.np[idx]
         except Exception:
             prev = None
@@ -563,11 +570,13 @@ class ChessboardUI:
         self.overlay_active = False
         self.overlay_type = None
         self.overlay_move = None
+        self._last_from_only = None
 
     def off(self):
         self.board.clear(BLACK)
 
     def markings(self):
+        self._last_from_only = None
         self.board.show_markings()
 
     def opening(self):
@@ -592,6 +601,9 @@ class ChessboardUI:
         self.board.show_promotion_scene_p()
 
     def preview_from(self, sq):
+        if self._last_from_only == sq and not self.overlay_active:
+            return
+        self._last_from_only = sq
         self.markings()
         xy = self.board.algebraic_to_xy(sq)
         if xy:
@@ -599,32 +611,17 @@ class ChessboardUI:
             self.board.write()
 
     def preview_trail(self, uci, cap=False):
+        self._last_from_only = None
         self.markings()
         endc = MAGENTA if cap else None
         self.board.draw_trail(uci, GREEN, end_color=endc)
-        # NOTE: capture used to blink the destination square. This caused
-        # noticeable flicker/"flash" on fast inputs. We now keep capture
-        # feedback purely as a solid end_color (MAGENTA) for a smoother UX.
 
     def redraw_final_trail(self, uci, cap=False):
-        self.off()
+        # Always start overlays from base markings for consistent UX
+        self.markings()
         endc = MAGENTA if cap else None
         self.board.draw_trail(uci, GREEN, end_color=endc)
-        # User request: capture blink should happen AFTER confirming the move
-        # (not during preview). So we only blink here.
-        if cap and isinstance(uci, str) and len(uci) >= 4:
-            try:
-                to_sq = uci[2:4]
-                self.board.blink_dest_algebraic(
-                    to_sq,
-                    MAGENTA,
-                    times=2,
-                    on_ms=140,
-                    off_ms=120,
-                    final_color=MAGENTA,
-                )
-            except Exception:
-                pass
+        # No capture blink here (user preference).
 
     def overlay_show(
         self, role, move_uci, cap=False, color_override=None, end_color=None
@@ -632,7 +629,8 @@ class ChessboardUI:
         self.overlay_active = True
         self.overlay_type = role
         self.overlay_move = move_uci
-        self.off()
+        # Always start overlays from base markings for consistent UX
+        self.markings()
         col = (
             color_override
             if color_override is not None
@@ -646,7 +644,82 @@ class ChessboardUI:
         self.overlay_active = False
         self.overlay_type = None
         self.overlay_move = None
-        self.markings()
+        self._last_from_only = None
+        self.board.show_markings()
+
+
+class PreviewBlink:
+    """Non-blocking single-square blink runner."""
+
+    def __init__(self, board: Chessboard):
+        self.board = board
+        self.active = False
+        self.x = 0
+        self.y = 0
+        self.on_color = MAGENTA
+        self.final_color = MAGENTA
+        self.times_left = 0
+        self.is_on = False
+        self.next_ms = 0
+        self.on_ms = 140
+        self.off_ms = 120
+
+    def start_xy(
+        self, x, y, color_on, times=4, on_ms=140, off_ms=120, final_color=None
+    ):
+        self.active = True
+        self.x, self.y = x, y
+        self.on_color = color_on
+        self.final_color = color_on if final_color is None else final_color
+        self.times_left = max(1, int(times)) * 2  # on+off steps
+        self.is_on = False
+        self.on_ms = int(on_ms)
+        self.off_ms = int(off_ms)
+        self.next_ms = time.ticks_ms()
+
+    def start_sq(self, sq, color_on, times=4, on_ms=140, off_ms=120, final_color=None):
+        xy = self.board.algebraic_to_xy(sq)
+        if not xy:
+            return
+        self.start_xy(
+            xy[0],
+            xy[1],
+            color_on,
+            times=times,
+            on_ms=on_ms,
+            off_ms=off_ms,
+            final_color=final_color,
+        )
+
+    def stop(self):
+        self.active = False
+
+    def tick(self):
+        if not self.active:
+            return
+        now = time.ticks_ms()
+        if time.ticks_diff(now, self.next_ms) < 0:
+            return
+
+        # Toggle
+        if not self.is_on:
+            self.board.set_square(self.x, self.y, self.on_color)
+            self.board.write()
+            self.is_on = True
+            self.times_left -= 1
+            self.next_ms = time.ticks_add(now, self.on_ms)
+        else:
+            self.board.set_square(self.x, self.y, BLACK)
+            self.board.write()
+            self.is_on = False
+            self.times_left -= 1
+            self.next_ms = time.ticks_add(now, self.off_ms)
+
+        # Done => set final color and stop
+        if self.times_left <= 0:
+            self.board.set_square(self.x, self.y, self.final_color)
+            self.board.write()
+            self.active = False
 
 
 # ============================================================
@@ -721,6 +794,7 @@ board = Chessboard(
     zigzag=MATRIX_ZIGZAG,
 )
 ui_board = ChessboardUI(board)
+preview_blink = PreviewBlink(board)
 buttons = ButtonManager(BUTTON_PINS)
 
 BTN_OK = buttons.btn(OK_BUTTON_INDEX)
@@ -761,6 +835,24 @@ def ok_long_hold_fired(hold_ms=LONG_PRESS_MS):
     return False
 
 
+def ok_wait_release():
+    """After a long-hold backspace, wait until OK is released so it can't chain-delete."""
+    while BTN_OK.value() == 0:
+        # keep critical checks alive while waiting
+        if is_shutdown_held():
+            shutdown_pico()
+        irq = process_hint_irq()
+        if irq == "new":
+            # abort release-wait if a new-game combo happened
+            break
+        time.sleep_ms(10)
+    reset_ok_hold_state()
+    try:
+        buttons.reset()
+    except Exception:
+        pass
+
+
 # ============================================================
 # =============== HINT IRQ (EDGE) ============================
 # ============================================================
@@ -789,70 +881,82 @@ BTN_HINT.irq(trigger=Pin.IRQ_FALLING, handler=hint_irq)
 # ============================================================
 
 
+# ---- CP write coalescing / border helpers ----
+_cp_last = None  # list[tuple] snapshot of last-written CP colors
+
+
+def cp_snapshot():
+    return [tuple(cp.np[i]) for i in range(cp.count)]
+
+
+def cp_apply_if_changed(force=False):
+    """Write CP neopixels only if buffer differs from last written snapshot."""
+    global _cp_last
+    cur = cp_snapshot()
+    if force or (_cp_last is None) or (cur != _cp_last):
+        cp.write()
+        _cp_last = cur
+
+
+def cp_set_border(on=True, color=CP_BORDER_COLOR, force=False):
+    """Set A-H and 1-8 border LEDs on the control panel."""
+    col = color if on else BLACK
+    for idx in CP_FILES_LEDS + CP_RANKS_LEDS:
+        if 0 <= idx < cp.count:
+            cp.set_pixel_no_write(idx, col)
+    # Do not force: avoid flicker if no change.
+    cp_apply_if_changed(force=force)
+
+
 def cp_all_off():
     # Single write (avoid flicker)
-    cp.fill(BLACK)
+    for i in range(cp.count):
+        cp.set_pixel_no_write(i, BLACK)
+    cp_apply_if_changed()
 
 
 def cp_bars_dim_on():
-    # Only show border coords when allowed by the current UI state.
-    global border_coords_visible
-    border_coords_visible = True
-    if border_coords_ready:
-        cp.bars_set_dim(CP_BORDER_COLOR, on=True)
+    cp_set_border(True)
 
 
 def cp_only_ok(on=True):
-    # Only OK is actionable
-    global border_coords_visible
-    border_coords_visible = False
-    cp.clear_small_panel()
-    # Turn OFF border coords (single write)
-    if border_coords_ready:
-        cp.bars_set_dim(CP_BORDER_COLOR, on=False)
-
-    # Lichess online waiting UX: OK should be RED instead of GREEN.
+    # Only OK is actionable. Do NOT touch border coords here.
     col = RED if (game_mode == MODE_ONLINE) else GREEN
-    cp.ok(on, color=col)
+    cp.set_pixel_no_write(0, BLACK)
+    cp.set_pixel_no_write(1, BLACK)
+    cp.set_pixel_no_write(2, BLACK)
+    cp.set_pixel_no_write(3, BLACK)
+    cp.set_pixel_no_write(CP_OK_PIX, col if on else BLACK)
+    cp.set_pixel_no_write(CP_HINT_PIX, BLACK)
+    cp_apply_if_changed()
 
 
 def cp_only_hint_and_coords_for_input():
     # User is allowed to input (coords + hint + OK backspace)
-    global border_coords_visible
-    border_coords_visible = True
+    cp_set_border(True)
 
     # Batch updates to reduce visible "flash" on input.
     # Buttons 1–4 share a strip (CP 0..1) and 5–8 share a strip (CP 2..3).
     # Light only what is actionable.
-    cp._set_no_write(0, WHITE)
-    cp._set_no_write(1, WHITE)
-    cp._set_no_write(2, WHITE)
-    cp._set_no_write(3, WHITE)
-    cp._set_no_write(CP_OK_PIX, RED)
-    cp._set_no_write(CP_HINT_PIX, YELLOW)
+    cp.set_pixel_no_write(0, WHITE)
+    cp.set_pixel_no_write(1, WHITE)
+    cp.set_pixel_no_write(2, WHITE)
+    cp.set_pixel_no_write(3, WHITE)
+    cp.set_pixel_no_write(CP_OK_PIX, RED)
+    cp.set_pixel_no_write(CP_HINT_PIX, YELLOW)
 
-    # Border coords (A–H + 1–8) only once setup is complete.
-    if border_coords_ready:
-        for idx in CP_FILES_LEDS + CP_RANKS_LEDS:
-            cp._set_no_write(idx, CP_BORDER_COLOR)
-
-    cp._write()
+    cp_apply_if_changed()
 
 
 def cp_show_coords_top(COLOR):
-    global border_coords_visible
-    border_coords_visible = False
+    # Menus: border coords off.
+    cp_set_border(False)
     # Only buttons 1–4 available (top strip). Turn off 5–8 strip.
-    cp._set_no_write(0, COLOR)
-    cp._set_no_write(1, COLOR)
-    cp._set_no_write(2, BLACK)
-    cp._set_no_write(3, BLACK)
-    # Keep OK/HINT as-is (profiles manage them)
-    # Ensure border coords are off during setup/menu.
-    if border_coords_ready:
-        for idx in CP_FILES_LEDS + CP_RANKS_LEDS:
-            cp._set_no_write(idx, BLACK)
-    cp._write()
+    cp.set_pixel_no_write(0, COLOR)
+    cp.set_pixel_no_write(1, COLOR)
+    cp.set_pixel_no_write(2, BLACK)
+    cp.set_pixel_no_write(3, BLACK)
+    cp_apply_if_changed()
 
 
 # ============================================================
@@ -860,150 +964,95 @@ def cp_show_coords_top(COLOR):
 # ============================================================
 
 
-def cp_clear_choices():
-    # Clear border coords (A–H + 1–8) and keep menu strips controlled separately.
-    if border_coords_ready:
-        cp.bars_set_dim(CP_BORDER_COLOR, on=False)
-    else:
-        for idx in CP_FILES_LEDS + CP_RANKS_LEDS:
-            cp._set_no_write(idx, BLACK)
-        cp._write()
-
-
-def cp_choice_lane(n, color):
-    # Legacy helper retained for compatibility: we map "choices" to the
-    # two physical strips for buttons 1–4 and 5–8.
-    # n in [1..8]
-    n = max(0, min(8, int(n)))
-    top_on = n >= 1
-    bottom_on = n >= 5
-    # Batch
-    col_top = color if top_on else BLACK
-    col_bot = color if bottom_on else BLACK
-    cp._set_no_write(0, col_top)
-    cp._set_no_write(1, col_top)
-    cp._set_no_write(2, col_bot)
-    cp._set_no_write(3, col_bot)
-    cp._write()
-
-
 def cp_profile_main_menu():
-    global border_coords_visible
-    border_coords_visible = False
+    cp_set_border(False)
     # Buttons 1–4 only (top strip). Everything else off.
-    cp._set_no_write(0, WHITE)
-    cp._set_no_write(1, WHITE)
-    cp._set_no_write(2, BLACK)
-    cp._set_no_write(3, BLACK)
-    cp._set_no_write(CP_OK_PIX, BLACK)
-    cp._set_no_write(CP_HINT_PIX, BLACK)
-    # Border coords off
-    for idx in CP_FILES_LEDS + CP_RANKS_LEDS:
-        cp._set_no_write(idx, BLACK)
-    cp._write()
+    cp.set_pixel_no_write(0, WHITE)
+    cp.set_pixel_no_write(1, WHITE)
+    cp.set_pixel_no_write(2, BLACK)
+    cp.set_pixel_no_write(3, BLACK)
+    cp.set_pixel_no_write(CP_OK_PIX, BLACK)
+    cp.set_pixel_no_write(CP_HINT_PIX, BLACK)
+    cp_apply_if_changed()
     set_allowed_buttons([1, 2, 3, 4])
 
 
 def cp_profile_vs_strength_time():
-    global border_coords_visible
-    border_coords_visible = False
+    cp_set_border(False)
     # Buttons 1–8 only (both strips). OK = back (RED). Hint off.
-    cp._set_no_write(0, WHITE)
-    cp._set_no_write(1, WHITE)
-    cp._set_no_write(2, WHITE)
-    cp._set_no_write(3, WHITE)
-    cp._set_no_write(CP_OK_PIX, RED)
-    cp._set_no_write(CP_HINT_PIX, BLACK)
-    # Border coords off during setup
-    for idx in CP_FILES_LEDS + CP_RANKS_LEDS:
-        cp._set_no_write(idx, BLACK)
-    cp._write()
+    cp.set_pixel_no_write(0, WHITE)
+    cp.set_pixel_no_write(1, WHITE)
+    cp.set_pixel_no_write(2, WHITE)
+    cp.set_pixel_no_write(3, WHITE)
+    cp.set_pixel_no_write(CP_OK_PIX, RED)
+    cp.set_pixel_no_write(CP_HINT_PIX, BLACK)
+    cp_apply_if_changed()
     set_allowed_buttons([1, 2, 3, 4, 5, 6, 7, 8, 9])
 
 
 def cp_profile_vs_color():
-    global border_coords_visible
-    border_coords_visible = False
+    cp_set_border(False)
     # Buttons 1–4 only. OK = back (RED).
-    cp._set_no_write(0, WHITE)
-    cp._set_no_write(1, WHITE)
-    cp._set_no_write(2, BLACK)
-    cp._set_no_write(3, BLACK)
-    cp._set_no_write(CP_OK_PIX, RED)
-    cp._set_no_write(CP_HINT_PIX, BLACK)
-    for idx in CP_FILES_LEDS + CP_RANKS_LEDS:
-        cp._set_no_write(idx, BLACK)
-    cp._write()
+    cp.set_pixel_no_write(0, WHITE)
+    cp.set_pixel_no_write(1, WHITE)
+    cp.set_pixel_no_write(2, BLACK)
+    cp.set_pixel_no_write(3, BLACK)
+    cp.set_pixel_no_write(CP_OK_PIX, RED)
+    cp.set_pixel_no_write(CP_HINT_PIX, BLACK)
+    cp_apply_if_changed()
     set_allowed_buttons([1, 2, 3, 9])
 
 
 def cp_profile_puzzle_top():
     # Puzzle submenu: 1..3 + OK (back). LEDs show 1..4 white + OK red.
-    global border_coords_visible
-    border_coords_visible = False
-    cp._set_no_write(0, WHITE)
-    cp._set_no_write(1, WHITE)
-    cp._set_no_write(2, BLACK)
-    cp._set_no_write(3, BLACK)
-    cp._set_no_write(CP_OK_PIX, RED)
-    cp._set_no_write(CP_HINT_PIX, BLACK)
-    for idx in CP_FILES_LEDS + CP_RANKS_LEDS:
-        cp._set_no_write(idx, BLACK)
-    cp._write()
+    cp_set_border(False)
+    cp.set_pixel_no_write(0, WHITE)
+    cp.set_pixel_no_write(1, WHITE)
+    cp.set_pixel_no_write(2, BLACK)
+    cp.set_pixel_no_write(3, BLACK)
+    cp.set_pixel_no_write(CP_OK_PIX, RED)
+    cp.set_pixel_no_write(CP_HINT_PIX, BLACK)
+    cp_apply_if_changed()
     set_allowed_buttons([1, 2, 3, 9])
 
 
 def cp_profile_menu_paged():
     # Paged menus: 1..4 select, HINT next page, OK back
-    global border_coords_visible
-    border_coords_visible = False
+    cp_set_border(False)
     # Buttons 1–4 + HINT(next page) + OK(back)
-    cp._set_no_write(0, WHITE)
-    cp._set_no_write(1, WHITE)
-    cp._set_no_write(2, BLACK)
-    cp._set_no_write(3, BLACK)
-    cp._set_no_write(CP_OK_PIX, RED)
-    cp._set_no_write(CP_HINT_PIX, BLUE)
-    for idx in CP_FILES_LEDS + CP_RANKS_LEDS:
-        cp._set_no_write(idx, BLACK)
-    cp._write()
+    cp.set_pixel_no_write(0, WHITE)
+    cp.set_pixel_no_write(1, WHITE)
+    cp.set_pixel_no_write(2, BLACK)
+    cp.set_pixel_no_write(3, BLACK)
+    cp.set_pixel_no_write(CP_OK_PIX, RED)
+    cp.set_pixel_no_write(CP_HINT_PIX, BLUE)
+    cp_apply_if_changed()
     set_allowed_buttons([1, 2, 3, 4, 9, 10])
 
 
 def cp_profile_only_ok_green():
-    global border_coords_visible
-    border_coords_visible = False
+    # Border controlled externally.
     # Only OK (GREEN)
-    cp._set_no_write(0, BLACK)
-    cp._set_no_write(1, BLACK)
-    cp._set_no_write(2, BLACK)
-    cp._set_no_write(3, BLACK)
-    cp._set_no_write(CP_OK_PIX, GREEN)
-    cp._set_no_write(CP_HINT_PIX, BLACK)
-    for idx in CP_FILES_LEDS + CP_RANKS_LEDS:
-        cp._set_no_write(idx, BLACK)
-    cp._write()
+    cp.set_pixel_no_write(0, BLACK)
+    cp.set_pixel_no_write(1, BLACK)
+    cp.set_pixel_no_write(2, BLACK)
+    cp.set_pixel_no_write(3, BLACK)
+    cp.set_pixel_no_write(CP_OK_PIX, GREEN)
+    cp.set_pixel_no_write(CP_HINT_PIX, BLACK)
+    cp_apply_if_changed()
     set_allowed_buttons([9])
 
 
 def cp_profile_puzzle_play():
-    global border_coords_visible
-    border_coords_visible = True
+    cp_set_border(True)
     # Puzzle play: 1–8 enter (both strips), OK red, HINT yellow.
-    cp._set_no_write(0, WHITE)
-    cp._set_no_write(1, WHITE)
-    cp._set_no_write(2, WHITE)
-    cp._set_no_write(3, WHITE)
-    cp._set_no_write(CP_OK_PIX, RED)
-    cp._set_no_write(CP_HINT_PIX, YELLOW)
-    # Border coords only if setup complete
-    if border_coords_ready:
-        for idx in CP_FILES_LEDS + CP_RANKS_LEDS:
-            cp._set_no_write(idx, CP_BORDER_COLOR)
-    else:
-        for idx in CP_FILES_LEDS + CP_RANKS_LEDS:
-            cp._set_no_write(idx, BLACK)
-    cp._write()
+    cp.set_pixel_no_write(0, WHITE)
+    cp.set_pixel_no_write(1, WHITE)
+    cp.set_pixel_no_write(2, WHITE)
+    cp.set_pixel_no_write(3, WHITE)
+    cp.set_pixel_no_write(CP_OK_PIX, RED)
+    cp.set_pixel_no_write(CP_HINT_PIX, YELLOW)
+    cp_apply_if_changed()
     set_allowed_buttons([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 
 
@@ -1026,7 +1075,7 @@ def hard_reset_board():
     disable_hint_irq()
     buttons.reset()
     cp_all_off()
-    ui_board.off()
+    # ui_board.off()
     ui_board.markings()
 
 
@@ -1109,27 +1158,51 @@ def shutdown_pico():
 # ============================================================
 
 
-def clear_persistent_trail():
-    global persistent_trail_active, persistent_trail_type, persistent_trail_move
+def clear_persistent_trail(confirm_blink=False):
+    """Clear the current persistent overlay (hint/engine/wrong).
+
+    If confirm_blink is True and the overlay represents a capture (MAGENTA end),
+    blink the destination square briefly before clearing — matching the UX used
+    for confirmed user moves.
+    """
+    global persistent_trail_active, persistent_trail_type, persistent_trail_move, persistent_trail_end_color
+
     was_hint = persistent_trail_type == "hint"
+    mv = persistent_trail_move
+    endc = persistent_trail_end_color
+
     persistent_trail_active = False
     persistent_trail_type = None
     persistent_trail_move = None
+    persistent_trail_end_color = None
+
     ui_board.overlay_clear()
+
+    # If we just dismissed a hint overlay, restore normal move-entry LEDs.
     if was_hint and game_state == GAME_RUNNING and not engine_ack_pending:
         cp_only_hint_and_coords_for_input()
 
 
 def show_persistent_trail(move_uci, color, trail_type, end_color=None):
-    global persistent_trail_active, persistent_trail_type, persistent_trail_move
+    """Show a persistent trail overlay (engine / hint / wrong).
+
+    trail_type: 'engine' | 'hint' | 'wrong'
+    end_color: when MAGENTA, treated as a capture destination highlight.
+    """
+    global persistent_trail_active, persistent_trail_type, persistent_trail_move, persistent_trail_end_color
+
     persistent_trail_active = True
     persistent_trail_type = trail_type
     persistent_trail_move = move_uci
+    persistent_trail_end_color = end_color
+
     cap = (end_color == MAGENTA) if end_color is not None else False
     role = "engine" if trail_type == "engine" else "hint"
+
     if trail_type == "hint":
-        # Hint received => only OK lit (green) until user dismisses overlay
+        # Hint received => only OK lit until user dismisses overlay
         cp_only_ok(True)
+
     ui_board.overlay_show(
         role, move_uci, cap=cap, color_override=color, end_color=end_color
     )
@@ -1215,12 +1288,12 @@ def _send_from_preview(text):
 
 
 def _send_to_preview(move_from, partial_to):
-    send_typing_preview("to", f"{move_from} → {partial_to}")
+    send_typing_preview("to", f"{move_from} -> {partial_to}")
 
 
 def _send_confirm_preview(move):
     frm, to = move[:2], move[2:4]
-    send_typing_preview("confirm", f"{frm} → {to}")
+    send_typing_preview("confirm", f"{frm} -> {to}")
 
 
 # ============================================================
@@ -1311,6 +1384,7 @@ def enter_from_square(seed_btn=None, preset_col=None):
         if ok_long_hold_fired():
             _send_from_preview("")
             ui_board.markings()
+            ok_wait_release()
             return ("back_from", None)
 
         irq = process_hint_irq()
@@ -1394,6 +1468,7 @@ def enter_to_square(move_from, preset_col=None):
             # We are deleting FROM rank (e2 -> e). Show remaining FROM buffer on LCD.
             _send_from_preview(move_from[0])
             ui_board.markings()
+            ok_wait_release()
             return ("back_to_from_rank", move_from[0])
 
         irq = process_hint_irq()
@@ -1429,6 +1504,7 @@ def enter_to_square(move_from, preset_col=None):
         if ok_long_hold_fired():
             _send_to_preview(move_from, "")
             ui_board.preview_from(move_from)
+            ok_wait_release()
             return ("back_to_to_file", move_from)
 
         irq = process_hint_irq()
@@ -1465,6 +1541,18 @@ def confirm_move(move):
         return None
 
     cp_only_ok(True)
+
+    # IMPORTANT: if OK is currently held down, wait for release so we can treat
+    # the next press cleanly (avoids "stuck low" / edge-miss issues).
+    while BTN_OK.value() == 0:
+        if is_shutdown_held():
+            shutdown_pico()
+        irq = process_hint_irq()
+        if irq == "new":
+            cp_only_ok(False)
+            return None
+        time.sleep_ms(10)
+
     buttons.reset()
     _send_confirm_preview(move)
 
@@ -1491,18 +1579,12 @@ def confirm_move(move):
                 cancel_user_input_and_restart()
                 return None
 
-        b = buttons.detect_press()
-        if not b:
-            time.sleep_ms(5)
-            continue
-
-        if b == (OK_BUTTON_INDEX + 1):
-            # OK at confirm stage:
-            # - Short press (release < LONG_PRESS_MS): CONFIRM
-            # - Long hold (>= LONG_PRESS_MS): DELETE last character immediately (single-shot) and return to TO-rank entry
+        # --- OK handling via LEVEL (not edge) ---
+        if BTN_OK.value() == 0:
             t0 = time.ticks_ms()
             fired = False
 
+            # stay here while held: long-hold => backspace; short => confirm
             while BTN_OK.value() == 0:
                 if is_shutdown_held():
                     shutdown_pico()
@@ -1512,25 +1594,19 @@ def confirm_move(move):
                     cp_only_ok(False)
                     return None
 
-                # Fire delete once at threshold (while still held)
                 if (not fired) and time.ticks_diff(
                     time.ticks_ms(), t0
                 ) >= LONG_PRESS_MS:
                     fired = True
-                    # move is full UCI (len 4). Delete last char => len 3 (keep TO file)
-                    partial = move[:-1]  # could be len 3 or len 2
-                    frm = partial[:2]
 
+                    partial = move[:-1]  # delete last char
+                    frm = partial[:2]
                     if len(partial) == 3:
-                        # e2e : show "e2 → e"
                         _send_to_preview(frm, partial[2])
                     else:
-                        # e2 : show "e2 →" (TO empty)
                         _send_to_preview(frm, "")
                     ui_board.preview_from(frm)
-                    cp_only_hint_and_coords_for_input()
-                    # Wait for release so we don't immediately treat it as a new press
-                    # (but do not block other critical actions)
+
                 time.sleep_ms(10)
 
             held_ms = time.ticks_diff(time.ticks_ms(), t0)
@@ -1538,22 +1614,27 @@ def confirm_move(move):
 
             if fired:
                 cp_only_ok(False)
-                reset_ok_hold_state()
+                ok_wait_release()
                 return ("backspace_confirm", move[:-1])
 
-            # Short press confirms on release
             if held_ms < LONG_PRESS_MS:
                 cp_only_ok(False)
                 return "ok"
 
-            # Long hold but somehow didn't fire (edge): ignore
+            # long hold but didn’t fire (edge): ignore
             buttons.reset()
             continue
 
-        else:
-            cp_only_ok(False)
-            ui_board.markings()
-            return ("redo", b)
+        # --- Non-OK buttons (redo) still use edge detector ---
+        b = buttons.detect_press()
+        if not b:
+            time.sleep_ms(5)
+            continue
+
+        # Any other button cancels confirm stage and restarts input
+        cp_only_ok(False)
+        # ui_board.markings()
+        return ("redo", b)
 
 
 def collect_and_send_move():
@@ -1625,7 +1706,7 @@ def collect_and_send_move():
             while isinstance(res, tuple) and res[0] == "backspace_confirm":
                 partial = res[1]  # can be len 3,2,1,0
 
-                ui_board.markings()
+                # ui_board.markings()
 
                 if len(partial) == 3:
                     # e2e -> keep FROM=e2, preset TO file='e', re-enter TO rank
@@ -1704,7 +1785,7 @@ def collect_and_send_move():
                 continue
 
             if res == "ok":
-                ui_board.redraw_final_trail(move, cap=preview_cap_flag)
+                # ui_board.redraw_final_trail(move, cap=preview_cap_flag)
                 time.sleep_ms(200)
                 send_to_pi(move)
                 preview_cap_flag = False
@@ -1741,8 +1822,10 @@ def game_over_wait_ok_and_ack(result_str):
             now = time.ticks_ms()
             if time.ticks_diff(now, last) > 400:
                 blink = not blink
-                cp.clear_small_panel()
-                cp.ok(blink)
+                for i in range(0, 6):
+                    cp.set_pixel_no_write(i, BLACK)
+                cp.set_pixel_no_write(CP_OK_PIX, GREEN if blink else BLACK)
+                cp_apply_if_changed()
                 last = now
 
             if is_shutdown_held():
@@ -1817,7 +1900,7 @@ def select_game_mode():
             game_mode = MODE_PUZZLE
             send_to_pi("btn_mode_puzzles")
             return
-        time.sleep_ms(5)
+        # time.sleep_ms(5)
 
 
 def _setup_back_cleanup():
@@ -1842,25 +1925,6 @@ def _setup_back_cleanup():
         pass
 
 
-def _menu_back_cleanup_soft():
-    global game_state, in_setup, suspend_until_new_game
-
-    # Leave setup state completely so main_loop can see heyArduinoChooseMode again
-    in_setup = True
-    game_state = GAME_SETUP
-    suspend_until_new_game = True
-
-    # Avoid CP "off -> on" flashes during menu transitions.
-    try:
-        ui_board.markings()
-    except Exception:
-        pass
-    try:
-        buttons.reset()
-    except Exception:
-        pass
-
-
 def select_puzzle_variant():
     """
     Puzzle submenu on the Pi:
@@ -1869,7 +1933,7 @@ def select_puzzle_variant():
       3) Themes
       OK = back
     """
-    cp_profile_puzzle_top()
+    # cp_profile_puzzle_top()
     buttons.reset()
     while True:
         if is_shutdown_held():
@@ -1965,7 +2029,7 @@ def select_color_choice():
         if b == 3:
             send_to_pi("s3")
             return
-        time.sleep_ms(5)
+        # time.sleep_ms(5)
 
 
 def wait_for_setup():
@@ -2026,22 +2090,18 @@ def wait_for_setup():
                 return
 
             if msg.startswith("heyArduinoPlayerColor"):
+                ui_board.markings()
                 cp_show_coords_top(WHITE)
                 select_color_choice()
-                ui_board.markings()
                 return
 
             if msg.startswith("heyArduinoSetupComplete"):
                 game_state = GAME_RUNNING
                 in_setup = False
                 suspend_until_new_game = False
-                # Setup is done: border coords may now be used, but keep them
-                # OFF unless the UI explicitly enables input.
-                global border_coords_ready, border_coords_visible
-                border_coords_ready = True
-                border_coords_visible = False
-                cp.bars_set_dim(CP_BORDER_COLOR, on=False)
-                ui_board.markings()
+                # Entering gameplay: border coords ON for the full session.
+                # cp_set_border(True)
+                # ui_board.markings()
                 return
     finally:
         enable_hint_irq()
@@ -2081,7 +2141,8 @@ def handle_promotion_choice():
                 send_to_pi("btn_n")
                 break
     finally:
-        cp.clear_small_panel()
+        cp.clear_header()
+        cp_apply_if_changed(force=True)
         ui_board.markings()
 
 
@@ -2106,12 +2167,9 @@ def handle_puzzle_setup_cmd(msg):
         buttons.reset()
         ok_last_val = BTN_OK.value()
 
-        # User request: while the LCD is prompting to set up pieces, keep the
-        # border coordinates ON (max brightness) and avoid any flashing.
+        # Keep border coordinates ON during puzzle setup (no flashing).
         try:
-            for idx in CP_FILES_LEDS + CP_RANKS_LEDS:
-                cp._set_no_write(idx, CP_BORDER_COLOR)
-            cp._write()
+            cp_set_border(True, force=True)
         except Exception:
             pass
 
@@ -2186,8 +2244,9 @@ def handle_puzzle_setup_cmd(msg):
         uci = parts[0].strip() if parts else ""
         side = parts[1].strip().lower() if len(parts) > 1 else "w"
         color = GREEN if side.startswith("w") else ENGINE_COLOR
-        ui_board.off()
-        board.draw_trail(uci, color, end_color=None)
+        ui_board.overlay_show(
+            "setup", uci, cap=False, color_override=color, end_color=None
+        )
         return True
 
     return False
@@ -2287,7 +2346,7 @@ def main_loop():
                 engine_ack_pending = False
                 cp_only_ok(False)
                 clear_persistent_trail()
-                ui_board.markings()
+                # ui_board.markings()
 
                 if buffered_turn_msg:
                     turn_str = buffered_turn_msg.split("_", 1)[1].strip().lower()
@@ -2384,7 +2443,7 @@ def main_loop():
             disable_hint_irq()
             buttons.reset()
             ui_board.markings()
-            cp_show_menu_choices_1to4()
+            # cp_show_menu_choices_1to4()
             select_puzzle_variant()
             ui_board.markings()
             enable_hint_irq()
@@ -2396,7 +2455,7 @@ def main_loop():
             disable_hint_irq()
             buttons.reset()
             ui_board.markings()
-            cp_show_menu_choices_1to4()
+            # cp_show_menu_choices_1to4()
             select_paged_menu_1to4()
             ui_board.markings()
             enable_hint_irq()
@@ -2515,20 +2574,8 @@ def run():
     while game_state == GAME_SETUP:
         wait_for_setup()
 
-    ui_board.markings()
-    # Border coords are only shown when user input is allowed.
-    try:
-        cp.bars_set_dim(CP_BORDER_COLOR, on=False)
-    except Exception:
-        pass
-    enable_hint_irq()
-
     while True:
         main_loop()
 
 
 run()
-
-# If A–H or 1–8 appear reversed on your panel, flip either/both:
-# CP_FILES_LEDS = list(reversed([6, 7, 8, 9, 10, 11, 12, 13]))
-# CP_RANKS_LEDS = list(reversed([14, 15, 16, 17, 18, 19, 20, 21]))

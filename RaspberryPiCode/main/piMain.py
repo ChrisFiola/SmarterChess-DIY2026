@@ -24,9 +24,9 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from piDisplay import Display
-from piSerial import BoardLink
-from piEngine import EngineContext
+from main.piDisplay import Display
+from main.piSerial import BoardLink
+from main.piEngine import EngineContext
 
 
 def main():

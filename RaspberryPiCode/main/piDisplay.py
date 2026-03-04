@@ -9,11 +9,9 @@ import sys
 import time
 import subprocess
 
-PIPE_PATH: str = "/tmp/lcdpipe"
-READY_FLAG_PATH: str = "/tmp/display_server_ready"
-DISPLAY_SERVER_SCRIPT: str = (
-    "/home/king/SmarterChess-DIY2026/RaspberryPiCode/screen/display_server.py"
-)
+from screen.lcd_pipe import LCDPipeClient, PIPE_PATH, READY_FLAG_PATH
+
+DISPLAY_SERVER_SCRIPT: str = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "screen", "display_server.py"))
 
 
 class Display:
@@ -24,7 +22,7 @@ class Display:
     def __init__(self, pipe_path: str = PIPE_PATH, ready_flag: str = READY_FLAG_PATH):
         self.pipe_path = pipe_path
         self.ready_flag = ready_flag
-        self._pipe = None
+        self.client = LCDPipeClient(pipe_path)
         self._last_payload = None
         self._last_send_t = 0.0
         # Simple "UI lock" to prevent important prompts (typing / confirmations)
@@ -246,9 +244,4 @@ class Display:
             self.send(f"DRAW\nMove {move_no}")
 
     def close(self):
-        try:
-            if self._pipe:
-                self._pipe.close()
-        except Exception:
-            pass
-        self._pipe = None
+        return

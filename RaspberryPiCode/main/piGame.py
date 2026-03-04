@@ -21,9 +21,9 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 import chess
 
-from piDisplay import Display
-from piSerial import BoardLink
-from piEngine import EngineContext, engine_bestmove, engine_hint
+from main.piDisplay import Display
+from main.piSerial import BoardLink
+from main.piEngine import EngineContext, engine_bestmove, engine_hint
 
 # Phase 1: daily puzzle controller
 from app.lichess_client import LichessClient
@@ -1461,7 +1461,7 @@ def mode_dispatch(
         setup_stockfish(link, display, cfg)
         link.sendtoboard("SetupComplete")
 
-        display.send("Engine starting...")
+        display.send("Engine loading...")
         ctx.ensure()  # uses default STOCKFISH_PATH
 
         # Refactored: run through the explicit GameController state machine.

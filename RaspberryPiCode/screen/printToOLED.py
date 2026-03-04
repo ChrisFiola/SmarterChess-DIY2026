@@ -1,14 +1,23 @@
 #!/usr/bin/env python3
-import sys, getopt
+"""Small CLI helper to send text to the SmartChess LCD.
 
-PIPE = "/tmp/lcdpipe"
+Example:
+  ./printToOLED.py -a "Line 1" -b "Line 2" -c "Line 3" -d "Line 4" -s auto
+  ./printToOLED.py -a "https://lichess.org/..." -b "Scan to join" -s qr
+"""
+import sys
+import getopt
+
+from lcd_pipe import LCDPipeClient
 
 text1 = text2 = text3 = text4 = ""
-forced_size = None
+size = "auto"
 
-opts, args = getopt.getopt(sys.argv[1:], "ha:b:c:d:s:")
-
+opts, _args = getopt.getopt(sys.argv[1:], "ha:b:c:d:s:")
 for opt, arg in opts:
+    if opt == "-h":
+        print(__doc__.strip())
+        sys.exit(0)
     if opt == "-a":
         text1 = arg
     elif opt == "-b":
@@ -18,28 +27,10 @@ for opt, arg in opts:
     elif opt == "-d":
         text4 = arg
     elif opt == "-s":
-        cleaned = arg.strip()
-        if cleaned.isdigit():
-            forced_size = int(cleaned)
+        size = arg
 
-# Count non-empty lines
-lines = [t for t in [text1, text2, text3, text4] if t]
-line_count = len(lines)
-
-# WAVESHARE-STYLE FIXED SIZES (perfect on 1.14")
-if forced_size:
-    textSize = forced_size
+client = LCDPipeClient()
+if str(size).lower() == "qr":
+    client.qr(text1, captions=[text2, text3, text4])
 else:
-    if line_count == 1:
-        textSize = 28   # Waveshare Font00 30–32 works perfectly
-    elif line_count == 2:
-        textSize = 26
-    elif line_count == 3:
-        textSize = 22
-    else:
-        textSize = 20   # fits 4 lines cleanly
-
-msg = f"{text1}|{text2}|{text3}|{text4}|{textSize}"
-
-with open(PIPE, "w") as f:
-    f.write(msg + "\n")
+    client.send(text1, text2, text3, text4, size=str(size))

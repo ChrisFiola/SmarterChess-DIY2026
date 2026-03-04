@@ -144,9 +144,9 @@ README.txt
 docs/prompt
 
 # Project folders
-singleFile/
+#singleFile/
 docs/
-console/
+#console/
 
 # Project files
 .micropico
