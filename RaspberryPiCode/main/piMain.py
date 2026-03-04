@@ -35,7 +35,7 @@ def main():
     display.wait_ready()
 
     # Splash + engine pre-warm before we open UART / ask for mode
-    display.banner("SMARTCHESS\nLoading...")  # splash
+    display.banner("SMARTCHESS")  # splash
     # display.send("Engine starting...")          # status line prior to mode select
 
     ctx = EngineContext()
