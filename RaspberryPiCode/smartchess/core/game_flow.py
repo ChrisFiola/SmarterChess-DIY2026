@@ -644,69 +644,80 @@ def _piece_label_from_square(board: Optional["chess.Board"], sq: str) -> Optiona
         return None
 
 
+def _tokenize_move(text: str) -> str:
+    out = []
+    for ch in text:
+        o = ord(ch)
+        if (48 <= o <= 57) or (65 <= o <= 90) or (97 <= o <= 122):
+            out.append(ch)
+    tok = "".join(out)
+    return tok[:5] if len(tok) >= 5 else tok[:4]
+
+
 def handle_typing_preview(
-    display: Display, payload: str, board: Optional["chess.Board"] = None
+    display: Display,
+    payload: str,
+    board: Optional["chess.Board"] = None,
+    link: Optional["BoardLink"] = None,
 ) -> None:
     """
     payload is the '<after heypityping_...>' part, e.g.:
       'from_e'
+      'to_e2 -> e'
       'to_e2 → e'
-      'confirm_e2 → e4'
-    Displays short contextual prompts.
+      'confirm_e2e4'
+      'confirm_e2 -> e4'
+      'confirmclear_e2e4'
+
+    Added:
+      - ACK for confirm previews back to Pico: heyArduinotyping_ack_confirm_<uci>
+        This eliminates a race where a late confirm preview overwrites the Pi's
+        post-move LCD update if OK is pressed very quickly.
+      - Accept both arrow styles (→ and ->) and compact UCI tokens.
     """
     try:
         # label, text
         parts = payload.split("_", 1)
         if len(parts) != 2:
             return
-        label, text = parts[0], parts[1]
-        label = label.lower()
+        label, text = parts[0].strip().lower(), parts[1].strip()
+
+        if label == "confirmclear":
+            tok = _tokenize_move(text)
+            if link is not None:
+                link.send("typing_ack_confirm_" + tok)
+            return
+
         if label == "from":
             # When a full square is entered (e.g. e2), show which piece is on that square.
-            # If the user deletes back to 0/1 chars, we revert to the generic prompt.
-            if _looks_like_square(text):
-                piece_lbl = _piece_label_from_square(board, text)
-                if piece_lbl:
-                    display.send(f"{piece_lbl}\n{text} →\nEnter to:")
-                else:
-                    display.send("Enter from:\n" + text)
-            else:
-                display.send("Enter from:\n" + text)
+            display.send("Move from:", text)
+            return
 
-        elif label == "to":
-            # text format: "e2 → e" (partial) or "e2 → e4"
-            frm = ""
-            partial_to = text
+        if label == "to":
+            # Accept both arrow styles.
             if "→" in text:
-                left, right = text.split("→", 1)
-                frm = left.strip()
-                partial_to = right.strip()
-            piece_lbl = _piece_label_from_square(board, frm)
-            if piece_lbl:
-                display.send(f"{piece_lbl}\n{frm} → {partial_to}")
+                a, b = (x.strip() for x in text.split("→", 1))
+            elif "->" in text:
+                a, b = (x.strip() for x in text.split("->", 1))
             else:
-                display.send("Enter to:\n" + text)
+                a, b = (text, "")
+            display.send(a, b)
+            return
 
-        elif label == "confirm":
-            # text format: "e2 → e4"
-            frm = ""
-            to = ""
-            if "→" in text:
-                left, right = text.split("→", 1)
-                frm = left.strip()
-                to = right.strip()
-            piece_lbl = _piece_label_from_square(board, frm)
-            if piece_lbl:
-                display.send(f"{piece_lbl}\n{frm} → {to}\nOK to send")
+        if label == "confirm":
+            tok = _tokenize_move(text)
+            if len(tok) >= 4:
+                frm, to = tok[:2], tok[2:4]
+                display.send("Confirm move:", f"{frm} -> {to}")
             else:
-                display.send("Confirm move:\n" + text + "\nPress OK or re-enter")
+                display.send("Confirm move:", text)
+
+            if link is not None:
+                link.send("typing_ack_confirm_" + tok)
+            return
+
     except Exception:
-        # swallow malformed previews quietly
-        pass
-
-
-# -------------------- Human move processing (extracted) --------------------
-
+        return
 
 def process_human_move(
     *, link: BoardLink, display: Display, board: chess.Board, uci: str

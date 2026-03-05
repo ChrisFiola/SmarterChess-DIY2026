@@ -283,13 +283,6 @@ class Profiles:
         self.cp.apply()
         self.cp.set_allowed([1, 2, 3, 4, 9, 10])
 
-    def only_ok_green(self):
-        self.cp._set_cp_buttons(
-            top=False, bottom=False, ok=True, hint=False, ok_color=GREEN
-        )
-        self.cp.apply()
-        self.cp.set_allowed([9])
-
     def puzzle_play(self):
         self.cp.border(True)
         self.cp._set_cp_buttons(
@@ -1698,12 +1691,11 @@ def handle_puzzle_setup_cmd(msg):
         return False
 
     if msg.startswith("heyArduinopuzzle_setup_begin"):
-        cp.profile.only_ok_green()
+        cp.only_ok(True)
         st.puzzle_setup_active = True
         cp.disable_hint_irq()
         cp.reset_edges()
         border.on(force=True)
-        cp.only_ok(True)
         board.markings()
         return True
 
