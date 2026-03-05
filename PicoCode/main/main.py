@@ -39,15 +39,15 @@ MATRIX_ZIGZAG = True
 
 # Colors (keep standard palette)
 BLACK = (0, 0, 0)
-WHITE = (128, 128, 128)
+WHITE = (255, 255, 255)
 DIMW = (10, 10, 10)
-RED = (128, 0, 0)
-GREEN = (0, 128, 0)
-BLUE = (0, 0, 128)
-CYAN = (0, 128, 128)
-MAGENTA = (128, 0, 128)
-YELLOW = (128, 128, 0)
-ORANGE = (128, 65, 0)
+RED = (255, 0, 0)
+GREEN = (0, 255, 0)
+BLUE = (0, 0, 255)
+CYAN = (0, 255, 255)
+MAGENTA = (255, 0, 255)
+YELLOW = (255, 255, 0)
+ORANGE = (255, 165, 0)
 
 ENGINE_COLOR = BLUE  # Deep blue for computer moves
 
@@ -279,7 +279,7 @@ class Chessboard:
         self.np = neopixel.NeoPixel(Pin(pin, Pin.OUT), w * h)
 
         self._marking_cache = [BLACK] * (w * h)
-        LIGHT = (40, 40, 40)
+        LIGHT = (255, 255, 255)
         DARK = (0, 0, 0)
         for y in range(self.h):
             for x in range(self.w):
