@@ -1691,11 +1691,11 @@ def handle_puzzle_setup_cmd(msg):
         return False
 
     if msg.startswith("heyArduinopuzzle_setup_begin"):
-        cp.only_ok(True)
         st.puzzle_setup_active = True
         cp.disable_hint_irq()
         cp.reset_edges()
         border.on(force=True)
+        cp.only_ok(True)
         board.markings()
         return True
 
