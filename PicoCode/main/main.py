@@ -84,7 +84,7 @@ class CFG:
         BLINK_OFF_MS = 140
         SLOW_POLL_MS = 20
         SHUTDOWN_IDLE_MS = 1000
-        CONFIRM_DELAY_MS = 1000
+        CONFIRM_DELAY_MS = 700
 
     class Colors:
         BLACK = (0, 0, 0)
@@ -219,16 +219,9 @@ class Screen:
         self.link.write_raw("heypityping_confirm_" + frm + " -> " + to)
 
     # Clears (fixes “confirm move” stuck display if OK pressed quickly)
-    def clear_confirm(self, uci4=None):
-        # wait briefly for Pi ack, but never block forever
-        deadline = time.ticks_add(time.ticks_ms(), 250)
-        while time.ticks_diff(deadline, time.ticks_ms()) > 0:
-            m = self.link.read()
-            if m and uci4 and m.startswith("typing_ack_confirm_"):
-                got = m.split("_")[-1].strip()
-                if got == uci4:
-                    return
-            time.sleep_ms(5)
+    def clear_confirm(self):
+        # self.link.write_raw("heypityping_confirm_")
+        time.sleep_ms(CFG.Timing.CONFIRM_DELAY_MS)
 
     def clear_to(self):
         self.link.write_raw("heypityping_to_")
