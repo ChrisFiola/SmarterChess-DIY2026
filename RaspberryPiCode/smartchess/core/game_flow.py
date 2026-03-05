@@ -26,8 +26,8 @@ from main.piSerial import BoardLink
 from main.piEngine import EngineContext, engine_bestmove, engine_hint
 
 # Phase 1: daily puzzle controller
-from app.lichess_client import LichessClient
-from app.puzzle_controller import DailyPuzzleController
+from smartchess.modes.online.lichess_client import LichessClient
+from smartchess.modes.puzzle.controller import DailyPuzzleController
 
 # -------------------- Data classes --------------------
 
@@ -852,7 +852,7 @@ def play_game(
                 state.board.turn == chess.WHITE and not cfg.human_is_white
             ) or (state.board.turn == chess.BLACK and cfg.human_is_white)
             if engine_should_move:
-                ui_engine_thinking(display)
+                # ui_engine_thinking(display)
                 engine_move_and_send(link, display, ctx, state, cfg)
                 # After engine move, loop continues to check for human input
                 continue
@@ -980,7 +980,7 @@ def run_online_mode(link: BoardLink, display: Display, cfg: GameConfig) -> None:
 
     Phase 1: implementation moved to app.online_controller.OnlineController.
     """
-    from app.online_controller import OnlineController, OnlineDeps
+    from smartchess.modes.online.controller import OnlineController, OnlineDeps
 
     deps = OnlineDeps(
         link=link,
@@ -1465,8 +1465,8 @@ def mode_dispatch(
         ctx.ensure()  # uses default STOCKFISH_PATH
 
         # Refactored: run through the explicit GameController state machine.
-        from app.game_controller import GameController, LoopDeps
-        from app.stockfish_opponent import StockfishOpponent
+        from smartchess.core.game_controller import GameController, LoopDeps
+        from smartchess.modes.vs_computer.stockfish_opponent import StockfishOpponent
 
         opponent = StockfishOpponent(
             ctx,
