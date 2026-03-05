@@ -83,6 +83,25 @@ class BoardLink:
                 return payload
         return None
 
+    def _extract_uci4(text: str) -> str | None:
+        # text might be "e2 -> e4" or "e2->e4" etc
+        cleaned = "".join(ch for ch in text.lower() if ch.isalnum())
+
+        return cleaned[:4] if len(cleaned) >= 4 else None
+
+    def getboard(self):
+        msg = self._readline()
+        if not msg:
+            return None
+
+        # If pico sent typing_confirm, ACK it immediately (NO LCD CHANGES HERE)
+        if msg.startswith("heypityping_confirm_"):
+            payload = msg[len("heypityping_confirm_") :].strip()  # "e2 -> e4"
+            uci4 = self._extract_uci4(payload)
+            if uci4:
+                self.sendtoboard(f"typing_ack_confirm_{uci4}")
+            return "typing_confirm_" + payload
+
     def getboard(self) -> Optional[str]:
         while True:
             raw = self.get_raw_from_board()

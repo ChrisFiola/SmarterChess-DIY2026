@@ -219,9 +219,16 @@ class Screen:
         self.link.write_raw("heypityping_confirm_" + frm + " -> " + to)
 
     # Clears (fixes “confirm move” stuck display if OK pressed quickly)
-    def clear_confirm(self):
-        # self.link.write_raw("heypityping_confirm_")
-        time.sleep_ms(CFG.Timing.CONFIRM_DELAY_MS)
+    def clear_confirm(self, uci4=None):
+        # wait briefly for Pi ack, but never block forever
+        deadline = time.ticks_add(time.ticks_ms(), 250)
+        while time.ticks_diff(deadline, time.ticks_ms()) > 0:
+            m = self.link.read()
+            if m and uci4 and m.startswith("typing_ack_confirm_"):
+                got = m.split("_")[-1].strip()
+                if got == uci4:
+                    return
+            time.sleep_ms(5)
 
     def clear_to(self):
         self.link.write_raw("heypityping_to_")
@@ -1109,7 +1116,7 @@ def enter_to_square(move_from, preset_col=None):
         and ("a" <= preset_col <= "h")
     ):
         col = preset_col
-        screen.typing_to(move_from, to)
+        screen.typing_to(move_from, col)
 
     while col is None:
         if st.game_state != Game.RUNNING:
