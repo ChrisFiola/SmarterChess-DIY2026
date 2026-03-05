@@ -263,7 +263,7 @@ def send_hint_to_board(
         display.send("Game Over\nNo hints\nPress n to start over")
         return
 
-    ui_engine_thinking(display)
+    # ui_engine_thinking(display)
     best = engine_hint(ctx, state.board, cfg.move_time_ms)
     if not best:
         link.sendtoboard("hint_none")
@@ -852,7 +852,7 @@ def play_game(
                 state.board.turn == chess.WHITE and not cfg.human_is_white
             ) or (state.board.turn == chess.BLACK and cfg.human_is_white)
             if engine_should_move:
-                ui_engine_thinking(display)
+                # ui_engine_thinking(display)
                 engine_move_and_send(link, display, ctx, state, cfg)
                 # After engine move, loop continues to check for human input
                 continue

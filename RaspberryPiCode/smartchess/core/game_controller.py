@@ -70,7 +70,7 @@ class GameController:
             self._drain_nonblocking()
 
             if not self.board.is_game_over() and not self._human_to_move():
-                self.deps.display.send("Engine Thinking...")
+                # self.deps.display.send("Engine Thinking...")
                 self._engine_step()
                 continue
 
