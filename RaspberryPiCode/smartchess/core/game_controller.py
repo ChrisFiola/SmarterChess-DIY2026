@@ -85,7 +85,6 @@ class GameController:
     ) -> None:
         from piGame import GoToModeSelect  # keep exception class stable
 
-        self.deps.link.sendtoboard(f"lcd_ack_confirm\n")
         if typ == EventType.SHUTDOWN:
             from piGame import shutdown_pi
 
@@ -102,6 +101,7 @@ class GameController:
             return
 
         if typ == EventType.OK:
+            self.deps.link.sendtoboard(f"lcd_ack_confirm\n")
             # OK is used as an acknowledgement / "enter move" trigger from the Pico UI.
             # It should NEVER be treated as a move payload.
             side = "WHITE" if self.board.turn == chess.WHITE else "BLACK"
