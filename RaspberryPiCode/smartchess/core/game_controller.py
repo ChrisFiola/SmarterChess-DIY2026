@@ -18,6 +18,7 @@ from smartchess.core.protocol import (
     parse_payload,
     format_capture_reply,
     format_engine_move,
+    send_lcd_ack_for_payload,
 )
 from smartchess.modes.vs_computer.stockfish_opponent import StockfishOpponent
 
@@ -101,15 +102,7 @@ class GameController:
 
             # ACK must be tied to the LCD update that just happened,
             # not to a later OK press.
-            if payload.startswith("confirm_"):
-                print(f"[LCD ACK] confirm payload={payload!r}", flush=True)
-                self.deps.link.sendtoboard("lcd_ack_confirm")
-            elif payload.startswith("to_"):
-                print(f"[LCD ACK] to payload={payload!r}", flush=True)
-                self.deps.link.sendtoboard("lcd_ack_to")
-            elif payload.startswith("from_"):
-                print(f"[LCD ACK] from payload={payload!r}", flush=True)
-                self.deps.link.sendtoboard("lcd_ack_from")
+            send_lcd_ack_for_payload(self.deps.link, payload)
 
             return
 

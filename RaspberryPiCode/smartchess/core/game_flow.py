@@ -28,6 +28,7 @@ from main.piEngine import EngineContext, engine_bestmove, engine_hint
 # Phase 1: daily puzzle controller
 from smartchess.modes.online.lichess_client import LichessClient
 from smartchess.modes.puzzle.controller import DailyPuzzleController
+from smartchess.core.protocol import send_lcd_ack_for_payload
 
 # -------------------- Data classes --------------------
 
@@ -644,16 +645,6 @@ def _piece_label_from_square(board: Optional["chess.Board"], sq: str) -> Optiona
         return None
 
 
-def send_lcd_ack_for_payload(link: BoardLink, payload: str) -> None:
-    if payload.startswith("confirm_"):
-        print(f"[LCD ACK] confirm payload={payload!r}", flush=True)
-        link.sendtoboard("lcd_ack_confirm")
-    elif payload.startswith("to_"):
-        print(f"[LCD ACK] to payload={payload!r}", flush=True)
-        link.sendtoboard("lcd_ack_to")
-    elif payload.startswith("from_"):
-        print(f"[LCD ACK] from payload={payload!r}", flush=True)
-        link.sendtoboard("lcd_ack_from")
 
 
 def handle_typing_preview(

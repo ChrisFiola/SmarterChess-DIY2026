@@ -27,6 +27,7 @@ import chess.pgn
 from main.piDisplay import Display
 from main.piSerial import BoardLink
 from smartchess.modes.online.lichess_client import LichessClient
+from smartchess.core.protocol import send_lcd_ack_for_payload
 
 
 def _pgn_opening_info(pgn_text: str) -> Tuple[str, str]:
@@ -1191,16 +1192,7 @@ class DailyPuzzleController:
 
                     print(f"[PUZZLE typing] payload={payload!r}", flush=True)
                     handle_typing_preview(display, payload, board)
-
-                    if payload.startswith("confirm_"):
-                        print("[PUZZLE ACK] lcd_ack_confirm", flush=True)
-                        link.sendtoboard("lcd_ack_confirm")
-                    elif payload.startswith("to_"):
-                        print("[PUZZLE ACK] lcd_ack_to", flush=True)
-                        link.sendtoboard("lcd_ack_to")
-                    elif payload.startswith("from_"):
-                        print("[PUZZLE ACK] lcd_ack_from", flush=True)
-                        link.sendtoboard("lcd_ack_from")
+                    send_lcd_ack_for_payload(link, payload, log_prefix="[PUZZLE ACK]")
 
                 except Exception as e:
                     print(f"[PUZZLE typing ERROR] {e}", flush=True)

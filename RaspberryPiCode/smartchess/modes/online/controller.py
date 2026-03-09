@@ -21,6 +21,7 @@ from smartchess.modes.online.lichess_game import (
     extract_winner,
 )
 from smartchess.core.net_utils import is_ap_mode, wifi_config_url
+from smartchess.core.protocol import send_lcd_ack_for_payload
 
 
 @dataclass
@@ -329,8 +330,7 @@ class OnlineController:
                     in_move_entry = True
                     payload = peek[7:]
                     self.d.handle_typing_preview(display, payload, board)
-                    if payload.startswith("confirm_"):
-                        link.sendtoboard("lcd_ack_confirm")
+                    send_lcd_ack_for_payload(link, payload, log_prefix="[ONLINE ACK]")
 
                 if peek.startswith("capq_"):
                     uciq = peek[5:].strip()
@@ -432,8 +432,7 @@ class OnlineController:
                 in_move_entry = True
                 payload = msg[7:]
                 self.d.handle_typing_preview(display, payload, board)
-                if payload.startswith("confirm_"):
-                    link.sendtoboard("lcd_ack_confirm")
+                send_lcd_ack_for_payload(link, payload, log_prefix="[ONLINE ACK]")
                 continue
 
             if msg.startswith("capq_"):

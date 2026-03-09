@@ -92,3 +92,19 @@ def format_hint(uci: str, is_capture: bool) -> str:
 
 def format_capture_reply(is_capture: bool) -> str:
     return f"capr_{1 if is_capture else 0}"
+
+def send_lcd_ack_for_payload(link, payload: str, *, log_prefix: str = "[LCD ACK]") -> None:
+    """Send the matching LCD ACK for a typing_* payload.
+
+    Shared across game, puzzle, and online flows so typing preview behavior
+    stays identical in every mode.
+    """
+    if payload.startswith("confirm_"):
+        print(f"{log_prefix} confirm payload={payload!r}", flush=True)
+        link.sendtoboard("lcd_ack_confirm")
+    elif payload.startswith("to_"):
+        print(f"{log_prefix} to payload={payload!r}", flush=True)
+        link.sendtoboard("lcd_ack_to")
+    elif payload.startswith("from_"):
+        print(f"{log_prefix} from payload={payload!r}", flush=True)
+        link.sendtoboard("lcd_ack_from")
