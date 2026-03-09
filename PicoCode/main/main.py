@@ -192,10 +192,15 @@ class Screen:
     def wait_for_lcd_ack(expected_ack="heyArduinolcd_ack_confirm", timeout_ms=300):
         print("[PICO ACK] waiting for:", expected_ack, "timeout_ms=", timeout_ms)
         deadline = time.ticks_add(time.ticks_ms(), timeout_ms)
+        ok_seen = False
 
         while time.ticks_diff(deadline, time.ticks_ms()) > 0:
             if cp.shutdown_held():
                 shutdown_pico()
+
+            # Latch OK if user presses during ACK wait
+            if cp.BTN_OK.value() == 0:
+                ok_seen = True
 
             msg = link.read()
             if not msg:
@@ -205,16 +210,24 @@ class Screen:
             print("[PICO ACK] got:", msg)
 
             if msg == expected_ack:
-                print("[PICO ACK] matched")
-                return True
+                print("[PICO ACK] matched, ok_seen =", ok_seen)
+                return True, ok_seen
 
             if msg.startswith("heyArduinoGameOver"):
                 print("[PICO ACK] interrupted by gameover")
                 _handle_gameover(msg)
-                return False
+                return False, ok_seen
 
-        print("[PICO ACK] timeout waiting for:", expected_ack)
-        return False
+            # Keep handling important async messages while waiting
+            if handle_puzzle_setup_cmd(msg):
+                continue
+
+            if msg.startswith("heyArduinohint_") or msg.startswith("heyArduinom"):
+                _handle_pi_overlay_or_gameover(msg)
+                continue
+
+        print("[PICO ACK] timeout waiting for:", expected_ack, "ok_seen =", ok_seen)
+        return False, ok_seen
 
 
 link = UARTLink()
@@ -749,6 +762,41 @@ class ChessBoard:
 board = ChessBoard()
 
 
+def consume_ok_after_confirm_ack(window_ms=120):
+    """
+    Catch an OK press that happens right after lcd_ack_confirm.
+    Handles:
+      - OK already held
+      - fresh falling edge
+      - very quick tap inside a short post-ACK window
+    """
+    deadline = time.ticks_add(time.ticks_ms(), window_ms)
+
+    # Re-sample edges from the current physical state
+    cp.reset_edges()
+
+    while time.ticks_diff(deadline, time.ticks_ms()) > 0:
+        if cp.shutdown_held():
+            shutdown_pico()
+
+        # If OK is physically down right now, consume it
+        if cp.BTN_OK.value() == 0:
+            while cp.BTN_OK.value() == 0:
+                time.sleep_ms(Config.Timing.POLL_MS)
+            cp.reset_edges()
+            return True
+
+        # Or catch a new OK edge
+        b = cp.detect_press_raw()
+        if b == (Config.Buttons.OK_INDEX + 1):
+            cp.reset_edges()
+            return True
+
+        time.sleep_ms(Config.Timing.FAST_POLL_MS)
+
+    return False
+
+
 def _is_alnum(ch):
     if not ch or len(ch) != 1:
         return False
@@ -1132,6 +1180,7 @@ def confirm_move(move):
 
     cp.only_ok(True)
 
+    # If OK was already held before entering confirm, wait release first.
     while cp.BTN_OK.value() == 0:
         if cp.shutdown_held():
             shutdown_pico()
@@ -1143,9 +1192,31 @@ def confirm_move(move):
     cp.reset_edges()
     print("[PICO CONFIRM] send typing_confirm:", move)
     screen.typing_confirm(move)
-    acked = Screen.wait_for_lcd_ack("heyArduinolcd_ack_confirm", timeout_ms=300)
-    print("[PICO CONFIRM] acked =", acked)
-    cp.reset_edges()
+    acked, ok_seen_during_ack = Screen.wait_for_lcd_ack(
+        "heyArduinolcd_ack_confirm", timeout_ms=300
+    )
+    print("[PICO CONFIRM] acked =", acked, "ok_seen_during_ack =", ok_seen_during_ack)
+
+    if not acked:
+        cp.only_ok(False)
+        return None
+
+    # Case 1: OK happened during ACK wait
+    if ok_seen_during_ack:
+        print("[PICO CONFIRM] consuming OK seen during ACK wait")
+        cp.only_ok(False)
+        screen.clear("confirm")
+        while cp.BTN_OK.value() == 0:
+            time.sleep_ms(Config.Timing.POLL_MS)
+        cp.reset_edges()
+        return "ok"
+
+    # Case 2: OK happens immediately after ACK (tiny race window)
+    if consume_ok_after_confirm_ack(window_ms=120):
+        print("[PICO CONFIRM] consuming OK in post-ACK grace window")
+        cp.only_ok(False)
+        screen.clear("confirm")
+        return "ok"
 
     while True:
         if st.game_state != Game.RUNNING:
@@ -1169,6 +1240,7 @@ def confirm_move(move):
                 cp.reset_edges()
                 return None
 
+        # Accept OK if it is already being held
         if cp.BTN_OK.value() == 0:
             t0 = time.ticks_ms()
             fired = False
@@ -1179,6 +1251,7 @@ def confirm_move(move):
                 if process_hint_irq() == "new":
                     cp.only_ok(False)
                     return None
+
                 if (not fired) and time.ticks_diff(
                     time.ticks_ms(), t0
                 ) >= Config.Buttons.OK_LONG_PRESS_MS:
@@ -1190,6 +1263,7 @@ def confirm_move(move):
                     else:
                         screen.typing_to(frm, "")
                     board.preview_from(frm)
+
                 time.sleep_ms(Config.Timing.POLL_MS)
 
             held_ms = time.ticks_diff(time.ticks_ms(), t0)
@@ -1197,8 +1271,6 @@ def confirm_move(move):
 
             if fired:
                 cp.only_ok(False)
-                while cp.BTN_OK.value() == 0:
-                    time.sleep_ms(Config.Timing.POLL_MS)
                 cp.reset_edges()
                 screen.clear("confirm")
                 return ("backspace_confirm", move[:-1])
@@ -1215,6 +1287,7 @@ def confirm_move(move):
         if not b:
             time.sleep_ms(Config.Timing.FAST_POLL_MS)
             continue
+
         cp.only_ok(False)
         screen.clear("confirm")
         return ("redo", b)
