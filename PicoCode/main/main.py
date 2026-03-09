@@ -203,8 +203,6 @@ class Screen:
             # Latch OK if user presses during ACK wait
             if cp.BTN_OK.value() == 0:
                 ok_seen = True
-                if cp.last_ok_press_ms is None:
-                    cp.last_ok_press_ms = time.ticks_ms()
 
             msg = link.read()
             if not msg:
@@ -331,7 +329,49 @@ class ControlPanel:
         self.profile = Profiles(self)
         self.enable_hint_irq()
 
+        self.BTN_OK.irq(trigger=Pin.IRQ_FALLING, handler=self._ok_irq)
+
         self.last_ok_press_ms = None
+        self.ok_irq_flag = False
+        self.last_ok_press_ms = None
+
+        self.confirm_ok_armed = False
+        self.confirm_ok_latched = False
+        self.confirm_ok_ms = None
+
+    def arm_confirm_ok(self):
+        self.confirm_ok_armed = True
+        self.confirm_ok_latched = False
+        self.confirm_ok_ms = None
+
+    def disarm_confirm_ok(self):
+        self.confirm_ok_armed = False
+        self.confirm_ok_latched = False
+        self.confirm_ok_ms = None
+
+    def consume_confirm_ok(self, window_ms=300):
+        if self.confirm_ok_latched:
+            self.confirm_ok_latched = False
+            self.confirm_ok_ms = None
+            return True
+
+        if self.confirm_ok_ms is None:
+            return False
+
+        if time.ticks_diff(time.ticks_ms(), self.confirm_ok_ms) <= window_ms:
+            self.confirm_ok_ms = None
+            self.confirm_ok_latched = False
+            return True
+
+        return False
+
+    def _ok_irq(self, pin):
+        if self.confirm_ok_armed:
+            self.confirm_ok_latched = True
+            self.confirm_ok_ms = time.ticks_ms()
+
+    def clear_ok_irq(self):
+        self.ok_irq_flag = False
 
     def _snapshot(self):
         return [tuple(self.panel[i]) for i in range(Config.LEDs.PANEL_COUNT)]
@@ -411,6 +451,7 @@ class ControlPanel:
                 btn = i + 1
                 if btn == (Config.Buttons.OK_INDEX + 1):
                     self.last_ok_press_ms = time.ticks_ms()
+                    self.ok_irq_flag = True
                 return btn
         return None
 
@@ -771,13 +812,25 @@ class ChessBoard:
 board = ChessBoard()
 
 
+def clear_ok_latch():
+    cp.ok_irq_flag = False
+    cp.last_ok_press_ms = None
+
+
+def wait_ok_release():
+    while cp.BTN_OK.value() == 0:
+        time.sleep_ms(Config.Timing.POLL_MS)
+
+
 def consume_recent_ok_press(window_ms=250):
     t = cp.last_ok_press_ms
     if t is None:
         return False
+
     if time.ticks_diff(time.ticks_ms(), t) <= window_ms:
-        cp.last_ok_press_ms = None
+        clear_ok_latch()
         return True
+
     return False
 
 
@@ -1199,7 +1252,7 @@ def confirm_move(move):
 
     cp.only_ok(True)
 
-    # If OK was already held before entering confirm, wait release first.
+    # Guard against entering confirm while OK is already physically held
     while cp.BTN_OK.value() == 0:
         if cp.shutdown_held():
             shutdown_pico()
@@ -1209,6 +1262,8 @@ def confirm_move(move):
         time.sleep_ms(Config.Timing.POLL_MS)
 
     cp.reset_edges()
+    cp.arm_confirm_ok()
+
     print("[PICO CONFIRM] send typing_confirm:", move)
     screen.typing_confirm(move)
     acked, ok_seen_during_ack = Screen.wait_for_lcd_ack(
@@ -1217,40 +1272,23 @@ def confirm_move(move):
     print("[PICO CONFIRM] acked =", acked, "ok_seen_during_ack =", ok_seen_during_ack)
 
     if not acked:
+        cp.disarm_confirm_ok()
         cp.only_ok(False)
         return None
 
-    # Case 1: OK happened during ACK wait
-    if ok_seen_during_ack:
-        print("[PICO CONFIRM] consuming OK seen during ACK wait")
+    # If OK was pressed anytime during the confirm-armed phase, accept it.
+    if ok_seen_during_ack or cp.consume_confirm_ok(window_ms=300):
+        print("[PICO CONFIRM] consuming armed confirm OK")
+        cp.disarm_confirm_ok()
         cp.only_ok(False)
         screen.clear("confirm")
-        while cp.BTN_OK.value() == 0:
-            time.sleep_ms(Config.Timing.POLL_MS)
+        wait_ok_release()
         cp.reset_edges()
-        cp.last_ok_press_ms = None
-        return "ok"
-
-    # Case 2: a recent OK edge happened just after ACK
-    if consume_recent_ok_press(Config.Timing.CONFIRM_OK_GRACE_MS):
-        print("[PICO CONFIRM] consuming recent OK press after ACK")
-        cp.only_ok(False)
-        screen.clear("confirm")
-        while cp.BTN_OK.value() == 0:
-            time.sleep_ms(Config.Timing.POLL_MS)
-        cp.reset_edges()
-        return "ok"
-
-    # Case 3: OK happens immediately after ACK (tiny race window)
-    if consume_ok_after_confirm_ack(window_ms=120):
-        print("[PICO CONFIRM] consuming OK in post-ACK grace window")
-        cp.only_ok(False)
-        screen.clear("confirm")
-        cp.last_ok_press_ms = None
         return "ok"
 
     while True:
         if st.game_state != Game.RUNNING:
+            cp.disarm_confirm_ok()
             cp.only_ok(False)
             return None
 
@@ -1258,6 +1296,7 @@ def confirm_move(move):
             shutdown_pico()
 
         if process_hint_irq() == "new":
+            cp.disarm_confirm_ok()
             cp.only_ok(False)
             return None
 
@@ -1265,14 +1304,16 @@ def confirm_move(move):
         if msg:
             outcome = _handle_pi_overlay_or_gameover(msg)
             if outcome == "gameover":
+                cp.disarm_confirm_ok()
                 cp.only_ok(False)
                 return None
             if outcome in ("hint", "engine"):
                 cp.reset_edges()
+                cp.disarm_confirm_ok()
                 return None
 
-        # Accept OK if it is already being held
-        if cp.BTN_OK.value() == 0:
+        # IRQ-latched or currently held OK => accept
+        if cp.consume_confirm_ok(window_ms=300) or cp.BTN_OK.value() == 0:
             t0 = time.ticks_ms()
             fired = False
 
@@ -1280,6 +1321,7 @@ def confirm_move(move):
                 if cp.shutdown_held():
                     shutdown_pico()
                 if process_hint_irq() == "new":
+                    cp.disarm_confirm_ok()
                     cp.only_ok(False)
                     return None
 
@@ -1299,7 +1341,7 @@ def confirm_move(move):
 
             held_ms = time.ticks_diff(time.ticks_ms(), t0)
             cp.reset_ok_hold()
-            cp.last_ok_press_ms = None
+            cp.disarm_confirm_ok()
 
             if fired:
                 cp.only_ok(False)
@@ -1320,6 +1362,7 @@ def confirm_move(move):
             time.sleep_ms(Config.Timing.FAST_POLL_MS)
             continue
 
+        cp.disarm_confirm_ok()
         cp.only_ok(False)
         screen.clear("confirm")
         return ("redo", b)
