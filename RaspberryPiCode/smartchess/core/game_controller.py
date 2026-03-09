@@ -98,11 +98,23 @@ class GameController:
             from piGame import handle_typing_preview
 
             handle_typing_preview(self.deps.display, payload, self.board)
+
+            # ACK must be tied to the LCD update that just happened,
+            # not to a later OK press.
             if payload.startswith("confirm_"):
+                print(f"[LCD ACK] confirm payload={payload!r}", flush=True)
                 self.deps.link.sendtoboard("lcd_ack_confirm")
+            elif payload.startswith("to_"):
+                print(f"[LCD ACK] to payload={payload!r}", flush=True)
+                self.deps.link.sendtoboard("lcd_ack_to")
+            elif payload.startswith("from_"):
+                print(f"[LCD ACK] from payload={payload!r}", flush=True)
+                self.deps.link.sendtoboard("lcd_ack_from")
+
             return
 
         if typ == EventType.OK:
+            print("[PICO OK] prompt_move()", flush=True)
             # OK is used as an acknowledgement / "enter move" trigger from the Pico UI.
             # It should NEVER be treated as a move payload.
             side = "WHITE" if self.board.turn == chess.WHITE else "BLACK"

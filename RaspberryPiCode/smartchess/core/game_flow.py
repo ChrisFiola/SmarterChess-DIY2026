@@ -644,12 +644,17 @@ def _piece_label_from_square(board: Optional["chess.Board"], sq: str) -> Optiona
         return None
 
 
-
-
 def send_lcd_ack_for_payload(link: BoardLink, payload: str) -> None:
-    payload = (payload or "").strip().lower()
     if payload.startswith("confirm_"):
+        print(f"[LCD ACK] confirm payload={payload!r}", flush=True)
         link.sendtoboard("lcd_ack_confirm")
+    elif payload.startswith("to_"):
+        print(f"[LCD ACK] to payload={payload!r}", flush=True)
+        link.sendtoboard("lcd_ack_to")
+    elif payload.startswith("from_"):
+        print(f"[LCD ACK] from payload={payload!r}", flush=True)
+        link.sendtoboard("lcd_ack_from")
+
 
 def handle_typing_preview(
     display: Display, payload: str, board: Optional["chess.Board"] = None
@@ -837,14 +842,24 @@ def play_game(
         # 1) Non-blocking: show typing previews if any
         peek = link.getboard_nonblocking()
         if peek is not None:
+            print(f"[PLAY_GAME NB] peek={peek!r}", flush=True)
+
             if peek == "shutdown":
                 shutdown_pi(link, display)
                 return
+
             if peek.startswith("typing_"):
                 payload = peek[len("typing_") :]
+                print(f"[PLAY_GAME NB typing] payload={payload!r}", flush=True)
                 handle_typing_preview(display, payload, state.board)
-                send_lcd_ack_for_payload(link, payload)
-            # do not 'continue' to still allow engine turn same cycle
+
+                try:
+                    send_lcd_ack_for_payload(link, payload)
+                    print(
+                        f"[PLAY_GAME NB ack] sent for payload={payload!r}", flush=True
+                    )
+                except Exception as e:
+                    print(f"[PLAY_GAME NB ack ERROR] {e}", flush=True)
 
             # Pico asks: "capq_<uci>" -> answer quickly with "capr_0/1"
             if peek.startswith("capq_"):
@@ -853,6 +868,7 @@ def play_game(
                     cap = compute_capture_preview(state.board, uci)
                 except Exception:
                     cap = False
+                print(f"[PLAY_GAME NB capq] uci={uci!r} cap={cap}", flush=True)
                 link.sendtoboard(f"capr_{1 if cap else 0}")
 
         # 2) Engine turn (Stockfish mode)
@@ -861,125 +877,148 @@ def play_game(
                 state.board.turn == chess.WHITE and not cfg.human_is_white
             ) or (state.board.turn == chess.BLACK and cfg.human_is_white)
             if engine_should_move:
-                # ui_engine_thinking(display)
+                print("[PLAY_GAME] engine turn", flush=True)
                 engine_move_and_send(link, display, ctx, state, cfg)
-                # After engine move, loop continues to check for human input
                 continue
 
         # 3) Blocking read for next Pico message
         msg = link.getboard()
         if msg is None:
-            # serial timeout; loop to allow engine step or previews again
             continue
+
+        print(f"[PLAY_GAME] msg={msg!r}", flush=True)
+
         if msg == "shutdown":
             shutdown_pi(link, display)
             return
 
-        # 4) Also handle typing previews in the blocking path (to be consistent)
+        # 4) Also handle typing previews in the blocking path
         if msg.startswith("typing_"):
             payload = msg[len("typing_") :]
+            print(f"[PLAY_GAME typing] payload={payload!r}", flush=True)
             handle_typing_preview(display, payload, state.board)
-            send_lcd_ack_for_payload(link, payload)
+
+            try:
+                send_lcd_ack_for_payload(link, payload)
+                print(f"[PLAY_GAME ack] sent for payload={payload!r}", flush=True)
+            except Exception as e:
+                print(f"[PLAY_GAME ack ERROR] {e}", flush=True)
+
             continue
 
-        # --- NEW: capture preview probe (blocking path) ---
+        # Capture preview probe (blocking path)
         if msg.startswith("capq_"):
             uci = msg[5:].strip()
             try:
                 cap = compute_capture_preview(state.board, uci)
             except Exception:
                 cap = False
+            print(f"[PLAY_GAME capq] uci={uci!r} cap={cap}", flush=True)
             link.sendtoboard(f"capr_{1 if cap else 0}")
             continue
 
         # 5) New game request
         if msg in ("n", "new", "in", "newgame", "btn_new"):
+            print("[PLAY_GAME] new game request", flush=True)
             raise GoToModeSelect()
 
         # 6) Hint request
         if msg in ("hint", "btn_hint"):
+            print("[PLAY_GAME] hint request", flush=True)
             send_hint_to_board(link, display, ctx, state, cfg)
             continue
 
-        # 7) OK acknowledgement / 'enter move' trigger (Pico sends this before typing_ begins)
+        # 7) OK acknowledgement / enter move trigger
         if msg in ("ok", "btnok", "btn_ok"):
-            # Keep OLED aligned with Pico's UX: OK takes you to the move entry prompt.
-            display.prompt_move("WHITE" if state.board.turn == chess.WHITE else "BLACK")
+            side = "WHITE" if state.board.turn == chess.WHITE else "BLACK"
+            print(f"[PLAY_GAME] OK received -> prompt_move({side})", flush=True)
+            display.prompt_move(side)
             continue
 
-        # 7) Try parsing a move
+        # 8) Try parsing a move
         uci = parse_move_payload(msg)
         if not uci:
+            print(f"[PLAY_GAME] invalid payload={msg!r}", flush=True)
             link.sendtoboard(f"error_invalid_{msg}")
             display.show_invalid(msg)
             continue
 
-        # === PROMOTION PRE-DETECTION ===
-        # If the pawn move ends on rank 8 (white) or rank 1 (black),
-        # and the UCI has no promotion letter, trigger promotion.
+        print(f"[PLAY_GAME] parsed uci={uci!r}", flush=True)
+
+        # Promotion pre-detection
         from_sq = uci[:2]
         to_sq = uci[2:4]
 
         if len(uci) == 4:
-            # we need board state BEFORE including this move
             piece = state.board.piece_at(chess.parse_square(from_sq))
             if piece and piece.piece_type == chess.PAWN:
                 rank = int(to_sq[1])
                 if (piece.color == chess.WHITE and rank == 8) or (
                     piece.color == chess.BLACK and rank == 1
                 ):
-                    # ask promotion piece BEFORE creating the move
+                    print(f"[PLAY_GAME] promotion pre-detect for {uci!r}", flush=True)
                     promo = ask_promotion_piece(link, display)
                     uci = uci + promo
+                    print(f"[PLAY_GAME] promotion chosen -> {uci!r}", flush=True)
 
-        # 8) Validate UCI and handle promotion if needed
+        # Validate UCI
         try:
             move = chess.Move.from_uci(uci)
         except ValueError:
+            print(f"[PLAY_GAME] bad UCI after parse {uci!r}", flush=True)
             link.sendtoboard(f"error_invalid_{uci}")
             display.show_invalid(uci)
             continue
 
         # Promotion needed?
         if requires_promotion(move, state.board):
+            print(f"[PLAY_GAME] requires_promotion {uci!r}", flush=True)
             promo = ask_promotion_piece(link, display)
             uci = uci + promo
             try:
                 move = chess.Move.from_uci(uci)
             except ValueError:
+                print(f"[PLAY_GAME] bad promoted UCI {uci!r}", flush=True)
                 link.sendtoboard(f"error_invalid_{uci}")
                 display.show_invalid(uci)
                 continue
 
-        # 9) Legality check (AFTER OK) — Pico only sends after OK now
+        # Legality check
         if move not in state.board.legal_moves:
+            print(f"[PLAY_GAME] illegal move {uci!r}", flush=True)
             illegal_putback_flow(
-                link=link, display=display, board=state.board, uci=uci, label="ILLEGAL"
+                link=link,
+                display=display,
+                board=state.board,
+                uci=uci,
+                label="ILLEGAL",
             )
             continue
 
-        # 10) Accept and push
+        # Accept and push
+        print(f"[PLAY_GAME] push move {uci!r}", flush=True)
         state.board.push(move)
 
-        # 10.5) Auto-draw (repetition / 50-move etc.)
+        # Auto-draw
         if _handle_auto_draw(link, display, state.board):
+            print("[PLAY_GAME] auto draw -> mode select", flush=True)
             raise GoToModeSelect()
 
-        # 11) Game over?
+        # Game over?
         if state.board.is_game_over():
+            print("[PLAY_GAME] game over after move", flush=True)
             _res = report_game_over(link, display, state.board)
-            # Wait for Pico to acknowledge by sending 'n' (OK)
             while True:
                 msg2 = link.getboard()
                 if msg2 is None:
                     continue
+                print(f"[PLAY_GAME gameover wait] msg2={msg2!r}", flush=True)
                 if msg2 in ("n", "new", "in", "newgame", "btn_new"):
-                    # Return to mode select
                     raise GoToModeSelect()
-                # swallow typing/hint during game over
                 if msg2.startswith("typing_") or msg2 in ("hint", "btn_hint"):
                     continue
         else:
+            print(f"[PLAY_GAME] handoff_next_turn uci={uci!r}", flush=True)
             handoff_next_turn(link, display, state.board, state.mode, cfg, uci)
 
 

@@ -190,7 +190,9 @@ class Screen:
 
     @staticmethod
     def wait_for_lcd_ack(expected_ack="heyArduinolcd_ack_confirm", timeout_ms=300):
+        print("[PICO ACK] waiting for:", expected_ack, "timeout_ms=", timeout_ms)
         deadline = time.ticks_add(time.ticks_ms(), timeout_ms)
+
         while time.ticks_diff(deadline, time.ticks_ms()) > 0:
             if cp.shutdown_held():
                 shutdown_pico()
@@ -200,23 +202,18 @@ class Screen:
                 time.sleep_ms(Config.Timing.FAST_POLL_MS)
                 continue
 
+            print("[PICO ACK] got:", msg)
+
             if msg == expected_ack:
+                print("[PICO ACK] matched")
                 return True
 
             if msg.startswith("heyArduinoGameOver"):
+                print("[PICO ACK] interrupted by gameover")
                 _handle_gameover(msg)
                 return False
 
-            if msg.startswith("heyArduinohint_") or msg.startswith("heyArduinom"):
-                _handle_pi_overlay_or_gameover(msg)
-                continue
-
-            try:
-                if handle_puzzle_setup_cmd(msg):
-                    continue
-            except Exception:
-                pass
-
+        print("[PICO ACK] timeout waiting for:", expected_ack)
         return False
 
 
@@ -1144,8 +1141,10 @@ def confirm_move(move):
         time.sleep_ms(Config.Timing.POLL_MS)
 
     cp.reset_edges()
+    print("[PICO CONFIRM] send typing_confirm:", move)
     screen.typing_confirm(move)
-    Screen.wait_for_lcd_ack("heyArduinolcd_ack_confirm", timeout_ms=300)
+    acked = Screen.wait_for_lcd_ack("heyArduinolcd_ack_confirm", timeout_ms=300)
+    print("[PICO CONFIRM] acked =", acked)
     cp.reset_edges()
 
     while True:
