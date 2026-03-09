@@ -1188,10 +1188,22 @@ class DailyPuzzleController:
                     from piGame import handle_typing_preview
 
                     payload = msg[len("typing_") :]
+
+                    print(f"[PUZZLE typing] payload={payload!r}", flush=True)
                     handle_typing_preview(display, payload, board)
+
                     if payload.startswith("confirm_"):
+                        print("[PUZZLE ACK] lcd_ack_confirm", flush=True)
                         link.sendtoboard("lcd_ack_confirm")
-                except Exception:
+                    elif payload.startswith("to_"):
+                        print("[PUZZLE ACK] lcd_ack_to", flush=True)
+                        link.sendtoboard("lcd_ack_to")
+                    elif payload.startswith("from_"):
+                        print("[PUZZLE ACK] lcd_ack_from", flush=True)
+                        link.sendtoboard("lcd_ack_from")
+
+                except Exception as e:
+                    print(f"[PUZZLE typing ERROR] {e}", flush=True)
                     display.send(msg.replace("typing_", ""))
                 continue
 

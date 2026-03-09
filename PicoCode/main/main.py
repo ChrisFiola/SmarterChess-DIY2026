@@ -60,6 +60,8 @@ class Config:
         SHUTDOWN_IDLE_MS = 1000
         CONFIRM_DELAY_MS = 0
 
+        CONFIRM_OK_GRACE_MS = 250
+
     class Colors:
         BLACK = (0, 0, 0)
         WHITE = (255, 255, 255)
@@ -201,6 +203,8 @@ class Screen:
             # Latch OK if user presses during ACK wait
             if cp.BTN_OK.value() == 0:
                 ok_seen = True
+                if cp.last_ok_press_ms is None:
+                    cp.last_ok_press_ms = time.ticks_ms()
 
             msg = link.read()
             if not msg:
@@ -327,6 +331,8 @@ class ControlPanel:
         self.profile = Profiles(self)
         self.enable_hint_irq()
 
+        self.last_ok_press_ms = None
+
     def _snapshot(self):
         return [tuple(self.panel[i]) for i in range(Config.LEDs.PANEL_COUNT)]
 
@@ -402,7 +408,10 @@ class ControlPanel:
             self._last_btn[i] = cur
             if prev == 1 and cur == 0:
                 time.sleep_ms(Config.Buttons.DEBOUNCE_MS)
-                return i + 1
+                btn = i + 1
+                if btn == (Config.Buttons.OK_INDEX + 1):
+                    self.last_ok_press_ms = time.ticks_ms()
+                return btn
         return None
 
     def detect_press_allowed(self):
@@ -760,6 +769,16 @@ class ChessBoard:
 
 
 board = ChessBoard()
+
+
+def consume_recent_ok_press(window_ms=250):
+    t = cp.last_ok_press_ms
+    if t is None:
+        return False
+    if time.ticks_diff(time.ticks_ms(), t) <= window_ms:
+        cp.last_ok_press_ms = None
+        return True
+    return False
 
 
 def consume_ok_after_confirm_ack(window_ms=120):
@@ -1209,13 +1228,25 @@ def confirm_move(move):
         while cp.BTN_OK.value() == 0:
             time.sleep_ms(Config.Timing.POLL_MS)
         cp.reset_edges()
+        cp.last_ok_press_ms = None
         return "ok"
 
-    # Case 2: OK happens immediately after ACK (tiny race window)
+    # Case 2: a recent OK edge happened just after ACK
+    if consume_recent_ok_press(Config.Timing.CONFIRM_OK_GRACE_MS):
+        print("[PICO CONFIRM] consuming recent OK press after ACK")
+        cp.only_ok(False)
+        screen.clear("confirm")
+        while cp.BTN_OK.value() == 0:
+            time.sleep_ms(Config.Timing.POLL_MS)
+        cp.reset_edges()
+        return "ok"
+
+    # Case 3: OK happens immediately after ACK (tiny race window)
     if consume_ok_after_confirm_ack(window_ms=120):
         print("[PICO CONFIRM] consuming OK in post-ACK grace window")
         cp.only_ok(False)
         screen.clear("confirm")
+        cp.last_ok_press_ms = None
         return "ok"
 
     while True:
@@ -1268,6 +1299,7 @@ def confirm_move(move):
 
             held_ms = time.ticks_diff(time.ticks_ms(), t0)
             cp.reset_ok_hold()
+            cp.last_ok_press_ms = None
 
             if fired:
                 cp.only_ok(False)
