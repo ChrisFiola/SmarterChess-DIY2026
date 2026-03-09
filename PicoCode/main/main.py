@@ -58,7 +58,7 @@ class Config:
         BLINK_OFF_MS = 140
         SLOW_POLL_MS = 20
         SHUTDOWN_IDLE_MS = 1000
-        CONFIRM_DELAY_MS = 800
+        CONFIRM_DELAY_MS = 0
 
     class Colors:
         BLACK = (0, 0, 0)
