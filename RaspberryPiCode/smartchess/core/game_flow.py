@@ -535,7 +535,6 @@ def handoff_next_turn(
     )
     if human_to_move:
         link.sendtoboard(f"turn_{'white' if brd.turn == chess.WHITE else 'black'}")
-        # If last move was a promotion (UCI like e7e8q), show it alongside the usual "to move" prompt.
         promo_letter = (
             last_uci[4].lower()
             if isinstance(last_uci, str) and len(last_uci) >= 5
@@ -553,9 +552,10 @@ def handoff_next_turn(
         display.show_arrow(
             last_uci,
             suffix=f"{promo_line}{'WHITE' if brd.turn == chess.WHITE else 'BLACK'} to move",
+            force=True,
         )
     else:
-        display.show_arrow(last_uci, suffix="ENGINE thinking")
+        display.show_arrow(last_uci, suffix="ENGINE thinking", force=True)
 
 
 def engine_move_and_send(
@@ -932,7 +932,7 @@ def play_game(
         if msg in ("ok", "btnok", "btn_ok"):
             side = "WHITE" if state.board.turn == chess.WHITE else "BLACK"
             print(f"[PLAY_GAME] OK received -> prompt_move({side})", flush=True)
-            display.prompt_move(side)
+            display.prompt_move(side, force=True)
             continue
 
         # 8) Try parsing a move
