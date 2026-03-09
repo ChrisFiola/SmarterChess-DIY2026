@@ -23,7 +23,7 @@ import neopixel
 # ============================================================
 
 
-class CFG:
+class Config:
     class UART:
         BAUD = 115200
         TX_PIN = 0
@@ -84,7 +84,7 @@ class CFG:
         BLINK_OFF_MS = 140
         SLOW_POLL_MS = 20
         SHUTDOWN_IDLE_MS = 1000
-        CONFIRM_DELAY_MS = 800
+        CONFIRM_DELAY_MS = 500
 
     class Colors:
         BLACK = (0, 0, 0)
@@ -100,15 +100,15 @@ class CFG:
 
 
 # Fast aliases
-BLACK = CFG.Colors.BLACK
-WHITE = CFG.Colors.WHITE
-RED = CFG.Colors.RED
-GREEN = CFG.Colors.GREEN
-BLUE = CFG.Colors.BLUE
-CYAN = CFG.Colors.CYAN
-MAGENTA = CFG.Colors.MAGENTA
-YELLOW = CFG.Colors.YELLOW
-ENGINE_COLOR = CFG.Colors.ENGINE
+BLACK = Config.Colors.BLACK
+WHITE = Config.Colors.WHITE
+RED = Config.Colors.RED
+GREEN = Config.Colors.GREEN
+BLUE = Config.Colors.BLUE
+CYAN = Config.Colors.CYAN
+MAGENTA = Config.Colors.MAGENTA
+YELLOW = Config.Colors.YELLOW
+ENGINE_COLOR = Config.Colors.ENGINE
 
 
 # ============================================================
@@ -170,10 +170,10 @@ class UARTLink:
     def __init__(self):
         self.uart = UART(
             0,
-            baudrate=CFG.UART.BAUD,
-            tx=Pin(CFG.UART.TX_PIN),
-            rx=Pin(CFG.UART.RX_PIN),
-            timeout=CFG.UART.TIMEOUT_MS,
+            baudrate=Config.UART.BAUD,
+            tx=Pin(Config.UART.TX_PIN),
+            rx=Pin(Config.UART.RX_PIN),
+            timeout=Config.UART.TIMEOUT_MS,
         )
 
     def send(self, kind, payload=""):
@@ -221,7 +221,7 @@ class Screen:
     # Clears (fixes “confirm move” stuck display if OK pressed quickly)
     def clear_confirm(self):
         # self.link.write_raw("heypityping_confirm_")
-        time.sleep_ms(CFG.Timing.CONFIRM_DELAY_MS)
+        time.sleep_ms(Config.Timing.CONFIRM_DELAY_MS)
 
     def clear_to(self):
         self.link.write_raw("heypityping_to_")
@@ -296,15 +296,15 @@ class ControlPanel:
     def __init__(self, st_: State):
         self.st = st_
         self.panel = neopixel.NeoPixel(
-            Pin(CFG.LEDs.PANEL_PIN, Pin.OUT), CFG.LEDs.PANEL_COUNT
+            Pin(Config.LEDs.PANEL_PIN, Pin.OUT), Config.LEDs.PANEL_COUNT
         )
         self._panel_last = None
 
         # Buttons
-        self.pins = [Pin(g, Pin.IN, Pin.PULL_UP) for g in CFG.Buttons.PINS]
-        self.BTN_OK = self.pins[CFG.Buttons.OK_INDEX]
-        self.BTN_HINT = self.pins[CFG.Buttons.HINT_INDEX]
-        self.BTN_SHUT = self.pins[CFG.Buttons.SHUTDOWN_INDEX]
+        self.pins = [Pin(g, Pin.IN, Pin.PULL_UP) for g in Config.Buttons.PINS]
+        self.BTN_OK = self.pins[Config.Buttons.OK_INDEX]
+        self.BTN_HINT = self.pins[Config.Buttons.HINT_INDEX]
+        self.BTN_SHUT = self.pins[Config.Buttons.SHUTDOWN_INDEX]
 
         self._last_btn = [1] * len(self.pins)
         self.allowed = None
@@ -324,7 +324,7 @@ class ControlPanel:
 
     # ---------------- LEDs helpers ----------------
     def _snapshot(self):
-        return [tuple(self.panel[i]) for i in range(CFG.LEDs.PANEL_COUNT)]
+        return [tuple(self.panel[i]) for i in range(Config.LEDs.PANEL_COUNT)]
 
     def apply(self, force=False):
         cur = self._snapshot()
@@ -333,17 +333,17 @@ class ControlPanel:
             self._panel_last = cur
 
     def off(self, force=False):
-        for i in range(CFG.LEDs.PANEL_COUNT):
+        for i in range(Config.LEDs.PANEL_COUNT):
             self.panel[i] = BLACK
         self.apply(force=force)
 
     def clear_header(self):
-        for i in range(CFG.LEDs.CP_ZONE_START, CFG.LEDs.CP_ZONE_END):
+        for i in range(Config.LEDs.CP_ZONE_START, Config.LEDs.CP_ZONE_END):
             self.panel[i] = BLACK
 
-    def border(self, on=True, color=CFG.LEDs.BORDER_COLOR, force=False):
+    def border(self, on=True, color=Config.LEDs.BORDER_COLOR, force=False):
         col = color if on else BLACK
-        for idx in CFG.LEDs.FILES + CFG.LEDs.RANKS:
+        for idx in Config.LEDs.FILES + Config.LEDs.RANKS:
             self.panel[idx] = col
         self.apply(force=force)
 
@@ -361,8 +361,8 @@ class ControlPanel:
         self.panel[1] = WHITE if top else BLACK
         self.panel[2] = WHITE if bottom else BLACK
         self.panel[3] = WHITE if bottom else BLACK
-        self.panel[CFG.LEDs.CP_OK_PIX] = ok_color if ok else BLACK
-        self.panel[CFG.LEDs.CP_HINT_PIX] = hint_color if hint else BLACK
+        self.panel[Config.LEDs.CP_OK_PIX] = ok_color if ok else BLACK
+        self.panel[Config.LEDs.CP_HINT_PIX] = hint_color if hint else BLACK
 
     # Standardized UI verbs
     def only_ok(self, on=True):
@@ -400,7 +400,7 @@ class ControlPanel:
             prev = self._last_btn[i]
             self._last_btn[i] = cur
             if prev == 1 and cur == 0:
-                time.sleep_ms(CFG.Buttons.DEBOUNCE_MS)
+                time.sleep_ms(Config.Buttons.DEBOUNCE_MS)
                 return i + 1
         return None
 
@@ -411,7 +411,7 @@ class ControlPanel:
                 return None
             if self.allowed is None or b in self.allowed:
                 return b
-            time.sleep_ms(CFG.Timing.FAST_POLL_MS)
+            time.sleep_ms(Config.Timing.FAST_POLL_MS)
 
     @staticmethod
     def is_non_coord_button(b):
@@ -432,7 +432,7 @@ class ControlPanel:
         self._ok_press_ms = None
         self._ok_fired = False
 
-    def ok_long_hold_fired(self, hold_ms=CFG.Buttons.OK_LONG_PRESS_MS):
+    def ok_long_hold_fired(self, hold_ms=Config.Buttons.OK_LONG_PRESS_MS):
         if self.BTN_OK.value() == 0:
             if self._ok_press_ms is None:
                 self._ok_press_ms = time.ticks_ms()
@@ -446,7 +446,7 @@ class ControlPanel:
         self.reset_ok_hold()
         return False
 
-    def shutdown_held(self, hold_ms=CFG.Buttons.SHUTDOWN_HOLD_MS):
+    def shutdown_held(self, hold_ms=Config.Buttons.SHUTDOWN_HOLD_MS):
         if self.BTN_SHUT.value() == 0:
             if self._shut_press_ms is None:
                 self._shut_press_ms = time.ticks_ms()
@@ -484,10 +484,12 @@ border = Border(cp)
 
 class ChessBoard:
     def __init__(self):
-        self.w, self.h = CFG.LEDs.W, CFG.LEDs.H
-        self.origin_bottom_right = CFG.LEDs.ORIGIN_BOTTOM_RIGHT
-        self.zigzag = CFG.LEDs.ZIGZAG
-        self.np = neopixel.NeoPixel(Pin(CFG.LEDs.CHESS_PIN, Pin.OUT), self.w * self.h)
+        self.w, self.h = Config.LEDs.W, Config.LEDs.H
+        self.origin_bottom_right = Config.LEDs.ORIGIN_BOTTOM_RIGHT
+        self.zigzag = Config.LEDs.ZIGZAG
+        self.np = neopixel.NeoPixel(
+            Pin(Config.LEDs.CHESS_PIN, Pin.OUT), self.w * self.h
+        )
 
         # base markings cache (checkerboard)
         self._marking_cache = [BLACK] * (self.w * self.h)
@@ -568,7 +570,7 @@ class ChessBoard:
                     self.set_square(x, y, GREEN)
             self.write()
             time.sleep_ms(25)
-        time.sleep_ms(CFG.Timing.LOADING_POST_MS)
+        time.sleep_ms(Config.Timing.LOADING_POST_MS)
         self.show_markings()
 
     def loading_step(self, count):
@@ -718,8 +720,8 @@ class ChessBoard:
         sq,
         color_on,
         times=1,
-        on_ms=CFG.Timing.BLINK_ON_MS,
-        off_ms=CFG.Timing.BLINK_OFF_MS,
+        on_ms=Config.Timing.BLINK_ON_MS,
+        off_ms=Config.Timing.BLINK_OFF_MS,
     ):
         xy = self.algebraic_to_xy(sq)
         if not xy:
@@ -818,7 +820,7 @@ def shutdown_pico():
     board.clear(BLACK)
     cp.disable_hint_irq()
     while True:
-        time.sleep_ms(CFG.Timing.SHUTDOWN_IDLE_MS)
+        time.sleep_ms(Config.Timing.SHUTDOWN_IDLE_MS)
 
 
 # ============================================================
@@ -863,7 +865,7 @@ def probe_capture_with_pi(uci, timeout_ms=150):
     while time.ticks_diff(deadline, time.ticks_ms()) > 0:
         msg = link.read()
         if not msg:
-            time.sleep_ms(CFG.Timing.FAST_POLL_MS)
+            time.sleep_ms(Config.Timing.FAST_POLL_MS)
             continue
         if msg.startswith("heyArduinocapr_"):
             val = msg.split("_", 1)[1].strip()
@@ -905,11 +907,11 @@ def process_hint_irq():
         board.off()
         while v < (board.w * board.h):
             v = board.loading_step(v)
-            time.sleep_ms(CFG.Timing.LOADING_STEP_MS)
-        time.sleep_ms(CFG.Timing.LOADING_POST_MS)
+            time.sleep_ms(Config.Timing.LOADING_STEP_MS)
+        time.sleep_ms(Config.Timing.LOADING_POST_MS)
         board.markings()
         cp.suppress_hints_until_ms = time.ticks_add(
-            now, CFG.Timing.NEW_GAME_SUPPRESS_MS
+            now, Config.Timing.NEW_GAME_SUPPRESS_MS
         )
         return "new"
 
@@ -920,10 +922,10 @@ def process_hint_irq():
     if cp.BTN_HINT.value() == 0:
         t0 = time.ticks_ms()
         while cp.BTN_HINT.value() == 0:
-            if time.ticks_diff(time.ticks_ms(), t0) >= CFG.Buttons.HINT_HOLD_DRAW_MS:
+            if time.ticks_diff(time.ticks_ms(), t0) >= Config.Buttons.HINT_HOLD_DRAW_MS:
                 link.send("btn_draw")
                 return "draw"
-            time.sleep_ms(CFG.Timing.POLL_MS)
+            time.sleep_ms(Config.Timing.POLL_MS)
 
     link.send("btn_hint")
     return "hint"
@@ -983,7 +985,7 @@ def enter_from_square(seed_btn=None, preset_col=None):
                 return None
             b = cp.detect_press_raw()
             if not b:
-                time.sleep_ms(CFG.Timing.FAST_POLL_MS)
+                time.sleep_ms(Config.Timing.FAST_POLL_MS)
                 continue
             clear_persistent_trail()
             if 1 <= b <= 8:
@@ -1022,7 +1024,7 @@ def enter_from_square(seed_btn=None, preset_col=None):
                     return None
             b = cp.detect_press_raw()
             if not b:
-                time.sleep_ms(CFG.Timing.FAST_POLL_MS)
+                time.sleep_ms(Config.Timing.FAST_POLL_MS)
                 continue
 
         if cp.is_non_coord_button(b):
@@ -1041,7 +1043,7 @@ def enter_from_square(seed_btn=None, preset_col=None):
             board.markings()
             # wait release
             while cp.BTN_OK.value() == 0:
-                time.sleep_ms(CFG.Timing.POLL_MS)
+                time.sleep_ms(Config.Timing.POLL_MS)
             cp.reset_ok_hold()
             cp.reset_edges()
             return ("back_from", None)
@@ -1061,7 +1063,7 @@ def enter_from_square(seed_btn=None, preset_col=None):
 
         b = cp.detect_press_raw()
         if not b:
-            time.sleep_ms(CFG.Timing.FAST_POLL_MS)
+            time.sleep_ms(Config.Timing.FAST_POLL_MS)
             continue
         if cp.is_non_coord_button(b):
             continue
@@ -1090,7 +1092,7 @@ def enter_to_square(move_from, preset_col=None):
                 return None
             b = cp.detect_press_raw()
             if not b:
-                time.sleep_ms(CFG.Timing.FAST_POLL_MS)
+                time.sleep_ms(Config.Timing.FAST_POLL_MS)
                 continue
             clear_persistent_trail()
             if 1 <= b <= 8:
@@ -1121,7 +1123,7 @@ def enter_to_square(move_from, preset_col=None):
             screen.typing_from(move_from[0])
             board.markings()
             while cp.BTN_OK.value() == 0:
-                time.sleep_ms(CFG.Timing.POLL_MS)
+                time.sleep_ms(Config.Timing.POLL_MS)
             cp.reset_ok_hold()
             cp.reset_edges()
             return ("back_to_from_rank", move_from[0])
@@ -1141,7 +1143,7 @@ def enter_to_square(move_from, preset_col=None):
 
         b = cp.detect_press_raw()
         if not b:
-            time.sleep_ms(CFG.Timing.FAST_POLL_MS)
+            time.sleep_ms(Config.Timing.FAST_POLL_MS)
             continue
         if cp.is_non_coord_button(b):
             continue
@@ -1158,7 +1160,7 @@ def enter_to_square(move_from, preset_col=None):
             screen.typing_to(move_from, "")
             board.preview_from(move_from)
             while cp.BTN_OK.value() == 0:
-                time.sleep_ms(CFG.Timing.POLL_MS)
+                time.sleep_ms(Config.Timing.POLL_MS)
             cp.reset_ok_hold()
             cp.reset_edges()
             return ("back_to_to_file", move_from)
@@ -1178,7 +1180,7 @@ def enter_to_square(move_from, preset_col=None):
 
         b = cp.detect_press_raw()
         if not b:
-            time.sleep_ms(CFG.Timing.FAST_POLL_MS)
+            time.sleep_ms(Config.Timing.FAST_POLL_MS)
             continue
         if cp.is_non_coord_button(b):
             continue
@@ -1205,7 +1207,7 @@ def confirm_move(move):
         if process_hint_irq() == "new":
             cp.only_ok(False)
             return None
-        time.sleep_ms(CFG.Timing.POLL_MS)
+        time.sleep_ms(Config.Timing.POLL_MS)
 
     cp.reset_edges()
     screen.typing_confirm(move)
@@ -1245,7 +1247,7 @@ def confirm_move(move):
                     return None
                 if (not fired) and time.ticks_diff(
                     time.ticks_ms(), t0
-                ) >= CFG.Buttons.OK_LONG_PRESS_MS:
+                ) >= Config.Buttons.OK_LONG_PRESS_MS:
                     fired = True
                     partial = move[:-1]
                     frm = partial[:2]
@@ -1254,7 +1256,7 @@ def confirm_move(move):
                     else:
                         screen.typing_to(frm, "")
                     board.preview_from(frm)
-                time.sleep_ms(CFG.Timing.POLL_MS)
+                time.sleep_ms(Config.Timing.POLL_MS)
 
             held_ms = time.ticks_diff(time.ticks_ms(), t0)
             cp.reset_ok_hold()
@@ -1263,12 +1265,12 @@ def confirm_move(move):
                 cp.only_ok(False)
                 # wait release
                 while cp.BTN_OK.value() == 0:
-                    time.sleep_ms(CFG.Timing.POLL_MS)
+                    time.sleep_ms(Config.Timing.POLL_MS)
                 cp.reset_edges()
                 screen.clear_confirm()
                 return ("backspace_confirm", move[:-1])
 
-            if held_ms < CFG.Buttons.OK_LONG_PRESS_MS:
+            if held_ms < Config.Buttons.OK_LONG_PRESS_MS:
                 cp.only_ok(False)
                 # IMPORTANT fix: clear confirm line immediately on confirm to avoid LCD staying stale.
                 screen.clear_confirm()
@@ -1278,13 +1280,13 @@ def confirm_move(move):
             continue
 
         # Any other button cancels confirm stage
-        b = cp.detect_press_raw()
-        if not b:
-            time.sleep_ms(CFG.Timing.FAST_POLL_MS)
-            continue
-        cp.only_ok(False)
-        screen.clear_confirm()
-        return ("redo", b)
+        # b = cp.detect_press_raw()
+        # if not b:
+        # time.sleep_ms(Config.Timing.FAST_POLL_MS)
+        # continue
+        # cp.only_ok(False)
+        # screen.clear_confirm()
+        # return ("redo", b)
 
 
 def collect_and_send_move():
@@ -1445,7 +1447,7 @@ def game_over_wait_ok_and_ack(result_str):
             shutdown_pico()
 
         while cp.BTN_OK.value() == 0:
-            time.sleep_ms(CFG.Timing.POLL_MS)
+            time.sleep_ms(Config.Timing.POLL_MS)
         time.sleep_ms(200)
         cp.reset_edges()
 
@@ -1453,10 +1455,10 @@ def game_over_wait_ok_and_ack(result_str):
         last = time.ticks_ms()
         while True:
             now = time.ticks_ms()
-            if time.ticks_diff(now, last) > CFG.Timing.GAMEOVER_BLINK_MS:
+            if time.ticks_diff(now, last) > Config.Timing.GAMEOVER_BLINK_MS:
                 blink = not blink
                 cp.clear_header()
-                cp.panel[CFG.LEDs.CP_OK_PIX] = GREEN if blink else BLACK
+                cp.panel[Config.LEDs.CP_OK_PIX] = GREEN if blink else BLACK
                 cp.apply()
                 last = now
 
@@ -1464,12 +1466,14 @@ def game_over_wait_ok_and_ack(result_str):
                 shutdown_pico()
 
             b = cp.detect_press_raw()
-            if b == (CFG.Buttons.OK_INDEX + 1):
+            if b == (Config.Buttons.OK_INDEX + 1):
                 cp.only_ok(False)
                 link.send("n")
                 break
             time.sleep_ms(
-                CFG.Timing.SLOW_POLL_MS if hasattr(CFG.Timing, "SLOW_POLL_MS") else 20
+                Config.Timing.SLOW_POLL_MS
+                if hasattr(Config.Timing, "SLOW_POLL_MS")
+                else 20
             )
 
         board.markings()
@@ -1489,7 +1493,7 @@ def wait_for_mode_request():
         if cp.shutdown_held():
             shutdown_pico()
         lit = board.loading_step(lit)
-        time.sleep_ms(CFG.Timing.LOADING_TICK_MS)
+        time.sleep_ms(Config.Timing.LOADING_TICK_MS)
         msg = link.read()
         if not msg:
             continue
@@ -1498,7 +1502,7 @@ def wait_for_mode_request():
                 if cp.shutdown_held():
                     shutdown_pico()
                 lit = board.loading_step(lit)
-                time.sleep_ms(CFG.Timing.LOADING_FILL_MS)
+                time.sleep_ms(Config.Timing.LOADING_FILL_MS)
             board.markings()
             cp.show_coords_top(WHITE)
             st.game_state = Game.SETUP
@@ -1513,7 +1517,7 @@ def select_game_mode():
             shutdown_pico()
         b = cp.detect_press_allowed()
         if not b:
-            time.sleep_ms(CFG.Timing.FAST_POLL_MS)
+            time.sleep_ms(Config.Timing.FAST_POLL_MS)
             continue
         if b == 1:
             st.game_mode = Mode.PC
@@ -1550,13 +1554,13 @@ def select_singlepress(out_min, out_max):
         if cp.shutdown_held():
             shutdown_pico()
         b = cp.detect_press_allowed()
-        if b == (CFG.Buttons.OK_INDEX + 1):
+        if b == (Config.Buttons.OK_INDEX + 1):
             link.send("btn_ok")
             _setup_back_cleanup()
             return None
         if b and 1 <= b <= 8:
             return map_range(b, 1, 8, out_min, out_max)
-        time.sleep_ms(CFG.Timing.FAST_POLL_MS)
+        time.sleep_ms(Config.Timing.FAST_POLL_MS)
 
 
 def wait_for_setup():
@@ -1567,14 +1571,14 @@ def wait_for_setup():
                 shutdown_pico()
 
             b = cp.detect_press_raw()
-            if b == (CFG.Buttons.OK_INDEX + 1):
+            if b == (Config.Buttons.OK_INDEX + 1):
                 link.send("btn_ok")
                 _setup_back_cleanup()
                 return
 
             msg = link.read()
             if not msg:
-                time.sleep_ms(CFG.Timing.POLL_MS)
+                time.sleep_ms(Config.Timing.POLL_MS)
                 continue
 
             if msg.startswith("heyArduinodefault_strength_"):
@@ -1597,7 +1601,7 @@ def wait_for_setup():
                 if v is None:
                     return
                 link.send(str(v))
-                time.sleep_ms(CFG.Timing.SETUP_TRANSITION_MS)
+                time.sleep_ms(Config.Timing.SETUP_TRANSITION_MS)
                 return
 
             if msg.startswith("heyArduinoTimeControl"):
@@ -1607,7 +1611,7 @@ def wait_for_setup():
                 if v is None:
                     return
                 link.send(str(v))
-                time.sleep_ms(CFG.Timing.SETUP_TRANSITION_MS)
+                time.sleep_ms(Config.Timing.SETUP_TRANSITION_MS)
                 return
 
             if msg.startswith("heyArduinoPlayerColor"):
@@ -1620,7 +1624,7 @@ def wait_for_setup():
                     if cp.shutdown_held():
                         shutdown_pico()
                     b2 = cp.detect_press_allowed()
-                    if b2 == (CFG.Buttons.OK_INDEX + 1):
+                    if b2 == (Config.Buttons.OK_INDEX + 1):
                         link.send("btn_ok")
                         _setup_back_cleanup()
                         return
@@ -1633,7 +1637,7 @@ def wait_for_setup():
                     if b2 == 3:
                         link.send("s3")
                         return
-                    time.sleep_ms(CFG.Timing.FAST_POLL_MS)
+                    time.sleep_ms(Config.Timing.FAST_POLL_MS)
 
             if msg.startswith("heyArduinoSetupComplete"):
                 st.game_state = Game.RUNNING
@@ -1661,7 +1665,7 @@ def handle_promotion_choice():
                 return
             b = cp.detect_press_raw()
             if not b:
-                time.sleep_ms(CFG.Timing.FAST_POLL_MS)
+                time.sleep_ms(Config.Timing.FAST_POLL_MS)
                 continue
             if b == 1:
                 link.send("btn_q")
@@ -1837,13 +1841,13 @@ def _handle_menu_paged(_msg):
             shutdown_pico()
         b = cp.detect_press_allowed()
         if not b:
-            time.sleep_ms(CFG.Timing.FAST_POLL_MS)
+            time.sleep_ms(Config.Timing.FAST_POLL_MS)
             continue
-        if b == (CFG.Buttons.OK_INDEX + 1):
+        if b == (Config.Buttons.OK_INDEX + 1):
             link.send("btn_ok")
             _setup_back_cleanup()
             break
-        if b == (CFG.Buttons.HINT_INDEX + 1):
+        if b == (Config.Buttons.HINT_INDEX + 1):
             link.send("btn_hint")
             continue
         if 1 <= b <= 4:
@@ -1894,10 +1898,10 @@ def _handle_puzzle_wrong(msg):
                 link.send("n")
                 break
             b = cp.detect_press_raw()
-            if b == (CFG.Buttons.OK_INDEX + 1):
+            if b == (Config.Buttons.OK_INDEX + 1):
                 link.send("btn_ok")
                 break
-            time.sleep_ms(CFG.Timing.POLL_MS)
+            time.sleep_ms(Config.Timing.POLL_MS)
         cp.only_ok(False)
         clear_persistent_trail()
         board.markings()
@@ -1918,11 +1922,12 @@ def _handle_turn(msg):
     # Small window to catch immediate gameover
     t_start = time.ticks_ms()
     while (
-        time.ticks_diff(time.ticks_ms(), t_start) < CFG.Timing.TURN_GAMEOVER_WINDOW_MS
+        time.ticks_diff(time.ticks_ms(), t_start)
+        < Config.Timing.TURN_GAMEOVER_WINDOW_MS
     ):
         nxt = link.read()
         if not nxt:
-            time.sleep_ms(CFG.Timing.FAST_POLL_MS)
+            time.sleep_ms(Config.Timing.FAST_POLL_MS)
             continue
         if nxt.startswith("heyArduinoGameOver"):
             _handle_gameover(nxt)
@@ -1981,7 +1986,7 @@ def main_loop():
             and (not st.engine_ack_pending)
         ):
             b0 = cp.detect_press_raw()
-            if b0 == (CFG.Buttons.OK_INDEX + 1):
+            if b0 == (Config.Buttons.OK_INDEX + 1):
                 link.send("btn_ok")
                 st.ok_back_enabled = False
                 _setup_back_cleanup()
@@ -2005,9 +2010,9 @@ def main_loop():
                 continue
 
             b = cp.detect_press_raw()
-            if b == (CFG.Buttons.OK_INDEX + 1):
+            if b == (Config.Buttons.OK_INDEX + 1):
                 link.send("btn_ok")
-            time.sleep_ms(CFG.Timing.POLL_MS)
+            time.sleep_ms(Config.Timing.POLL_MS)
             continue
 
         # HINT IRQ
@@ -2029,12 +2034,12 @@ def main_loop():
                     nxt.split(":", 1)[1].strip() if ":" in nxt else ""
                 )
                 while cp.BTN_OK.value() == 0:
-                    time.sleep_ms(CFG.Timing.POLL_MS)
-                time.sleep_ms(CFG.Timing.ENGINE_ACK_POST_MS)
+                    time.sleep_ms(Config.Timing.POLL_MS)
+                time.sleep_ms(Config.Timing.ENGINE_ACK_POST_MS)
                 cp.reset_edges()
                 while True:
                     b = cp.detect_press_raw()
-                    if b == (CFG.Buttons.OK_INDEX + 1):
+                    if b == (Config.Buttons.OK_INDEX + 1):
                         cp.only_ok(False)
                         break
                     time.sleep_ms(15)
@@ -2048,7 +2053,7 @@ def main_loop():
                 st.buffered_turn_msg = nxt
 
             b = cp.detect_press_raw()
-            if b == (CFG.Buttons.OK_INDEX + 1):
+            if b == (Config.Buttons.OK_INDEX + 1):
                 link.send("btn_ok")
                 st.engine_ack_pending = False
                 cp.only_ok(False)
@@ -2066,7 +2071,7 @@ def main_loop():
                 collect_and_send_move()
                 continue
 
-            time.sleep_ms(CFG.Timing.POLL_MS)
+            time.sleep_ms(Config.Timing.POLL_MS)
             continue
 
         msg = link.read()
@@ -2074,7 +2079,7 @@ def main_loop():
             continue
 
         if not msg:
-            time.sleep_ms(CFG.Timing.POLL_MS)
+            time.sleep_ms(Config.Timing.POLL_MS)
             continue
 
         if st.suspend_until_new_game or st.game_state != Game.RUNNING:
