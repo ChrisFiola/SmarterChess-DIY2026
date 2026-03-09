@@ -105,6 +105,7 @@ class GameController:
             # It should NEVER be treated as a move payload.
             side = "WHITE" if self.board.turn == chess.WHITE else "BLACK"
             self.deps.display.prompt_move(side)
+            self.deps.link.sendtoboard(f"lcd_ack_confirm\n")
             return
 
         if typ == EventType.CAPTURE_QUERY:
