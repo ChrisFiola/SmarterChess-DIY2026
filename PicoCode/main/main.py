@@ -16,7 +16,7 @@ class Config:
         HINT_INDEX = 9
         SHUTDOWN_INDEX = 7  # button "8"/H
 
-        DEBOUNCE_MS = 150
+        DEBOUNCE_MS = 80
         OK_LONG_PRESS_MS = 500
         HINT_HOLD_DRAW_MS = 2000
         SHUTDOWN_HOLD_MS = 2000
@@ -326,18 +326,14 @@ class ControlPanel:
         self._shut_press_ms = None
         self._shut_fired = False
 
-        self.profile = Profiles(self)
-        self.enable_hint_irq()
-
-        self.BTN_OK.irq(trigger=Pin.IRQ_FALLING, handler=self._ok_irq)
-
-        self.last_ok_press_ms = None
-        self.ok_irq_flag = False
-        self.last_ok_press_ms = None
-
+        # confirm-only OK capture
         self.confirm_ok_armed = False
         self.confirm_ok_latched = False
         self.confirm_ok_ms = None
+
+        self.profile = Profiles(self)
+        self.enable_hint_irq()
+        self.BTN_OK.irq(trigger=Pin.IRQ_FALLING, handler=self._ok_irq)
 
     def arm_confirm_ok(self):
         self.confirm_ok_armed = True
@@ -366,9 +362,12 @@ class ControlPanel:
         return False
 
     def _ok_irq(self, pin):
-        if self.confirm_ok_armed:
+        armed = self.confirm_ok_armed
+        print("[PICO OK IRQ] fired armed=", armed)
+        if armed:
             self.confirm_ok_latched = True
             self.confirm_ok_ms = time.ticks_ms()
+            print("[PICO OK IRQ] latched")
 
     def clear_ok_irq(self):
         self.ok_irq_flag = False
@@ -448,11 +447,7 @@ class ControlPanel:
             self._last_btn[i] = cur
             if prev == 1 and cur == 0:
                 time.sleep_ms(Config.Buttons.DEBOUNCE_MS)
-                btn = i + 1
-                if btn == (Config.Buttons.OK_INDEX + 1):
-                    self.last_ok_press_ms = time.ticks_ms()
-                    self.ok_irq_flag = True
-                return btn
+                return i + 1
         return None
 
     def detect_press_allowed(self):
@@ -812,26 +807,9 @@ class ChessBoard:
 board = ChessBoard()
 
 
-def clear_ok_latch():
-    cp.ok_irq_flag = False
-    cp.last_ok_press_ms = None
-
-
 def wait_ok_release():
     while cp.BTN_OK.value() == 0:
         time.sleep_ms(Config.Timing.POLL_MS)
-
-
-def consume_recent_ok_press(window_ms=250):
-    t = cp.last_ok_press_ms
-    if t is None:
-        return False
-
-    if time.ticks_diff(time.ticks_ms(), t) <= window_ms:
-        clear_ok_latch()
-        return True
-
-    return False
 
 
 def consume_ok_after_confirm_ack(window_ms=120):
