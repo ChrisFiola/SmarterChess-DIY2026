@@ -327,7 +327,10 @@ class OnlineController:
                     # As soon as typing starts, we are in move entry => never show prompt_move this turn
                     awaiting_ok_ack = False
                     in_move_entry = True
-                    self.d.handle_typing_preview(display, peek[7:], board)
+                    payload = peek[7:]
+                    self.d.handle_typing_preview(display, payload, board)
+                    if payload.startswith("confirm_"):
+                        link.sendtoboard("lcd_ack_confirm")
 
                 if peek.startswith("capq_"):
                     uciq = peek[5:].strip()
@@ -427,7 +430,10 @@ class OnlineController:
             if msg.startswith("typing_"):
                 awaiting_ok_ack = False
                 in_move_entry = True
-                self.d.handle_typing_preview(display, msg[7:], board)
+                payload = msg[7:]
+                self.d.handle_typing_preview(display, payload, board)
+                if payload.startswith("confirm_"):
+                    link.sendtoboard("lcd_ack_confirm")
                 continue
 
             if msg.startswith("capq_"):

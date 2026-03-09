@@ -644,6 +644,13 @@ def _piece_label_from_square(board: Optional["chess.Board"], sq: str) -> Optiona
         return None
 
 
+
+
+def send_lcd_ack_for_payload(link: BoardLink, payload: str) -> None:
+    payload = (payload or "").strip().lower()
+    if payload.startswith("confirm_"):
+        link.sendtoboard("lcd_ack_confirm")
+
 def handle_typing_preview(
     display: Display, payload: str, board: Optional["chess.Board"] = None
 ) -> None:
@@ -834,7 +841,9 @@ def play_game(
                 shutdown_pi(link, display)
                 return
             if peek.startswith("typing_"):
-                handle_typing_preview(display, peek[len("typing_") :], state.board)
+                payload = peek[len("typing_") :]
+                handle_typing_preview(display, payload, state.board)
+                send_lcd_ack_for_payload(link, payload)
             # do not 'continue' to still allow engine turn same cycle
 
             # Pico asks: "capq_<uci>" -> answer quickly with "capr_0/1"
@@ -868,7 +877,9 @@ def play_game(
 
         # 4) Also handle typing previews in the blocking path (to be consistent)
         if msg.startswith("typing_"):
-            handle_typing_preview(display, msg[len("typing_") :], state.board)
+            payload = msg[len("typing_") :]
+            handle_typing_preview(display, payload, state.board)
+            send_lcd_ack_for_payload(link, payload)
             continue
 
         # --- NEW: capture preview probe (blocking path) ---

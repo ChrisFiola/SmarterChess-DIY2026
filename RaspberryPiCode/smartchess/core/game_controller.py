@@ -98,10 +98,11 @@ class GameController:
             from piGame import handle_typing_preview
 
             handle_typing_preview(self.deps.display, payload, self.board)
+            if payload.startswith("confirm_"):
+                self.deps.link.sendtoboard("lcd_ack_confirm")
             return
 
         if typ == EventType.OK:
-            self.deps.link.sendtoboard(f"lcd_ack_confirm\n")
             # OK is used as an acknowledgement / "enter move" trigger from the Pico UI.
             # It should NEVER be treated as a move payload.
             side = "WHITE" if self.board.turn == chess.WHITE else "BLACK"

@@ -188,6 +188,7 @@ class Screen:
         if kind == "from":
             self.link.write_raw("heypityping_from_")
 
+    @staticmethod
     def wait_for_lcd_ack(expected_ack="heyArduinolcd_ack_confirm", timeout_ms=300):
         deadline = time.ticks_add(time.ticks_ms(), timeout_ms)
         while time.ticks_diff(deadline, time.ticks_ms()) > 0:
@@ -205,6 +206,16 @@ class Screen:
             if msg.startswith("heyArduinoGameOver"):
                 _handle_gameover(msg)
                 return False
+
+            if msg.startswith("heyArduinohint_") or msg.startswith("heyArduinom"):
+                _handle_pi_overlay_or_gameover(msg)
+                continue
+
+            try:
+                if handle_puzzle_setup_cmd(msg):
+                    continue
+            except Exception:
+                pass
 
         return False
 
