@@ -171,7 +171,7 @@ class GameController:
         # for ~1440 ms (4 × 360 ms); delaying the overlay by 1.6 s ensures the
         # blink finishes before _handle_engine_move sets engine_ack_pending, so the
         # check_ message is not silently discarded in the ack-pending loop.
-
+        check_sq = None
         if self.board.is_check():
             ksq = self.board.king(self.board.turn)
             if ksq is not None:
