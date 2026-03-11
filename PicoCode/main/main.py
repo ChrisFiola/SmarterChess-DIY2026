@@ -1,29 +1,9 @@
-# ============================================================
-#  PICO FIRMWARE (2026) - Standardized OO Architecture
-#
-#  Core objects:
-#    - link   : UARTLink      (link.send(), link.read())
-#    - screen : Screen        (screen.typing_from/to/confirm + clear helpers)
-#    - cp     : ControlPanel  (buttons + panel LEDs + profiles; cp.off(), cp.only_ok(), cp.only_input(), cp.profile.main_menu(), ...)
-#    - border : Border        (border.on(), border.off())
-#    - board  : ChessBoard    (board.off(), board.markings(), board.preview_from(), board.preview_trail(), board.overlay_show(), ...)
-#
-#  Notes:
-#    - No dataclass / no __future__ (MicroPython friendly)
-#    - UART protocol strings preserved (heypi..., heyArduino...)
-# ============================================================
-
 from machine import Pin, UART
 import time
 import neopixel
 
 
-# ============================================================
-# CONFIG (grouped constants)
-# ============================================================
-
-
-class CFG:
+class Config:
     class UART:
         BAUD = 115200
         TX_PIN = 0
@@ -31,36 +11,30 @@ class CFG:
         TIMEOUT_MS = 10
 
     class Buttons:
-        # Active-low buttons with pull-ups.
         PINS = [2, 3, 4, 5, 10, 8, 7, 6, 9, 11]  # 1..8 coords, 9=OK, 10=HINT
         OK_INDEX = 8
         HINT_INDEX = 9
         SHUTDOWN_INDEX = 7  # button "8"/H
 
-        DEBOUNCE_MS = 150
+        DEBOUNCE_MS = 200
         OK_LONG_PRESS_MS = 500
         HINT_HOLD_DRAW_MS = 2000
         SHUTDOWN_HOLD_MS = 2000
 
     class LEDs:
-        # Control panel (includes border coords)
         PANEL_PIN = 16
         PANEL_COUNT = 22
 
-        # CP zone: 0..5 (two 2-LED group indicators + OK + HINT)
         CP_ZONE_START = 0
         CP_ZONE_END = 6
 
-        # Special pixels within CP zone
         CP_OK_PIX = 4
         CP_HINT_PIX = 5
 
-        # Border mapping within panel strip
-        FILES = [6, 7, 8, 9, 10, 11, 12, 13]  # A..H
-        RANKS = [14, 15, 16, 17, 18, 19, 20, 21]  # 1..8
+        FILES = [6, 7, 8, 9, 10, 11, 12, 13]
+        RANKS = [14, 15, 16, 17, 18, 19, 20, 21]
         BORDER_COLOR = (40, 40, 40)
 
-        # Chessboard matrix
         CHESS_PIN = 22
         W = 8
         H = 8
@@ -84,7 +58,9 @@ class CFG:
         BLINK_OFF_MS = 140
         SLOW_POLL_MS = 20
         SHUTDOWN_IDLE_MS = 1000
-        CONFIRM_DELAY_MS = 800
+        CONFIRM_DELAY_MS = 0
+
+        CONFIRM_OK_GRACE_MS = 250
 
     class Colors:
         BLACK = (0, 0, 0)
@@ -99,21 +75,17 @@ class CFG:
         ENGINE = BLUE
 
 
-# Fast aliases
-BLACK = CFG.Colors.BLACK
-WHITE = CFG.Colors.WHITE
-RED = CFG.Colors.RED
-GREEN = CFG.Colors.GREEN
-BLUE = CFG.Colors.BLUE
-CYAN = CFG.Colors.CYAN
-MAGENTA = CFG.Colors.MAGENTA
-YELLOW = CFG.Colors.YELLOW
-ENGINE_COLOR = CFG.Colors.ENGINE
-
-
-# ============================================================
-# STATE
-# ============================================================
+# ── Color aliases ─────────────────────────────────────────────────────────────
+_C = Config.Colors
+BLACK = _C.BLACK
+WHITE = _C.WHITE
+RED = _C.RED
+GREEN = _C.GREEN
+BLUE = _C.BLUE
+CYAN = _C.CYAN
+MAGENTA = _C.MAGENTA
+YELLOW = _C.YELLOW
+ENGINE_COLOR = _C.ENGINE
 
 
 class Game:
@@ -127,6 +99,18 @@ class Mode:
     ONLINE = "online"
     LOCAL = "local"
     PUZZLE = "puzzle"
+
+
+# Button index → (game mode, command string) for the mode-selection menu.
+_MODE_MAP = {
+    1: (Mode.PC, "btn_mode_pc"),
+    2: (Mode.ONLINE, "btn_mode_online"),
+    3: (Mode.LOCAL, "btn_mode_local"),
+    4: (Mode.PUZZLE, "btn_mode_puzzles"),
+}
+
+# Button index → UCI promotion piece token for the promotion picker.
+_PROMO = {1: "btn_q", 2: "btn_r", 3: "btn_b", 4: "btn_n"}
 
 
 class State:
@@ -161,23 +145,17 @@ class State:
 st = State()
 
 
-# ============================================================
-# UART LINK + SCREEN API
-# ============================================================
-
-
 class UARTLink:
     def __init__(self):
         self.uart = UART(
             0,
-            baudrate=CFG.UART.BAUD,
-            tx=Pin(CFG.UART.TX_PIN),
-            rx=Pin(CFG.UART.RX_PIN),
-            timeout=CFG.UART.TIMEOUT_MS,
+            baudrate=Config.UART.BAUD,
+            tx=Pin(Config.UART.TX_PIN),
+            rx=Pin(Config.UART.RX_PIN),
+            timeout=Config.UART.TIMEOUT_MS,
         )
 
     def send(self, kind, payload=""):
-        # Preserve protocol: heypi{kind}{payload}\n
         self.uart.write(("heypi" + str(kind) + str(payload) + "\n").encode())
 
     def read(self):
@@ -188,185 +166,245 @@ class UARTLink:
                 return None
         return None
 
-    def write_raw(self, s: str):
+    def write_raw(self, s):
         self.uart.write((s + "\n").encode())
 
 
 class Screen:
-    """LCD messaging lives on the Pi. Pico only sends typing previews."""
-
-    def __init__(self, link: UARTLink, st_: State):
+    def __init__(self, link, st_):
         self.link = link
         self.st = st_
 
     def _ok(self):
         return self.st.game_state == Game.RUNNING
 
-    def typing_from(self, text: str):
-        if not self._ok():
-            return
-        self.link.write_raw("heypityping_from_" + text)
+    def typing_from(self, text):
+        if self._ok():
+            self.link.write_raw("heypityping_from_" + text)
 
-    def typing_to(self, move_from: str, partial_to: str):
-        if not self._ok():
-            return
-        self.link.write_raw("heypityping_to_" + move_from + " -> " + partial_to)
+    def typing_to(self, move_from, partial_to):
+        if self._ok():
+            self.link.write_raw("heypityping_to_" + move_from + " -> " + partial_to)
 
-    def typing_confirm(self, move_uci: str):
-        if not self._ok():
-            return
-        frm, to = move_uci[:2], move_uci[2:4]
-        self.link.write_raw("heypityping_confirm_" + frm + " -> " + to)
+    def typing_confirm(self, move_uci):
+        if self._ok():
+            frm, to = move_uci[:2], move_uci[2:4]
+            self.link.write_raw("heypityping_confirm_" + frm + " -> " + to)
 
-    # Clears (fixes “confirm move” stuck display if OK pressed quickly)
-    def clear_confirm(self):
-        # self.link.write_raw("heypityping_confirm_")
-        time.sleep_ms(CFG.Timing.CONFIRM_DELAY_MS)
+    def clear(self, kind):
+        if kind == "confirm":
+            time.sleep_ms(Config.Timing.CONFIRM_DELAY_MS)
+        elif kind == "to":
+            self.link.write_raw("heypityping_to_")
+        elif kind == "from":
+            self.link.write_raw("heypityping_from_")
 
-    def clear_to(self):
-        self.link.write_raw("heypityping_to_")
+    def wait_for_lcd_ack(
+        self, expected_ack="heyArduinolcd_ack_confirm", timeout_ms=300
+    ):
+        print("[PICO ACK] waiting for:", expected_ack, "timeout_ms=", timeout_ms)
+        deadline = time.ticks_add(time.ticks_ms(), timeout_ms)
+        ok_seen = False
 
-    def clear_from(self):
-        self.link.write_raw("heypityping_from_")
+        while time.ticks_diff(deadline, time.ticks_ms()) > 0:
+            if cp.shutdown_held():
+                _shutdown_pico()
+            if cp.BTN_OK.value() == 0:
+                ok_seen = True
+
+            msg = self.link.read()
+            if not msg:
+                time.sleep_ms(Config.Timing.FAST_POLL_MS)
+                continue
+
+            print("[PICO ACK] got:", msg)
+
+            if msg == expected_ack:
+                print("[PICO ACK] matched, ok_seen =", ok_seen)
+                return True, ok_seen
+
+            if msg.startswith("heyArduinoGameOver"):
+                print("[PICO ACK] interrupted by gameover")
+                _handle_gameover(msg)
+                return False, ok_seen
+
+            if _handle_puzzle_setup_message(msg):
+                continue
+
+            if msg.startswith("heyArduinohint_") or msg.startswith("heyArduinom"):
+                _handle_overlay_or_gameover(msg)
+                continue
+
+        print("[PICO ACK] timeout waiting for:", expected_ack, "ok_seen =", ok_seen)
+        return False, ok_seen
 
 
 link = UARTLink()
 screen = Screen(link, st)
 
 
-# ============================================================
-# CONTROL PANEL (buttons + panel LEDs + profiles)
-# ============================================================
-
-
 class Profiles:
-    """Profiles are pure panel/button configuration; no game logic."""
-
-    def __init__(self, cp: "ControlPanel"):
+    def __init__(self, cp):
         self.cp = cp
 
-    def main_menu(self):
-        self.cp.border(False)
-        self.cp._set_cp_buttons(top=True, bottom=False, ok=False, hint=False)
+    def _apply(
+        self,
+        border_on,
+        top,
+        bottom,
+        ok,
+        hint,
+        allowed,
+        ok_color=GREEN,
+        hint_color=YELLOW,
+    ):
+        self.cp.border(border_on)
+        self.cp._set_cp_buttons(
+            top=top,
+            bottom=bottom,
+            ok=ok,
+            hint=hint,
+            ok_color=ok_color,
+            hint_color=hint_color,
+        )
         self.cp.apply()
-        self.cp.set_allowed([1, 2, 3, 4])
+        self.cp.set_allowed(allowed)
+
+    def main_menu(self):
+        self._apply(False, True, False, False, False, [1, 2, 3, 4])
 
     def vs_strength_time(self):
-        self.cp.border(False)
-        self.cp._set_cp_buttons(
-            top=True, bottom=True, ok=True, hint=False, ok_color=RED
+        self._apply(
+            False, True, True, True, False, [1, 2, 3, 4, 5, 6, 7, 8, 9], ok_color=RED
         )
-        self.cp.apply()
-        self.cp.set_allowed([1, 2, 3, 4, 5, 6, 7, 8, 9])
 
     def vs_color(self):
-        self.cp.border(False)
-        self.cp._set_cp_buttons(
-            top=True, bottom=False, ok=True, hint=False, ok_color=RED
-        )
-        self.cp.apply()
-        self.cp.set_allowed([1, 2, 3, 9])
-
-    def puzzle_top(self):
-        self.cp.border(False)
-        self.cp._set_cp_buttons(
-            top=True, bottom=False, ok=True, hint=False, ok_color=RED
-        )
-        self.cp.apply()
-        self.cp.set_allowed([1, 2, 3, 9])
+        self._apply(False, True, False, True, False, [1, 2, 3, 9], ok_color=RED)
 
     def menu_paged(self):
-        self.cp.border(False)
-        self.cp._set_cp_buttons(
-            top=True, bottom=False, ok=True, hint=True, ok_color=RED, hint_color=BLUE
+        self._apply(
+            False,
+            True,
+            False,
+            True,
+            True,
+            [1, 2, 3, 4, 9, 10],
+            ok_color=RED,
+            hint_color=BLUE,
         )
-        self.cp.apply()
-        self.cp.set_allowed([1, 2, 3, 4, 9, 10])
 
     def puzzle_play(self):
-        self.cp.border(True)
-        self.cp._set_cp_buttons(
-            top=True, bottom=True, ok=True, hint=True, ok_color=RED, hint_color=YELLOW
+        self._apply(
+            True,
+            True,
+            True,
+            True,
+            True,
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+            ok_color=RED,
+            hint_color=YELLOW,
         )
-        self.cp.apply()
-        self.cp.set_allowed([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 
 
 class ControlPanel:
-    def __init__(self, st_: State):
+    def __init__(self, st_):
         self.st = st_
-        self.panel = neopixel.NeoPixel(
-            Pin(CFG.LEDs.PANEL_PIN, Pin.OUT), CFG.LEDs.PANEL_COUNT
+        self._panel = neopixel.NeoPixel(
+            Pin(Config.LEDs.PANEL_PIN, Pin.OUT), Config.LEDs.PANEL_COUNT
         )
         self._panel_last = None
 
-        # Buttons
-        self.pins = [Pin(g, Pin.IN, Pin.PULL_UP) for g in CFG.Buttons.PINS]
-        self.BTN_OK = self.pins[CFG.Buttons.OK_INDEX]
-        self.BTN_HINT = self.pins[CFG.Buttons.HINT_INDEX]
-        self.BTN_SHUT = self.pins[CFG.Buttons.SHUTDOWN_INDEX]
+        self.pins = [Pin(g, Pin.IN, Pin.PULL_UP) for g in Config.Buttons.PINS]
+        self.BTN_OK = self.pins[Config.Buttons.OK_INDEX]
+        self.BTN_HINT = self.pins[Config.Buttons.HINT_INDEX]
+        self._BTN_SHUT = self.pins[Config.Buttons.SHUTDOWN_INDEX]
 
         self._last_btn = [1] * len(self.pins)
-        self.allowed = None
+        self._allowed = None
 
-        # hint IRQ
         self.hint_irq_flag = False
         self.suppress_hints_until_ms = 0
 
-        # holds
         self._ok_press_ms = None
         self._ok_fired = False
         self._shut_press_ms = None
         self._shut_fired = False
 
+        self._confirm_ok_armed = False
+        self._confirm_ok_latched = False
+        self._confirm_ok_ms = None
+
         self.profile = Profiles(self)
         self.enable_hint_irq()
+        self.BTN_OK.irq(trigger=Pin.IRQ_FALLING, handler=self._ok_irq)
 
-    # ---------------- LEDs helpers ----------------
+    # ── confirm-OK capture ────────────────────────────────────────────────────
+
+    def arm_confirm_ok(self):
+        self._confirm_ok_armed = True
+        self._confirm_ok_latched = False
+        self._confirm_ok_ms = None
+
+    def disarm_confirm_ok(self):
+        self._confirm_ok_armed = False
+        self._confirm_ok_latched = False
+        self._confirm_ok_ms = None
+
+    def consume_confirm_ok(self, window_ms=300):
+        if self._confirm_ok_latched:
+            self._confirm_ok_latched = False
+            self._confirm_ok_ms = None
+            return True
+        if (
+            self._confirm_ok_ms is not None
+            and time.ticks_diff(time.ticks_ms(), self._confirm_ok_ms) <= window_ms
+        ):
+            self._confirm_ok_ms = None
+            self._confirm_ok_latched = False
+            return True
+        return False
+
+    def _ok_irq(self, pin):
+        if self._confirm_ok_armed:
+            self._confirm_ok_latched = True
+            self._confirm_ok_ms = time.ticks_ms()
+
+    # ── LED panel ─────────────────────────────────────────────────────────────
+
     def _snapshot(self):
-        return [tuple(self.panel[i]) for i in range(CFG.LEDs.PANEL_COUNT)]
+        return [tuple(self._panel[i]) for i in range(Config.LEDs.PANEL_COUNT)]
 
     def apply(self, force=False):
         cur = self._snapshot()
-        if force or (self._panel_last is None) or (cur != self._panel_last):
-            self.panel.write()
+        if force or self._panel_last is None or cur != self._panel_last:
+            self._panel.write()
             self._panel_last = cur
 
     def off(self, force=False):
-        for i in range(CFG.LEDs.PANEL_COUNT):
-            self.panel[i] = BLACK
+        for i in range(Config.LEDs.PANEL_COUNT):
+            self._panel[i] = BLACK
         self.apply(force=force)
 
     def clear_header(self):
-        for i in range(CFG.LEDs.CP_ZONE_START, CFG.LEDs.CP_ZONE_END):
-            self.panel[i] = BLACK
+        for i in range(Config.LEDs.CP_ZONE_START, Config.LEDs.CP_ZONE_END):
+            self._panel[i] = BLACK
 
-    def border(self, on=True, color=CFG.LEDs.BORDER_COLOR, force=False):
+    def border(self, on=True, color=Config.LEDs.BORDER_COLOR, force=False):
         col = color if on else BLACK
-        for idx in CFG.LEDs.FILES + CFG.LEDs.RANKS:
-            self.panel[idx] = col
+        for idx in Config.LEDs.FILES + Config.LEDs.RANKS:
+            self._panel[idx] = col
         self.apply(force=force)
 
-    def _set_cp_buttons(
-        self,
-        top: bool,
-        bottom: bool,
-        ok: bool,
-        hint: bool,
-        ok_color=GREEN,
-        hint_color=YELLOW,
-    ):
-        # Buttons 1..4 use LEDs 0..1, buttons 5..8 use 2..3 (lit=WHITE)
-        self.panel[0] = WHITE if top else BLACK
-        self.panel[1] = WHITE if top else BLACK
-        self.panel[2] = WHITE if bottom else BLACK
-        self.panel[3] = WHITE if bottom else BLACK
-        self.panel[CFG.LEDs.CP_OK_PIX] = ok_color if ok else BLACK
-        self.panel[CFG.LEDs.CP_HINT_PIX] = hint_color if hint else BLACK
+    def _set_cp_buttons(self, top, bottom, ok, hint, ok_color=GREEN, hint_color=YELLOW):
+        self._panel[0] = WHITE if top else BLACK
+        self._panel[1] = WHITE if top else BLACK
+        self._panel[2] = WHITE if bottom else BLACK
+        self._panel[3] = WHITE if bottom else BLACK
+        self._panel[Config.LEDs.CP_OK_PIX] = ok_color if ok else BLACK
+        self._panel[Config.LEDs.CP_HINT_PIX] = hint_color if hint else BLACK
 
-    # Standardized UI verbs
     def only_ok(self, on=True):
-        col = RED if (self.st.game_mode == Mode.ONLINE) else GREEN
+        col = RED if self.st.game_mode == Mode.ONLINE else GREEN
         self._set_cp_buttons(False, False, ok=on, hint=False, ok_color=col)
         self.apply()
 
@@ -379,19 +417,20 @@ class ControlPanel:
 
     def show_coords_top(self, color=WHITE):
         self.border(False)
-        self.panel[0] = color
-        self.panel[1] = color
-        self.panel[2] = BLACK
-        self.panel[3] = BLACK
+        self._panel[0] = color
+        self._panel[1] = color
+        self._panel[2] = BLACK
+        self._panel[3] = BLACK
         self.apply()
 
-    # ---------------- Buttons / gating ----------------
+    # ── button helpers ────────────────────────────────────────────────────────
+
     def reset_edges(self):
         for i, p in enumerate(self.pins):
             self._last_btn[i] = p.value()
 
     def set_allowed(self, btns):
-        self.allowed = None if btns is None else set(int(x) for x in btns)
+        self._allowed = None if btns is None else set(int(x) for x in btns)
         self.reset_edges()
 
     def detect_press_raw(self):
@@ -400,7 +439,7 @@ class ControlPanel:
             prev = self._last_btn[i]
             self._last_btn[i] = cur
             if prev == 1 and cur == 0:
-                time.sleep_ms(CFG.Buttons.DEBOUNCE_MS)
+                time.sleep_ms(Config.Buttons.DEBOUNCE_MS)
                 return i + 1
         return None
 
@@ -409,15 +448,16 @@ class ControlPanel:
             b = self.detect_press_raw()
             if b is None:
                 return None
-            if self.allowed is None or b in self.allowed:
+            if self._allowed is None or b in self._allowed:
                 return b
-            time.sleep_ms(CFG.Timing.FAST_POLL_MS)
+            time.sleep_ms(Config.Timing.FAST_POLL_MS)
 
     @staticmethod
     def is_non_coord_button(b):
         return b in (9, 10)
 
-    # ---------------- IRQ ----------------
+    # ── hint IRQ ──────────────────────────────────────────────────────────────
+
     def _hint_irq(self, pin):
         self.hint_irq_flag = True
 
@@ -427,33 +467,47 @@ class ControlPanel:
     def enable_hint_irq(self):
         self.BTN_HINT.irq(trigger=Pin.IRQ_FALLING, handler=self._hint_irq)
 
-    # ---------------- Holds ----------------
+    # ── OK long-hold ──────────────────────────────────────────────────────────
+
     def reset_ok_hold(self):
         self._ok_press_ms = None
         self._ok_fired = False
 
-    def ok_long_hold_fired(self, hold_ms=CFG.Buttons.OK_LONG_PRESS_MS):
+    def ok_long_hold_fired(self, hold_ms=Config.Buttons.OK_LONG_PRESS_MS):
         if self.BTN_OK.value() == 0:
             if self._ok_press_ms is None:
                 self._ok_press_ms = time.ticks_ms()
                 self._ok_fired = False
-            if (not self._ok_fired) and time.ticks_diff(
-                time.ticks_ms(), self._ok_press_ms
-            ) >= hold_ms:
+            if (
+                not self._ok_fired
+                and time.ticks_diff(time.ticks_ms(), self._ok_press_ms) >= hold_ms
+            ):
                 self._ok_fired = True
                 return True
             return False
         self.reset_ok_hold()
         return False
 
-    def shutdown_held(self, hold_ms=CFG.Buttons.SHUTDOWN_HOLD_MS):
-        if self.BTN_SHUT.value() == 0:
+    # ── shutdown hold ─────────────────────────────────────────────────────────
+
+    def wait_for_ok_release(self):
+        while self.BTN_OK.value() == 0:
+            time.sleep_ms(Config.Timing.POLL_MS)
+
+    def set_ok_blink(self, on):
+        self.clear_header()
+        self._panel[Config.LEDs.CP_OK_PIX] = GREEN if on else BLACK
+        self.apply()
+
+    def shutdown_held(self, hold_ms=Config.Buttons.SHUTDOWN_HOLD_MS):
+        if self._BTN_SHUT.value() == 0:
             if self._shut_press_ms is None:
                 self._shut_press_ms = time.ticks_ms()
                 self._shut_fired = False
-            if (not self._shut_fired) and time.ticks_diff(
-                time.ticks_ms(), self._shut_press_ms
-            ) >= hold_ms:
+            if (
+                not self._shut_fired
+                and time.ticks_diff(time.ticks_ms(), self._shut_press_ms) >= hold_ms
+            ):
                 self._shut_fired = True
                 return True
             return False
@@ -462,44 +516,24 @@ class ControlPanel:
         return False
 
 
-class Border:
-    def __init__(self, cp: ControlPanel):
-        self.cp = cp
-
-    def on(self, force=False):
-        self.cp.border(True, force=force)
-
-    def off(self, force=False):
-        self.cp.border(False, force=force)
-
-
 cp = ControlPanel(st)
-border = Border(cp)
-
-
-# ============================================================
-# CHESSBOARD
-# ============================================================
 
 
 class ChessBoard:
     def __init__(self):
-        self.w, self.h = CFG.LEDs.W, CFG.LEDs.H
-        self.origin_bottom_right = CFG.LEDs.ORIGIN_BOTTOM_RIGHT
-        self.zigzag = CFG.LEDs.ZIGZAG
-        self.np = neopixel.NeoPixel(Pin(CFG.LEDs.CHESS_PIN, Pin.OUT), self.w * self.h)
+        self.w, self.h = Config.LEDs.W, Config.LEDs.H
+        self.origin_bottom_right = Config.LEDs.ORIGIN_BOTTOM_RIGHT
+        self.np = neopixel.NeoPixel(
+            Pin(Config.LEDs.CHESS_PIN, Pin.OUT), self.w * self.h
+        )
 
-        # base markings cache (checkerboard)
         self._marking_cache = [BLACK] * (self.w * self.h)
-        light = WHITE
-        dark = BLACK
         for y in range(self.h):
             for x in range(self.w):
-                col = dark if ((x + y) % 2 == 0) else light
+                col = BLACK if ((x + y) % 2 == 0) else WHITE
                 self._raw_set(x, y, col, into_cache=True)
         self.off()
 
-        # overlay tracking
         self.overlay_active = False
         self.overlay_type = None
         self.overlay_move = None
@@ -508,16 +542,10 @@ class ChessBoard:
     def _xy_to_index(self, x, y):
         row = y
         if self.origin_bottom_right:
-            if self.zigzag:
-                col_index = (self.w - 1 - x) if (row % 2 == 0) else x
-            else:
-                col_index = self.w - 1 - x
+            col_index = (self.w - 1 - x) if (row % 2 == 0) else x
             return row * self.w + col_index
         row_top = (self.h - 1) - y
-        if self.zigzag:
-            col_index = x if (row_top % 2 == 0) else (self.w - 1 - x)
-        else:
-            col_index = x
+        col_index = x if (row_top % 2 == 0) else (self.w - 1 - x)
         return row_top * self.w + col_index
 
     def _raw_set(self, x, y, color, into_cache=False):
@@ -547,9 +575,7 @@ class ChessBoard:
         if not sq or len(sq) < 2:
             return None
         f, r = sq[0].lower(), sq[1]
-        if not ("a" <= f <= "h"):
-            return None
-        if not ("1" <= r <= "8"):
+        if not ("a" <= f <= "h") or not ("1" <= r <= "8"):
             return None
         return (ord(f) - 97, int(r) - 1)
 
@@ -558,7 +584,6 @@ class ChessBoard:
             self.np[i] = self._marking_cache[i]
         self.write()
 
-    # ----------- scenes / prompts -----------
     def opening(self):
         self.clear(BLACK)
         for k in range(self.w + self.h - 1):
@@ -567,17 +592,16 @@ class ChessBoard:
                 if 0 <= x < self.w:
                     self.set_square(x, y, GREEN)
             self.write()
-            time.sleep_ms(25)
-        time.sleep_ms(CFG.Timing.LOADING_POST_MS)
+            time.sleep_ms(Config.Timing.LOADING_STEP_MS)
+        time.sleep_ms(Config.Timing.LOADING_POST_MS)
         self.show_markings()
 
     def loading_step(self, count):
         total = self.w * self.h
         if count >= total:
             return count
-        idx = count
-        y = idx // self.w
-        x = (self.w - 1) - (idx % self.w)
+        y = count // self.w
+        x = (self.w - 1) - (count % self.w)
         self.set_square(x, y, BLUE)
         self.write()
         return count + 1
@@ -610,15 +634,13 @@ class ChessBoard:
 
     def prompt_time(self):
         self.clear(BLACK)
-        pts = [(2, 6), (3, 6), (4, 6), (5, 6), (4, 5), (4, 4), (4, 3), (4, 2)]
-        for x, y in pts:
+        for x, y in [(2, 6), (3, 6), (4, 6), (5, 6), (4, 5), (4, 4), (4, 3), (4, 2)]:
             self.set_square(x, y, MAGENTA)
         self.write()
 
     def prompt_strength(self):
         self.clear(BLACK)
-        pts = [(2, 6), (2, 5), (2, 4), (2, 3), (2, 2), (3, 2), (4, 2), (5, 2)]
-        for x, y in pts:
+        for x, y in [(2, 6), (2, 5), (2, 4), (2, 3), (2, 2), (3, 2), (4, 2), (5, 2)]:
             self.set_square(x, y, MAGENTA)
         self.write()
 
@@ -644,7 +666,6 @@ class ChessBoard:
         self._draw_vline(5, 5, 2, WHITE)
         self.write()
 
-    # ----------- trails / overlays -----------
     @staticmethod
     def _sgn(v):
         return 0 if v == 0 else (1 if v > 0 else -1)
@@ -656,8 +677,7 @@ class ChessBoard:
             return []
         fx, fy = f
         tx, ty = t
-        dx = tx - fx
-        dy = ty - fy
+        dx, dy = tx - fx, ty - fy
         adx, ady = abs(dx), abs(dy)
 
         if fx == tx and fy != ty:
@@ -667,34 +687,18 @@ class ChessBoard:
             sx = self._sgn(dx)
             return [(x, fy) for x in range(fx, tx + sx, sx)]
         if adx == ady and adx != 0:
-            sx = self._sgn(dx)
-            sy = self._sgn(dy)
-            x, y = fx, fy
-            out = []
-            for _ in range(adx + 1):
-                out.append((x, y))
-                x += sx
-                y += sy
-            return out
+            sx, sy = self._sgn(dx), self._sgn(dy)
+            return [(fx + i * sx, fy + i * sy) for i in range(adx + 1)]
         if (adx, ady) in ((1, 2), (2, 1)):
-            sx = self._sgn(dx)
-            sy = self._sgn(dy)
+            sx, sy = self._sgn(dx), self._sgn(dy)
             path = [(fx, fy)]
             if ady == 2:
-                path += [
-                    (fx, fy + 1 * sy),
-                    (fx, fy + 2 * sy),
-                    (fx + 1 * sx, fy + 2 * sy),
-                ]
+                path += [(fx, fy + sy), (fx, fy + 2 * sy), (fx + sx, fy + 2 * sy)]
             else:
-                path += [
-                    (fx + 1 * sx, fy),
-                    (fx + 2 * sx, fy),
-                    (fx + 2 * sx, fy + 1 * sy),
-                ]
+                path += [(fx + sx, fy), (fx + 2 * sx, fy), (fx + 2 * sx, fy + sy)]
             if path[-1] != (tx, ty):
                 path.append((tx, ty))
-            # dedup neighbors
+            # deduplicate consecutive
             ded = []
             for p in path:
                 if not ded or ded[-1] != p:
@@ -705,21 +709,19 @@ class ChessBoard:
     def draw_trail(self, uci, color, end_color=None):
         if not uci or len(uci) < 4:
             return
-        frm, to = uci[:2], uci[2:4]
-        path = self._path_squares(frm, to)
+        path = self._path_squares(uci[:2], uci[2:4])
         for i, (x, y) in enumerate(path):
-            self.set_square(
-                x, y, end_color if (end_color and i == len(path) - 1) else color
-            )
+            c = end_color if (end_color and i == len(path) - 1) else color
+            self.set_square(x, y, c)
         self.write()
 
     def blink_square_keep(
         self,
         sq,
         color_on,
-        times=1,
-        on_ms=CFG.Timing.BLINK_ON_MS,
-        off_ms=CFG.Timing.BLINK_OFF_MS,
+        times=4,
+        on_ms=Config.Timing.BLINK_ON_MS,
+        off_ms=Config.Timing.BLINK_OFF_MS,
     ):
         xy = self.algebraic_to_xy(sq)
         if not xy:
@@ -737,7 +739,6 @@ class ChessBoard:
         self.np[idx] = prev
         self.write()
 
-    # Centralized UI verbs
     def markings(self):
         self._last_from_only = None
         self.overlay_active = False
@@ -767,10 +768,10 @@ class ChessBoard:
         self.markings()
         col = (
             color_override
-            if (color_override is not None)
+            if color_override is not None
             else (ENGINE_COLOR if role == "engine" else YELLOW)
         )
-        endc = end_color if (end_color is not None) else (MAGENTA if cap else None)
+        endc = end_color if end_color is not None else (MAGENTA if cap else None)
         self.draw_trail(uci, col, end_color=endc)
 
     def overlay_clear(self):
@@ -780,90 +781,146 @@ class ChessBoard:
         self._last_from_only = None
         self.show_markings()
 
+    def puzzle_blink(self, sq, color, times, on_ms=200, off_ms=200):
+        xy = self.algebraic_to_xy(sq)
+        if not xy:
+            return
+        x, y = xy
+        for _ in range(times):
+            self.set_square(x, y, color)
+            self.write()
+            time.sleep_ms(on_ms)
+            self.set_square(x, y, BLACK)
+            self.write()
+            time.sleep_ms(off_ms)
+        self.set_square(x, y, color)
+        self.write()
+
 
 board = ChessBoard()
 
 
-# ============================================================
-# HELPERS (pure)
-# ============================================================
+# ── Utility helpers ───────────────────────────────────────────────────────────
 
 
-def _is_alnum(ch: str) -> bool:
+def _is_alphanumeric(ch):
     if not ch or len(ch) != 1:
         return False
     o = ord(ch)
     return (48 <= o <= 57) or (65 <= o <= 90) or (97 <= o <= 122)
 
 
-def map_range(x, in_min, in_max, out_min, out_max):
+def _map_range(x, in_min, in_max, out_min, out_max):
     return int((x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min)
 
 
-# ============================================================
-# SHUTDOWN
-# ============================================================
+# ── Overlay / trail ───────────────────────────────────────────────────────────
 
 
-def shutdown_pico():
-    link.send("xshutdown")
-    for _ in range(2):
+def _show_overlay(payload, color, trail_type):
+    """Parse payload, record persistent trail state, and render on the board.
+
+    Replaces the old parse_overlay_payload → show_overlay_from_payload →
+    show_persistent_trail chain.
+    """
+    cap = payload.endswith("_cap")
+    uci = payload[:-4] if cap else payload
+    end_color = MAGENTA if cap else None
+
+    st.persistent_trail_active = True
+    st.persistent_trail_type = trail_type
+    st.persistent_trail_move = uci
+    st.persistent_trail_end_color = end_color
+
+    if trail_type == "hint":
         cp.only_ok(True)
-        board.clear(CYAN)
-        time.sleep_ms(180)
-        cp.only_ok(False)
-        board.clear(BLACK)
-        time.sleep_ms(180)
-    cp.off(force=True)
-    board.clear(BLACK)
-    cp.disable_hint_irq()
-    while True:
-        time.sleep_ms(CFG.Timing.SHUTDOWN_IDLE_MS)
+
+    role = "engine" if trail_type == "engine" else trail_type
+    board.overlay_show(role, uci, cap=cap, color_override=color, end_color=end_color)
 
 
-# ============================================================
-# PERSISTENT TRAILS
-# ============================================================
-
-
-def clear_persistent_trail():
+def _clear_persistent_trail():
     was_hint = st.persistent_trail_type == "hint"
     st.persistent_trail_active = False
     st.persistent_trail_type = None
     st.persistent_trail_move = None
     st.persistent_trail_end_color = None
     board.overlay_clear()
-    if was_hint and st.game_state == Game.RUNNING and (not st.engine_ack_pending):
+    if was_hint and st.game_state == Game.RUNNING and not st.engine_ack_pending:
         cp.only_input()
 
 
-def show_persistent_trail(move_uci, color, trail_type, end_color=None):
-    st.persistent_trail_active = True
-    st.persistent_trail_type = trail_type
-    st.persistent_trail_move = move_uci
-    st.persistent_trail_end_color = end_color
-    cap = (end_color == MAGENTA) if end_color is not None else False
-    role = "engine" if trail_type == "engine" else "hint"
-    if trail_type == "hint":
-        cp.only_ok(True)
-    board.overlay_show(
-        role, move_uci, cap=cap, color_override=color, end_color=end_color
-    )
+# ── Poll helpers ──────────────────────────────────────────────────────────────
 
 
-# ============================================================
-# CAPTURE PROBE (Pi-assisted)
-# ============================================================
+def _tick_input_loop():
+    """Single iteration of the standard input-loop guard.
+
+    Returns one of:
+      ('new_game',)   – hint+OK combo triggered a new game
+      ('gameover',)   – game-over message received
+      ('overlay',)    – hint/engine overlay received (input loop should restart)
+      ('btn', n)      – a button edge was detected
+      None            – nothing happened this tick
+    """
+    if cp.shutdown_held():
+        _shutdown_pico()
+    irq = _handle_hint_irq()
+    if irq == "new":
+        return ("new_game",)
+    msg = link.read()
+    if msg:
+        outcome = _handle_overlay_or_gameover(msg)
+        if outcome == "gameover":
+            return ("gameover",)
+        if outcome in ("hint", "engine"):
+            cp.reset_edges()
+            return ("overlay",)
+    b = cp.detect_press_raw()
+    if b is not None:
+        return ("btn", b)
+    time.sleep_ms(Config.Timing.FAST_POLL_MS)
+    return None
 
 
-def probe_capture_with_pi(uci, timeout_ms=150):
+def _wait_for_trail_clear():
+    """Block until any button is pressed while a persistent trail is displayed,
+    then clear it.
+
+    Returns:
+      None         – no trail was active (caller should proceed normally)
+      'gameover'   – game ended while waiting
+      int (1-8)    – coord button that dismissed the trail (usable as seed)
+      0            – non-coord button dismissed the trail
+    """
+    if not st.persistent_trail_active:
+        return None
+    while True:
+        if cp.shutdown_held():
+            _shutdown_pico()
+        msg = link.read()
+        if msg and _handle_overlay_or_gameover(msg) == "gameover":
+            return "gameover"
+        b = cp.detect_press_raw()
+        if b is not None:
+            _clear_persistent_trail()
+            cp.only_input()
+            cp.reset_edges()
+            return b if 1 <= b <= 8 else 0
+        time.sleep_ms(Config.Timing.FAST_POLL_MS)
+
+
+# ── Capture probe ─────────────────────────────────────────────────────────────
+
+
+def _check_if_move_captures(uci, timeout_ms=150):
     st.preview_cap_flag = False
     link.send("capq_", uci)
     deadline = time.ticks_add(time.ticks_ms(), timeout_ms)
     while time.ticks_diff(deadline, time.ticks_ms()) > 0:
         msg = link.read()
         if not msg:
-            time.sleep_ms(CFG.Timing.FAST_POLL_MS)
+            time.sleep_ms(Config.Timing.FAST_POLL_MS)
             continue
         if msg.startswith("heyArduinocapr_"):
             val = msg.split("_", 1)[1].strip()
@@ -872,422 +929,374 @@ def probe_capture_with_pi(uci, timeout_ms=150):
     return False
 
 
-# ============================================================
-# HINT / NEW GAME PROCESSOR
-# ============================================================
+# ── Hint / new-game IRQ ───────────────────────────────────────────────────────
 
 
-def process_hint_irq():
-    if not st.hint_enabled:
-        return None
-    if not cp.hint_irq_flag:
+def _handle_hint_irq():
+    if not st.hint_enabled or not cp.hint_irq_flag:
         return None
     cp.hint_irq_flag = False
 
     if cp.shutdown_held():
-        shutdown_pico()
+        _shutdown_pico()
 
     now = time.ticks_ms()
     if time.ticks_diff(cp.suppress_hints_until_ms, now) > 0:
         return None
 
-    # OK+HINT => new game
+    # Both buttons held → new game
     if cp.BTN_OK.value() == 0 and cp.BTN_HINT.value() == 0:
         st.game_state = Game.SETUP
-        link.send("n")
         st.suspend_until_new_game = True
         st.engine_ack_pending = False
         st.pending_gameover_result = None
         st.buffered_turn_msg = None
+        link.send("n")
 
         cp.show_coords_top(WHITE)
-        v = 0
         board.off()
+        v = 0
         while v < (board.w * board.h):
             v = board.loading_step(v)
-            time.sleep_ms(CFG.Timing.LOADING_STEP_MS)
-        time.sleep_ms(CFG.Timing.LOADING_POST_MS)
+            time.sleep_ms(Config.Timing.LOADING_STEP_MS)
+        time.sleep_ms(Config.Timing.LOADING_POST_MS)
         board.markings()
         cp.suppress_hints_until_ms = time.ticks_add(
-            now, CFG.Timing.NEW_GAME_SUPPRESS_MS
+            now, Config.Timing.NEW_GAME_SUPPRESS_MS
         )
         return "new"
 
     if st.game_state != Game.RUNNING:
         return None
 
-    # Hold hint => draw offer (online)
     if cp.BTN_HINT.value() == 0:
         t0 = time.ticks_ms()
         while cp.BTN_HINT.value() == 0:
-            if time.ticks_diff(time.ticks_ms(), t0) >= CFG.Buttons.HINT_HOLD_DRAW_MS:
+            if time.ticks_diff(time.ticks_ms(), t0) >= Config.Buttons.HINT_HOLD_DRAW_MS:
                 link.send("btn_draw")
                 return "draw"
-            time.sleep_ms(CFG.Timing.POLL_MS)
+            time.sleep_ms(Config.Timing.POLL_MS)
 
     link.send("btn_hint")
     return "hint"
 
 
-# ============================================================
-# OVERLAY / GAMEOVER inline handler
-# ============================================================
+# ── Pi message overlay/gameover handler ───────────────────────────────────────
 
 
-def _handle_pi_overlay_or_gameover(msg):
+def _handle_overlay_or_gameover(msg):
     if not msg:
         return None
     if msg.startswith("heyArduinoGameOver"):
         res = msg.split(":", 1)[1].strip() if ":" in msg else ""
-        game_over_wait_ok_and_ack(res)
+        _show_game_over_and_ack(res)
         return "gameover"
+    if msg.startswith("heyArduinocheck_"):
+        sq = msg.split("_", 1)[1].strip() if "_" in msg else ""
+        if sq:
+            board.blink_square_keep(sq, RED)
+        return "check"
     if msg.startswith("heyArduinohint_"):
-        raw = msg[len("heyArduinohint_") :].strip()
-        cap = raw.endswith("_cap")
-        best = raw[:-4] if cap else raw
-        show_persistent_trail(
-            best, YELLOW, "hint", end_color=(MAGENTA if cap else None)
-        )
+        _show_overlay(msg[len("heyArduinohint_") :], YELLOW, "hint")
         return "hint"
     if msg.startswith("heyArduinom"):
-        raw = msg[11:].strip()
-        cap = raw.endswith("_cap")
-        mv = raw[:-4] if cap else raw
-        show_persistent_trail(
-            mv, ENGINE_COLOR, "engine", end_color=(MAGENTA if cap else None)
-        )
+        _show_overlay(msg[len("heyArduinom") :], ENGINE_COLOR, "engine")
         return "engine"
     return None
 
 
-# ============================================================
-# MOVE ENTRY (kept behavior; cleaned structure)
-# ============================================================
+# ── Move input ────────────────────────────────────────────────────────────────
 
 
-def enter_from_square(seed_btn=None, preset_col=None):
+def _select_from_square(seed_btn=None, preset_col=None):
     if st.game_state != Game.RUNNING:
         return None
     cp.reset_ok_hold()
-
     if cp.shutdown_held():
-        shutdown_pico()
+        _shutdown_pico()
 
-    if st.persistent_trail_active:
-        # dismiss overlay first
-        while True:
-            if cp.shutdown_held():
-                shutdown_pico()
-            msg = link.read()
-            if msg and _handle_pi_overlay_or_gameover(msg) == "gameover":
-                return None
-            b = cp.detect_press_raw()
-            if not b:
-                time.sleep_ms(CFG.Timing.FAST_POLL_MS)
-                continue
-            clear_persistent_trail()
-            if 1 <= b <= 8:
-                seed_btn = b
-            break
-        cp.only_input()
-        cp.reset_edges()
+    seed = _wait_for_trail_clear()
+    if seed == "gameover":
+        return None
+    if seed:
+        seed_btn = seed
 
     col = None
-    row = None
-
     if preset_col is not None:
         col = preset_col
         screen.typing_from(col)
 
+    # ── collect file (column) ────────────────────────────────────────────────
     while col is None:
         if st.game_state != Game.RUNNING:
             return None
-
         if seed_btn is not None:
-            b = seed_btn
-            seed_btn = None
+            b, seed_btn = seed_btn, None
         else:
-            if cp.shutdown_held():
-                shutdown_pico()
-            irq = process_hint_irq()
-            if irq == "new":
-                return None
-            msg = link.read()
-            if msg:
-                outcome = _handle_pi_overlay_or_gameover(msg)
-                if outcome == "gameover":
-                    return None
-                if outcome in ("hint", "engine"):
-                    cp.reset_edges()
-                    return None
-            b = cp.detect_press_raw()
-            if not b:
-                time.sleep_ms(CFG.Timing.FAST_POLL_MS)
+            ev = _tick_input_loop()
+            if ev is None:
                 continue
+            if ev[0] != "btn":
+                return None  # new_game / gameover / overlay
+            b = ev[1]
+        if not cp.is_non_coord_button(b):
+            col = chr(ord("a") + b - 1)
+            screen.typing_from(col)
 
-        if cp.is_non_coord_button(b):
-            continue
-        col = chr(ord("a") + b - 1)
-        screen.typing_from(col)
-
-    while row is None:
+    # ── collect rank (row) ───────────────────────────────────────────────────
+    while True:
         if st.game_state != Game.RUNNING:
             return None
         if cp.shutdown_held():
-            shutdown_pico()
-
+            _shutdown_pico()
         if cp.ok_long_hold_fired():
             screen.typing_from("")
             board.markings()
-            # wait release
             while cp.BTN_OK.value() == 0:
-                time.sleep_ms(CFG.Timing.POLL_MS)
+                time.sleep_ms(Config.Timing.POLL_MS)
             cp.reset_ok_hold()
             cp.reset_edges()
             return ("back_from", None)
-
-        irq = process_hint_irq()
-        if irq == "new":
+        ev = _tick_input_loop()
+        if ev is None:
+            continue
+        if ev[0] != "btn":
             return None
-
-        msg = link.read()
-        if msg:
-            outcome = _handle_pi_overlay_or_gameover(msg)
-            if outcome == "gameover":
-                return None
-            if outcome in ("hint", "engine"):
-                cp.reset_edges()
-                return None
-
-        b = cp.detect_press_raw()
-        if not b:
-            time.sleep_ms(CFG.Timing.FAST_POLL_MS)
-            continue
-        if cp.is_non_coord_button(b):
-            continue
-        row = str(b)
-        screen.typing_from(col + row)
-
-    frm = col + row
-    board.preview_from(frm)
-    return frm
+        b = ev[1]
+        if not cp.is_non_coord_button(b):
+            frm = col + str(b)
+            screen.typing_from(frm)
+            board.preview_from(frm)
+            return frm
 
 
-def enter_to_square(move_from, preset_col=None):
+def _select_to_square(move_from, preset_col=None):
     if st.game_state != Game.RUNNING:
         return None
     cp.reset_ok_hold()
-
     if cp.shutdown_held():
-        shutdown_pico()
+        _shutdown_pico()
 
-    if st.persistent_trail_active:
-        while True:
-            if cp.shutdown_held():
-                shutdown_pico()
-            msg = link.read()
-            if msg and _handle_pi_overlay_or_gameover(msg) == "gameover":
-                return None
-            b = cp.detect_press_raw()
-            if not b:
-                time.sleep_ms(CFG.Timing.FAST_POLL_MS)
-                continue
-            clear_persistent_trail()
-            if 1 <= b <= 8:
-                seed_btn = b
-            break
-        cp.only_input()
-        cp.reset_edges()
+    seed = _wait_for_trail_clear()
+    if seed == "gameover":
+        return None
+    if seed and preset_col is None:
+        preset_col = chr(ord("a") + seed - 1)
 
     col = None
-    row = None
-
-    if (
-        preset_col is not None
-        and isinstance(preset_col, str)
-        and len(preset_col) == 1
-        and ("a" <= preset_col <= "h")
-    ):
+    if preset_col and len(preset_col) == 1 and "a" <= preset_col <= "h":
         col = preset_col
         screen.typing_to(move_from, col)
 
+    # ── collect file (column) ────────────────────────────────────────────────
     while col is None:
         if st.game_state != Game.RUNNING:
             return None
         if cp.shutdown_held():
-            shutdown_pico()
-
+            _shutdown_pico()
         if cp.ok_long_hold_fired():
             screen.typing_from(move_from[0])
             board.markings()
             while cp.BTN_OK.value() == 0:
-                time.sleep_ms(CFG.Timing.POLL_MS)
+                time.sleep_ms(Config.Timing.POLL_MS)
             cp.reset_ok_hold()
             cp.reset_edges()
             return ("back_to_from_rank", move_from[0])
-
-        irq = process_hint_irq()
-        if irq == "new":
+        ev = _tick_input_loop()
+        if ev is None:
+            continue
+        if ev[0] != "btn":
             return None
+        b = ev[1]
+        if not cp.is_non_coord_button(b):
+            col = chr(ord("a") + b - 1)
+            screen.typing_to(move_from, col)
 
-        msg = link.read()
-        if msg:
-            outcome = _handle_pi_overlay_or_gameover(msg)
-            if outcome == "gameover":
-                return None
-            if outcome in ("hint", "engine"):
-                cp.reset_edges()
-                return None
-
-        b = cp.detect_press_raw()
-        if not b:
-            time.sleep_ms(CFG.Timing.FAST_POLL_MS)
-            continue
-        if cp.is_non_coord_button(b):
-            continue
-        col = chr(ord("a") + b - 1)
-        screen.typing_to(move_from, col)
-
-    while row is None:
+    # ── collect rank (row) ───────────────────────────────────────────────────
+    while True:
         if st.game_state != Game.RUNNING:
             return None
         if cp.shutdown_held():
-            shutdown_pico()
-
+            _shutdown_pico()
         if cp.ok_long_hold_fired():
             screen.typing_to(move_from, "")
             board.preview_from(move_from)
             while cp.BTN_OK.value() == 0:
-                time.sleep_ms(CFG.Timing.POLL_MS)
+                time.sleep_ms(Config.Timing.POLL_MS)
             cp.reset_ok_hold()
             cp.reset_edges()
             return ("back_to_to_file", move_from)
-
-        irq = process_hint_irq()
-        if irq == "new":
+        ev = _tick_input_loop()
+        if ev is None:
+            continue
+        if ev[0] != "btn":
             return None
-
-        msg = link.read()
-        if msg:
-            outcome = _handle_pi_overlay_or_gameover(msg)
-            if outcome == "gameover":
-                return None
-            if outcome in ("hint", "engine"):
-                cp.reset_edges()
-                return None
-
-        b = cp.detect_press_raw()
-        if not b:
-            time.sleep_ms(CFG.Timing.FAST_POLL_MS)
-            continue
-        if cp.is_non_coord_button(b):
-            continue
-        row = str(b)
-        screen.typing_to(move_from, col + row)
-
-    to = col + row
-    uci = move_from + to
-    cap_prev = probe_capture_with_pi(uci)
-    board.preview_trail(uci, cap=cap_prev)
-    return to
+        b = ev[1]
+        if not cp.is_non_coord_button(b):
+            to = col + str(b)
+            uci = move_from + to
+            board.preview_trail(uci, cap=_check_if_move_captures(uci))
+            screen.typing_to(move_from, to)
+            return to
 
 
-def confirm_move(move):
+def _confirm_move(move):
     if st.game_state != Game.RUNNING:
         return None
 
     cp.only_ok(True)
 
-    # If OK is already held, wait release so we don't miss the confirm edge.
+    # Wait until OK is physically released before arming
     while cp.BTN_OK.value() == 0:
         if cp.shutdown_held():
-            shutdown_pico()
-        if process_hint_irq() == "new":
+            _shutdown_pico()
+        if _handle_hint_irq() == "new":
             cp.only_ok(False)
             return None
-        time.sleep_ms(CFG.Timing.POLL_MS)
+        time.sleep_ms(Config.Timing.POLL_MS)
 
     cp.reset_edges()
+    cp.arm_confirm_ok()
+
+    print("[PICO CONFIRM] send typing_confirm:", move)
     screen.typing_confirm(move)
+    acked, ok_seen_during_ack = screen.wait_for_lcd_ack(
+        "heyArduinolcd_ack_confirm", timeout_ms=300
+    )
+    print("[PICO CONFIRM] acked =", acked, "ok_seen_during_ack =", ok_seen_during_ack)
+
+    if not acked:
+        cp.disarm_confirm_ok()
+        cp.only_ok(False)
+        return None
+
+    # Small wait to let any in-flight OK IRQ (fired during ACK exchange) settle
+    # before checking the latch. Without this, the IRQ can fire in the ~5ms gap
+    # between wait_for_lcd_ack() returning and consume_confirm_ok() being called,
+    # causing the latch to be missed on the first check.
+    time.sleep_ms(30)
+
+    if ok_seen_during_ack or cp.consume_confirm_ok(window_ms=300):
+        print("[PICO CONFIRM] consuming armed confirm OK")
+        cp.disarm_confirm_ok()
+        cp.only_ok(False)
+        screen.clear("confirm")
+        cp.wait_for_ok_release()
+        cp.reset_edges()
+        return "ok"
 
     while True:
         if st.game_state != Game.RUNNING:
+            cp.disarm_confirm_ok()
             cp.only_ok(False)
             return None
 
         if cp.shutdown_held():
-            shutdown_pico()
+            _shutdown_pico()
 
-        if process_hint_irq() == "new":
+        if _handle_hint_irq() == "new":
+            cp.disarm_confirm_ok()
             cp.only_ok(False)
             return None
 
         msg = link.read()
         if msg:
-            outcome = _handle_pi_overlay_or_gameover(msg)
+            outcome = _handle_overlay_or_gameover(msg)
             if outcome == "gameover":
+                cp.disarm_confirm_ok()
                 cp.only_ok(False)
                 return None
             if outcome in ("hint", "engine"):
                 cp.reset_edges()
+                cp.disarm_confirm_ok()
                 return None
 
-        # OK confirm: level-based with long-hold backspace
-        if cp.BTN_OK.value() == 0:
+        if cp.consume_confirm_ok(window_ms=300) or cp.BTN_OK.value() == 0:
             t0 = time.ticks_ms()
             fired = False
 
             while cp.BTN_OK.value() == 0:
                 if cp.shutdown_held():
-                    shutdown_pico()
-                if process_hint_irq() == "new":
+                    _shutdown_pico()
+                if _handle_hint_irq() == "new":
+                    cp.disarm_confirm_ok()
                     cp.only_ok(False)
                     return None
-                if (not fired) and time.ticks_diff(
-                    time.ticks_ms(), t0
-                ) >= CFG.Buttons.OK_LONG_PRESS_MS:
+                if (
+                    not fired
+                    and time.ticks_diff(time.ticks_ms(), t0)
+                    >= Config.Buttons.OK_LONG_PRESS_MS
+                ):
                     fired = True
                     partial = move[:-1]
                     frm = partial[:2]
-                    if len(partial) == 3:
-                        screen.typing_to(frm, partial[2])
-                    else:
-                        screen.typing_to(frm, "")
+                    screen.typing_to(frm, partial[2] if len(partial) == 3 else "")
                     board.preview_from(frm)
-                time.sleep_ms(CFG.Timing.POLL_MS)
+                time.sleep_ms(Config.Timing.POLL_MS)
 
             held_ms = time.ticks_diff(time.ticks_ms(), t0)
             cp.reset_ok_hold()
+            cp.disarm_confirm_ok()
 
             if fired:
                 cp.only_ok(False)
-                # wait release
-                while cp.BTN_OK.value() == 0:
-                    time.sleep_ms(CFG.Timing.POLL_MS)
                 cp.reset_edges()
-                screen.clear_confirm()
+                screen.clear("confirm")
                 return ("backspace_confirm", move[:-1])
 
-            if held_ms < CFG.Buttons.OK_LONG_PRESS_MS:
+            if held_ms < Config.Buttons.OK_LONG_PRESS_MS:
                 cp.only_ok(False)
-                # IMPORTANT fix: clear confirm line immediately on confirm to avoid LCD staying stale.
-                screen.clear_confirm()
+                screen.clear("confirm")
                 return "ok"
 
             cp.reset_edges()
             continue
 
-        # Any other button cancels confirm stage
         b = cp.detect_press_raw()
-        if not b:
-            time.sleep_ms(CFG.Timing.FAST_POLL_MS)
-            continue
-        cp.only_ok(False)
-        screen.clear_confirm()
-        return ("redo", b)
+        if b == (Config.Buttons.OK_INDEX + 1):
+            # OK caught by edge-detection instead of the IRQ/value path.
+            # This happens when BTN_OK.value() reads 1 (HIGH) during a
+            # bounce in the condition above, then detect_press_raw reads
+            # it 0 (LOW) a few µs later — a falling edge is detected and
+            # the button is misrouted as "redo". Treat it as a confirm.
+            cp.disarm_confirm_ok()
+            cp.only_ok(False)
+            screen.clear("confirm")
+            cp.wait_for_ok_release()
+            cp.reset_edges()
+            return "ok"
+        if b:
+            cp.disarm_confirm_ok()
+            cp.only_ok(False)
+            screen.clear("confirm")
+            return ("redo", b)
+
+        time.sleep_ms(Config.Timing.FAST_POLL_MS)
 
 
-def collect_and_send_move():
+def _retry_to_square(frm, preset_to_col=None):
+    """Re-enter the to-square with optional column preset, handling the full
+    back-chain.  Returns ('restart_from', col_or_None) or a valid to-square
+    string, or None on abort.
+    """
+    while True:
+        cp.only_input()
+        cp.reset_edges()
+        cp.reset_ok_hold()
+        move_to = _select_to_square(frm, preset_col=preset_to_col)
+        preset_to_col = None
+
+        if isinstance(move_to, tuple):
+            tag = move_to[0]
+            if tag == "back_to_from_rank":
+                return ("restart_from", move_to[1])
+            if tag == "back_to_to_file":
+                # stay in the while-loop: re-enter to-square without preset
+                continue
+        return move_to  # str or None
+
+
+def _collect_and_submit_move():
     st.in_input = True
     try:
         seed = None
@@ -1295,25 +1304,24 @@ def collect_and_send_move():
 
         while True:
             if cp.shutdown_held():
-                shutdown_pico()
+                _shutdown_pico()
 
             cp.only_input()
             cp.reset_edges()
 
-            move_from = enter_from_square(seed_btn=seed, preset_col=preset_from_col)
+            move_from = _select_from_square(seed_btn=seed, preset_col=preset_from_col)
+            seed = None
             preset_from_col = None
 
             if isinstance(move_from, tuple) and move_from[0] == "back_from":
-                seed = None
                 continue
             if move_from is None:
                 if st.persistent_trail_active:
-                    seed = None
                     continue
                 return
-            seed = None
 
-            move_to = enter_to_square(move_from)
+            # ── enter TO square ──────────────────────────────────────────────
+            move_to = _select_to_square(move_from)
 
             if isinstance(move_to, tuple):
                 tag = move_to[0]
@@ -1321,91 +1329,80 @@ def collect_and_send_move():
                     preset_from_col = move_to[1]
                     continue
                 if tag == "back_to_to_file":
-                    cp.only_input()
-                    cp.reset_edges()
-                    move_to2 = enter_to_square(move_from)
-                    if (
-                        isinstance(move_to2, tuple)
-                        and move_to2[0] == "back_to_from_rank"
-                    ):
-                        preset_from_col = move_to2[1]
+                    result = _retry_to_square(move_from)
+                    if isinstance(result, tuple) and result[0] == "restart_from":
+                        preset_from_col = result[1]
                         continue
-                    if move_to2 is None or isinstance(move_to2, tuple):
+                    if result is None or isinstance(result, tuple):
                         continue
-                    move_to = move_to2
+                    move_to = result
 
             if move_to is None:
                 if st.persistent_trail_active:
-                    seed = None
                     continue
                 return
 
+            # ── confirm ──────────────────────────────────────────────────────
             move = move_from + move_to
-            res = confirm_move(move)
+            res = _confirm_move(move)
+
             if res is None:
                 if st.persistent_trail_active:
-                    seed = None
                     continue
                 return
 
+            if res == "ok":
+                time.sleep_ms(200)
+                link.send(move)
+                st.preview_cap_flag = False
+                board.markings()
+                return
+
+            if isinstance(res, tuple) and res[0] == "redo":
+                cancel_btn = res[1]
+                seed = cancel_btn if 1 <= cancel_btn <= 8 else None
+                cp.only_input()
+                continue
+
+            # ── backspace from confirm ───────────────────────────────────────
             while isinstance(res, tuple) and res[0] == "backspace_confirm":
                 partial = res[1]
-                if len(partial) == 3:
+                n = len(partial)
+
+                if n >= 3:  # have from(2) + partial-to-file(1)
                     frm = partial[:2]
-                    to_file = partial[2]
-                    cp.only_input()
-                    cp.reset_edges()
-                    cp.reset_ok_hold()
-                    move_to = enter_to_square(frm, preset_col=to_file)
-                    if isinstance(move_to, tuple):
-                        if move_to[0] == "back_to_from_rank":
-                            preset_from_col = move_to[1]
-                            res = ("restart_from", None)
-                            break
-                        if move_to[0] == "back_to_to_file":
-                            res = ("backspace_confirm", frm)
-                            continue
-                    if move_to is None:
+                    to_file = partial[2] if n == 3 else None
+                    result = _retry_to_square(frm, preset_to_col=to_file)
+                    if result is None or (
+                        isinstance(result, tuple) and result[0] == "restart_from"
+                    ):
+                        preset_from_col = result[1] if result else None
                         res = ("restart_from", None)
                         break
-                    move = frm + move_to
-                    res = confirm_move(move)
+                    move = frm + result
+                    res = _confirm_move(move)
                     if res is None:
                         res = ("restart_from", None)
                         break
                     continue
 
-                if len(partial) == 2:
-                    frm = partial
-                    cp.only_input()
-                    cp.reset_edges()
-                    cp.reset_ok_hold()
-                    move_to = enter_to_square(frm)
-                    if isinstance(move_to, tuple):
-                        if move_to[0] == "back_to_from_rank":
-                            preset_from_col = move_to[1]
-                            res = ("restart_from", None)
-                            break
-                        if move_to[0] == "back_to_to_file":
-                            res = ("backspace_confirm", frm)
-                            continue
-                    if move_to is None:
+                if n == 2:  # have from only
+                    result = _retry_to_square(partial)
+                    if result is None or (
+                        isinstance(result, tuple) and result[0] == "restart_from"
+                    ):
+                        preset_from_col = result[1] if result else None
                         res = ("restart_from", None)
                         break
-                    move = frm + move_to
-                    res = confirm_move(move)
+                    move = partial + result
+                    res = _confirm_move(move)
                     if res is None:
                         res = ("restart_from", None)
                         break
                     continue
 
-                if len(partial) == 1:
-                    preset_from_col = partial[0]
-                    seed = None
-                    res = ("restart_from", None)
-                    break
-
-                preset_from_col = None
+                # n <= 1: only partial from-file, restart from scratch
+                preset_from_col = partial[0] if n == 1 else None
                 seed = None
                 res = ("restart_from", None)
                 break
@@ -1420,21 +1417,14 @@ def collect_and_send_move():
                 board.markings()
                 return
 
-            if isinstance(res, tuple) and res[0] == "redo":
-                cancel_btn = res[1]
-                seed = cancel_btn if (1 <= cancel_btn <= 8) else None
-                cp.only_input()
-                continue
     finally:
         st.in_input = False
 
 
-# ============================================================
-# GAME OVER ACK
-# ============================================================
+# ── Game-over ─────────────────────────────────────────────────────────────────
 
 
-def game_over_wait_ok_and_ack(result_str):
+def _show_game_over_and_ack(result_str):
     cp.disable_hint_irq()
     try:
         cp.reset_edges()
@@ -1442,10 +1432,10 @@ def game_over_wait_ok_and_ack(result_str):
         board.scene_gameover()
 
         if cp.shutdown_held():
-            shutdown_pico()
+            _shutdown_pico()
 
         while cp.BTN_OK.value() == 0:
-            time.sleep_ms(CFG.Timing.POLL_MS)
+            time.sleep_ms(Config.Timing.POLL_MS)
         time.sleep_ms(200)
         cp.reset_edges()
 
@@ -1453,87 +1443,69 @@ def game_over_wait_ok_and_ack(result_str):
         last = time.ticks_ms()
         while True:
             now = time.ticks_ms()
-            if time.ticks_diff(now, last) > CFG.Timing.GAMEOVER_BLINK_MS:
+            if time.ticks_diff(now, last) > Config.Timing.GAMEOVER_BLINK_MS:
                 blink = not blink
-                cp.clear_header()
-                cp.panel[CFG.LEDs.CP_OK_PIX] = GREEN if blink else BLACK
-                cp.apply()
+                cp.set_ok_blink(blink)
                 last = now
 
             if cp.shutdown_held():
-                shutdown_pico()
+                _shutdown_pico()
 
             b = cp.detect_press_raw()
-            if b == (CFG.Buttons.OK_INDEX + 1):
+            if b == (Config.Buttons.OK_INDEX + 1):
                 cp.only_ok(False)
                 link.send("n")
                 break
-            time.sleep_ms(
-                CFG.Timing.SLOW_POLL_MS if hasattr(CFG.Timing, "SLOW_POLL_MS") else 20
-            )
+            time.sleep_ms(Config.Timing.SLOW_POLL_MS)
 
         board.markings()
     finally:
         cp.enable_hint_irq()
 
 
-# ============================================================
-# SETUP / MODE SELECTION
-# ============================================================
+# ── Startup / mode selection ──────────────────────────────────────────────────
 
 
-def wait_for_mode_request():
+def _run_startup_sequence():
     board.opening()
     lit = 0
     while True:
         if cp.shutdown_held():
-            shutdown_pico()
+            _shutdown_pico()
         lit = board.loading_step(lit)
-        time.sleep_ms(CFG.Timing.LOADING_TICK_MS)
+        time.sleep_ms(Config.Timing.LOADING_TICK_MS)
         msg = link.read()
         if not msg:
             continue
         if msg.startswith("heyArduinoChooseMode"):
             while lit < (board.w * board.h):
                 if cp.shutdown_held():
-                    shutdown_pico()
+                    _shutdown_pico()
                 lit = board.loading_step(lit)
-                time.sleep_ms(CFG.Timing.LOADING_FILL_MS)
+                time.sleep_ms(Config.Timing.LOADING_FILL_MS)
             board.markings()
             cp.show_coords_top(WHITE)
             st.game_state = Game.SETUP
             return
 
 
-def select_game_mode():
+def _select_game_mode():
     cp.profile.main_menu()
     cp.reset_edges()
     while True:
         if cp.shutdown_held():
-            shutdown_pico()
+            _shutdown_pico()
         b = cp.detect_press_allowed()
         if not b:
-            time.sleep_ms(CFG.Timing.FAST_POLL_MS)
+            time.sleep_ms(Config.Timing.FAST_POLL_MS)
             continue
-        if b == 1:
-            st.game_mode = Mode.PC
-            link.send("btn_mode_pc")
-            return
-        if b == 2:
-            st.game_mode = Mode.ONLINE
-            link.send("btn_mode_online")
-            return
-        if b == 3:
-            st.game_mode = Mode.LOCAL
-            link.send("btn_mode_local")
-            return
-        if b == 4:
-            st.game_mode = Mode.PUZZLE
-            link.send("btn_mode_puzzles")
+        if b in _MODE_MAP:
+            st.game_mode, cmd = _MODE_MAP[b]
+            link.send(cmd)
             return
 
 
-def _setup_back_cleanup():
+def _reset_to_idle():
     st.in_setup = False
     st.game_state = Game.IDLE
     st.suspend_until_new_game = False
@@ -1544,37 +1516,37 @@ def _setup_back_cleanup():
     cp.reset_edges()
 
 
-def select_singlepress(out_min, out_max):
+def _select_mapped_value(out_min, out_max):
     cp.reset_edges()
     while True:
         if cp.shutdown_held():
-            shutdown_pico()
+            _shutdown_pico()
         b = cp.detect_press_allowed()
-        if b == (CFG.Buttons.OK_INDEX + 1):
+        if b == (Config.Buttons.OK_INDEX + 1):
             link.send("btn_ok")
-            _setup_back_cleanup()
+            _reset_to_idle()
             return None
         if b and 1 <= b <= 8:
-            return map_range(b, 1, 8, out_min, out_max)
-        time.sleep_ms(CFG.Timing.FAST_POLL_MS)
+            return _map_range(b, 1, 8, out_min, out_max)
+        time.sleep_ms(Config.Timing.FAST_POLL_MS)
 
 
-def wait_for_setup():
+def _run_game_setup_loop():
     st.in_setup = True
     try:
         while True:
             if cp.shutdown_held():
-                shutdown_pico()
+                _shutdown_pico()
 
             b = cp.detect_press_raw()
-            if b == (CFG.Buttons.OK_INDEX + 1):
+            if b == (Config.Buttons.OK_INDEX + 1):
                 link.send("btn_ok")
-                _setup_back_cleanup()
+                _reset_to_idle()
                 return
 
             msg = link.read()
             if not msg:
-                time.sleep_ms(CFG.Timing.POLL_MS)
+                time.sleep_ms(Config.Timing.POLL_MS)
                 continue
 
             if msg.startswith("heyArduinodefault_strength_"):
@@ -1583,6 +1555,7 @@ def wait_for_setup():
                 except Exception:
                     pass
                 continue
+
             if msg.startswith("heyArduinodefault_time_"):
                 try:
                     st.default_move_time = int(msg.split("_")[-1])
@@ -1593,47 +1566,40 @@ def wait_for_setup():
             if msg.startswith("heyArduinoEngineStrength"):
                 cp.profile.vs_strength_time()
                 board.prompt_strength()
-                v = select_singlepress(1, 20)
+                v = _select_mapped_value(1, 20)
                 if v is None:
                     return
                 link.send(str(v))
-                time.sleep_ms(CFG.Timing.SETUP_TRANSITION_MS)
+                time.sleep_ms(Config.Timing.SETUP_TRANSITION_MS)
                 return
 
             if msg.startswith("heyArduinoTimeControl"):
                 cp.profile.vs_strength_time()
                 board.prompt_time()
-                v = select_singlepress(1000, 8000)
+                v = _select_mapped_value(1000, 8000)
                 if v is None:
                     return
                 link.send(str(v))
-                time.sleep_ms(CFG.Timing.SETUP_TRANSITION_MS)
+                time.sleep_ms(Config.Timing.SETUP_TRANSITION_MS)
                 return
 
             if msg.startswith("heyArduinoPlayerColor"):
                 board.markings()
                 cp.show_coords_top(WHITE)
-                # color choice (1..3, OK back)
                 cp.profile.vs_color()
                 cp.reset_edges()
                 while True:
                     if cp.shutdown_held():
-                        shutdown_pico()
+                        _shutdown_pico()
                     b2 = cp.detect_press_allowed()
-                    if b2 == (CFG.Buttons.OK_INDEX + 1):
+                    if b2 == (Config.Buttons.OK_INDEX + 1):
                         link.send("btn_ok")
-                        _setup_back_cleanup()
+                        _reset_to_idle()
                         return
-                    if b2 == 1:
-                        link.send("s1")
+                    if b2 in (1, 2, 3):
+                        link.send("s" + str(b2))
                         return
-                    if b2 == 2:
-                        link.send("s2")
-                        return
-                    if b2 == 3:
-                        link.send("s3")
-                        return
-                    time.sleep_ms(CFG.Timing.FAST_POLL_MS)
+                    time.sleep_ms(Config.Timing.FAST_POLL_MS)
 
             if msg.startswith("heyArduinoSetupComplete"):
                 st.game_state = Game.RUNNING
@@ -1644,49 +1610,37 @@ def wait_for_setup():
         cp.enable_hint_irq()
 
 
-# ============================================================
-# PROMOTION
-# ============================================================
+# ── Promotion ─────────────────────────────────────────────────────────────────
 
 
-def handle_promotion_choice():
+def _handle_promotion_choice():
     board.scene_promotion()
     cp.show_coords_top(MAGENTA)
     cp.reset_edges()
     try:
         while True:
             if cp.shutdown_held():
-                shutdown_pico()
-            if process_hint_irq() == "new":
+                _shutdown_pico()
+            if _handle_hint_irq() == "new":
                 return
             b = cp.detect_press_raw()
-            if not b:
-                time.sleep_ms(CFG.Timing.FAST_POLL_MS)
-                continue
-            if b == 1:
-                link.send("btn_q")
+            if b in _PROMO:
+                link.send(_PROMO[b])
                 break
-            if b == 2:
-                link.send("btn_r")
-                break
-            if b == 3:
-                link.send("btn_b")
-                break
-            if b == 4:
-                link.send("btn_n")
-                break
+            if b:
+                pass  # ignore other buttons
+            else:
+                time.sleep_ms(Config.Timing.FAST_POLL_MS)
     finally:
         cp.clear_header()
         cp.apply(force=True)
         board.markings()
 
 
-# ============================================================
-# PUZZLE SETUP GUIDANCE (Pi-driven)
-# ============================================================
+# ── Puzzle setup ──────────────────────────────────────────────────────────────
 
 
-def handle_puzzle_setup_cmd(msg):
+def _handle_puzzle_setup_message(msg):
     if not msg:
         return False
 
@@ -1694,7 +1648,7 @@ def handle_puzzle_setup_cmd(msg):
         st.puzzle_setup_active = True
         cp.disable_hint_irq()
         cp.reset_edges()
-        border.on(force=True)
+        cp.border(True, force=True)
         cp.only_ok(True)
         board.markings()
         return True
@@ -1723,35 +1677,13 @@ def handle_puzzle_setup_cmd(msg):
         side = parts[1].strip().lower() if len(parts) > 1 else "w"
         color = GREEN if side.startswith("w") else ENGINE_COLOR
         board.markings()
-        xy = board.algebraic_to_xy(sq)
-        if xy:
-            x, y = xy
-            for _ in range(2):
-                board.set_square(x, y, color)
-                board.write()
-                time.sleep_ms(200)
-                board.set_square(x, y, BLACK)
-                board.write()
-                time.sleep_ms(200)
-            board.set_square(x, y, color)
-            board.write()
+        board.puzzle_blink(sq, color, times=2)
         return True
 
     if msg.startswith("heyArduinosetup_remove_"):
         sq = msg.split("_")[-1].strip()
         board.markings()
-        xy = board.algebraic_to_xy(sq)
-        if xy:
-            x, y = xy
-            for _ in range(3):
-                board.set_square(x, y, RED)
-                board.write()
-                time.sleep_ms(200)
-                board.set_square(x, y, BLACK)
-                board.write()
-                time.sleep_ms(200)
-            board.set_square(x, y, RED)
-            board.write()
+        board.puzzle_blink(sq, RED, times=3)
         return True
 
     if msg.startswith("heyArduinosetup_move_"):
@@ -1760,50 +1692,40 @@ def handle_puzzle_setup_cmd(msg):
         uci = parts[0].strip() if parts else ""
         side = parts[1].strip().lower() if len(parts) > 1 else "w"
         color = GREEN if side.startswith("w") else ENGINE_COLOR
-        board.overlay_show(
-            "setup", uci, cap=False, color_override=color, end_color=None
-        )
+        board.overlay_show("setup", uci, cap=False, color_override=color)
         return True
 
     return False
 
 
-# ============================================================
-# MESSAGE ROUTER
-# ============================================================
+# ── Shutdown ──────────────────────────────────────────────────────────────────
 
 
-def _handle_ok_back_enable(_msg):
-    st.ok_back_enabled = True
-    cp.only_ok(True)
+def _shutdown_pico():
+    link.send("xshutdown")
+    for _ in range(2):
+        cp.only_ok(True)
+        board.clear(CYAN)
+        time.sleep_ms(180)
+        cp.only_ok(False)
+        board.clear(BLACK)
+        time.sleep_ms(180)
+    cp.off(force=True)
+    board.clear(BLACK)
+    cp.disable_hint_irq()
+    while True:
+        time.sleep_ms(Config.Timing.SHUTDOWN_IDLE_MS)
 
 
-def _handle_ok_back_disable(_msg):
-    st.ok_back_enabled = False
-    cp.only_ok(False)
-
-
-def _handle_hint_disable(_msg):
-    st.hint_enabled = False
-
-
-def _handle_hint_enable(_msg):
-    st.hint_enabled = True
-
-
-def _handle_check(msg):
-    sq = msg.split("_", 1)[1].strip() if "_" in msg else ""
-    if sq:
-        board.blink_square_keep(sq, BLUE, times=1)
+# ── Message route handlers ────────────────────────────────────────────────────
 
 
 def _handle_gameover(msg):
     res = msg.split(":", 1)[1].strip() if ":" in msg else ""
-    game_over_wait_ok_and_ack(res)
+    _show_game_over_and_ack(res)
 
 
 def _handle_reset_board(_msg):
-    # conservative reset
     st.in_input = False
     st.in_setup = False
     st.persistent_trail_active = False
@@ -1821,9 +1743,9 @@ def _handle_choose_mode(_msg):
     board.markings()
     cp.show_coords_top(WHITE)
     st.game_state = Game.SETUP
-    select_game_mode()
+    _select_game_mode()
     while st.game_state == Game.SETUP:
-        wait_for_setup()
+        _run_game_setup_loop()
 
 
 def _handle_menu_paged(_msg):
@@ -1831,19 +1753,18 @@ def _handle_menu_paged(_msg):
     cp.disable_hint_irq()
     cp.reset_edges()
     board.markings()
-    # generic paged menu: 1..4 select, hint next, ok back
     while True:
         if cp.shutdown_held():
-            shutdown_pico()
+            _shutdown_pico()
         b = cp.detect_press_allowed()
         if not b:
-            time.sleep_ms(CFG.Timing.FAST_POLL_MS)
+            time.sleep_ms(Config.Timing.FAST_POLL_MS)
             continue
-        if b == (CFG.Buttons.OK_INDEX + 1):
+        if b == (Config.Buttons.OK_INDEX + 1):
             link.send("btn_ok")
-            _setup_back_cleanup()
+            _reset_to_idle()
             break
-        if b == (CFG.Buttons.HINT_INDEX + 1):
+        if b == (Config.Buttons.HINT_INDEX + 1):
             link.send("btn_hint")
             continue
         if 1 <= b <= 4:
@@ -1854,106 +1775,99 @@ def _handle_menu_paged(_msg):
 
 
 def _handle_engine_move(msg):
-    raw = msg[11:].strip()
-    cap = raw.endswith("_cap")
-    mv = raw[:-4] if cap else raw
-    show_persistent_trail(
-        mv, ENGINE_COLOR, "engine", end_color=(MAGENTA if cap else None)
-    )
+    _show_overlay(msg[len("heyArduinom") :], ENGINE_COLOR, "engine")
     cp.only_ok(True)
     st.engine_ack_pending = True
     st.pending_gameover_result = None
     st.buffered_turn_msg = None
 
 
-def _handle_promotion_needed(_msg):
-    handle_promotion_choice()
-
-
 def _handle_hint_move(msg):
-    raw = msg[len("heyArduinohint_") :].strip()
-    cap = raw.endswith("_cap")
-    best = raw[:-4] if cap else raw
+    _show_overlay(msg[len("heyArduinohint_") :], YELLOW, "hint")
     cp.only_ok(True)
-    show_persistent_trail(best, YELLOW, "hint", end_color=(MAGENTA if cap else None))
     cp.reset_edges()
 
 
 def _handle_puzzle_wrong(msg):
     raw = msg[len("heyArduinopuzzle_wrong_") :].strip()
-    mv = "".join(ch for ch in raw if _is_alnum(ch))
-    if len(mv) >= 4:
-        mv = mv[:4]
-        show_persistent_trail(mv, RED, "wrong", end_color=None)
-        cp.only_ok(True)
-        cp.reset_edges()
-        while True:
-            if cp.shutdown_held():
-                shutdown_pico()
-            if process_hint_irq() == "new":
-                link.send("n")
-                break
-            b = cp.detect_press_raw()
-            if b == (CFG.Buttons.OK_INDEX + 1):
-                link.send("btn_ok")
-                break
-            time.sleep_ms(CFG.Timing.POLL_MS)
-        cp.only_ok(False)
-        clear_persistent_trail()
-        board.markings()
-
-
-def _handle_error(_msg):
-    board.illegal_flash()
+    mv = "".join(ch for ch in raw if _is_alphanumeric(ch))[:4]
+    if len(mv) < 4:
+        return
+    _show_overlay(mv, RED, "wrong")
+    cp.only_ok(True)
+    cp.reset_edges()
+    while True:
+        if cp.shutdown_held():
+            _shutdown_pico()
+        if _handle_hint_irq() == "new":
+            link.send("n")
+            break
+        b = cp.detect_press_raw()
+        if b == (Config.Buttons.OK_INDEX + 1):
+            link.send("btn_ok")
+            break
+        time.sleep_ms(Config.Timing.POLL_MS)
     cp.only_ok(False)
+    _clear_persistent_trail()
+    board.markings()
 
 
 def _handle_turn(msg):
     turn_str = msg.split("_", 1)[1].strip().lower()
-    if "w" in turn_str:
-        st.current_turn = "W"
-    elif "b" in turn_str:
-        st.current_turn = "B"
+    st.current_turn = "W" if "w" in turn_str else "B"
 
-    # Small window to catch immediate gameover
     t_start = time.ticks_ms()
     while (
-        time.ticks_diff(time.ticks_ms(), t_start) < CFG.Timing.TURN_GAMEOVER_WINDOW_MS
+        time.ticks_diff(time.ticks_ms(), t_start)
+        < Config.Timing.TURN_GAMEOVER_WINDOW_MS
     ):
         nxt = link.read()
         if not nxt:
-            time.sleep_ms(CFG.Timing.FAST_POLL_MS)
+            time.sleep_ms(Config.Timing.FAST_POLL_MS)
             continue
         if nxt.startswith("heyArduinoGameOver"):
             _handle_gameover(nxt)
             return
 
     cp.only_input()
-    collect_and_send_move()
+    _collect_and_submit_move()
+
+
+# ── Dispatch table ────────────────────────────────────────────────────────────
+
+
+def _set_ok_back_enabled(enabled):
+    st.ok_back_enabled = enabled
+    cp.only_ok(enabled)
 
 
 ROUTES = [
-    ("heyArduinook_back_enable", _handle_ok_back_enable),
-    ("heyArduinook_back_disable", _handle_ok_back_disable),
-    ("heyArduinohint_disable", _handle_hint_disable),
-    ("heyArduinohint_enable", _handle_hint_enable),
-    ("heyArduinocheck_", _handle_check),
+    ("heyArduinook_back_enable", lambda _: (_set_ok_back_enabled(True))),
+    ("heyArduinook_back_disable", lambda _: (_set_ok_back_enabled(False))),
+    ("heyArduinohint_disable", lambda _: setattr(st, "hint_enabled", False)),
+    ("heyArduinohint_enable", lambda _: setattr(st, "hint_enabled", True)),
+    (
+        "heyArduinocheck_",
+        lambda m: board.blink_square_keep(
+            m.split("_", 1)[1].strip() if "_" in m else "", RED
+        ),
+    ),
     ("heyArduinoGameOver", _handle_gameover),
     ("heyArduinoResetBoard", _handle_reset_board),
     ("heyArduinoChooseMode", _handle_choose_mode),
     ("heyArduinoMenuPaged", _handle_menu_paged),
     ("heyArduinom", _handle_engine_move),
-    ("heyArduinopromotion_choice_needed", _handle_promotion_needed),
+    ("heyArduinopromotion_choice_needed", lambda _: _handle_promotion_choice()),
     ("heyArduinohint_", _handle_hint_move),
     ("heyArduinopuzzle_wrong_", _handle_puzzle_wrong),
-    ("heyArduinoerror", _handle_error),
+    ("heyArduinoerror", lambda _: (board.illegal_flash(), cp.only_ok(False))),
     ("heyArduinoturn_", _handle_turn),
 ]
 
 
-def dispatch_pi_message(msg):
+def _route_incoming_message(msg):
     try:
-        if handle_puzzle_setup_cmd(msg):
+        if _handle_puzzle_setup_message(msg):
             return True
     except Exception:
         pass
@@ -1964,36 +1878,31 @@ def dispatch_pi_message(msg):
     return False
 
 
-# ============================================================
-# MAIN LOOP
-# ============================================================
+# ── Main loop ─────────────────────────────────────────────────────────────────
 
 
-def main_loop():
+def _main_loop():
     while True:
         if cp.shutdown_held():
-            shutdown_pico()
+            _shutdown_pico()
 
-        # OK-as-back when enabled by Pi (e.g., online waiting)
         if (
             st.ok_back_enabled
-            and (not st.puzzle_setup_active)
-            and (not st.engine_ack_pending)
+            and not st.puzzle_setup_active
+            and not st.engine_ack_pending
         ):
             b0 = cp.detect_press_raw()
-            if b0 == (CFG.Buttons.OK_INDEX + 1):
+            if b0 == (Config.Buttons.OK_INDEX + 1):
                 link.send("btn_ok")
                 st.ok_back_enabled = False
-                _setup_back_cleanup()
+                _reset_to_idle()
                 time.sleep_ms(50)
                 continue
 
-        # Puzzle setup active: forward OK presses; accept OK+HINT cancel
         if st.puzzle_setup_active:
             msg_setup = link.read()
             if msg_setup:
-                handle_puzzle_setup_cmd(msg_setup)
-
+                _handle_puzzle_setup_message(msg_setup)
             if cp.BTN_OK.value() == 0 and cp.BTN_HINT.value() == 0:
                 link.send("n")
                 st.puzzle_setup_active = False
@@ -2003,15 +1912,13 @@ def main_loop():
                 board.opening()
                 time.sleep_ms(50)
                 continue
-
             b = cp.detect_press_raw()
-            if b == (CFG.Buttons.OK_INDEX + 1):
+            if b == (Config.Buttons.OK_INDEX + 1):
                 link.send("btn_ok")
-            time.sleep_ms(CFG.Timing.POLL_MS)
+            time.sleep_ms(Config.Timing.POLL_MS)
             continue
 
-        # HINT IRQ
-        if process_hint_irq() == "new":
+        if _handle_hint_irq() == "new":
             cp.disable_hint_irq()
             cp.off()
             board.opening()
@@ -2020,7 +1927,6 @@ def main_loop():
             st.buffered_turn_msg = None
             continue
 
-        # Engine move ACK stage
         if st.engine_ack_pending:
             nxt = link.read()
 
@@ -2029,17 +1935,17 @@ def main_loop():
                     nxt.split(":", 1)[1].strip() if ":" in nxt else ""
                 )
                 while cp.BTN_OK.value() == 0:
-                    time.sleep_ms(CFG.Timing.POLL_MS)
-                time.sleep_ms(CFG.Timing.ENGINE_ACK_POST_MS)
+                    time.sleep_ms(Config.Timing.POLL_MS)
+                time.sleep_ms(Config.Timing.ENGINE_ACK_POST_MS)
                 cp.reset_edges()
                 while True:
                     b = cp.detect_press_raw()
-                    if b == (CFG.Buttons.OK_INDEX + 1):
+                    if b == (Config.Buttons.OK_INDEX + 1):
                         cp.only_ok(False)
                         break
                     time.sleep_ms(15)
                 st.engine_ack_pending = False
-                game_over_wait_ok_and_ack(st.pending_gameover_result)
+                _show_game_over_and_ack(st.pending_gameover_result)
                 st.pending_gameover_result = None
                 st.buffered_turn_msg = None
                 continue
@@ -2048,33 +1954,30 @@ def main_loop():
                 st.buffered_turn_msg = nxt
 
             b = cp.detect_press_raw()
-            if b == (CFG.Buttons.OK_INDEX + 1):
+            if b == (Config.Buttons.OK_INDEX + 1):
                 link.send("btn_ok")
                 st.engine_ack_pending = False
                 cp.only_ok(False)
-                clear_persistent_trail()
+                _clear_persistent_trail()
 
                 if st.buffered_turn_msg:
                     turn_str = st.buffered_turn_msg.split("_", 1)[1].strip().lower()
-                    if "w" in turn_str:
-                        st.current_turn = "W"
-                    elif "b" in turn_str:
-                        st.current_turn = "B"
+                    st.current_turn = "W" if "w" in turn_str else "B"
                     st.buffered_turn_msg = None
 
                 cp.only_input()
-                collect_and_send_move()
+                _collect_and_submit_move()
                 continue
 
-            time.sleep_ms(CFG.Timing.POLL_MS)
+            time.sleep_ms(Config.Timing.POLL_MS)
             continue
 
         msg = link.read()
-        if msg and handle_puzzle_setup_cmd(msg):
+        if msg and _handle_puzzle_setup_message(msg):
             continue
 
         if not msg:
-            time.sleep_ms(CFG.Timing.POLL_MS)
+            time.sleep_ms(Config.Timing.POLL_MS)
             continue
 
         if st.suspend_until_new_game or st.game_state != Game.RUNNING:
@@ -2084,12 +1987,7 @@ def main_loop():
             ):
                 continue
 
-        dispatch_pi_message(msg)
-
-
-# ============================================================
-# ENTRY POINT
-# ============================================================
+        _route_incoming_message(msg)
 
 
 def run():
@@ -2098,15 +1996,15 @@ def run():
     cp.reset_edges()
 
     cp.disable_hint_irq()
-    wait_for_mode_request()
+    _run_startup_sequence()
     board.markings()
-    select_game_mode()
+    _select_game_mode()
 
     while st.game_state == Game.SETUP:
-        wait_for_setup()
+        _run_game_setup_loop()
 
     while True:
-        main_loop()
+        _main_loop()
 
 
 run()

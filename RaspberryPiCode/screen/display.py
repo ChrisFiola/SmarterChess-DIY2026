@@ -1,17 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-Display abstraction for SmarterChess (modular version)
-- Communicates with display_server.py through a named pipe.
-- Preserves the same UI messaging style as the single-file version.
+Display abstraction for SmarterChess.
+Communicates with display_server.py via a named pipe (FIFO at /tmp/lcdpipe).
+Use send(message) for all LCD output; helper methods cover common UI patterns.
 """
 import os
-import sys
-import time
 import subprocess
+import time
 
-from screen.lcd_pipe import LCDPipeClient, PIPE_PATH, READY_FLAG_PATH
+from screen.lcd_pipe import PIPE_PATH, READY_FLAG_PATH
 
-DISPLAY_SERVER_SCRIPT: str = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "screen", "display_server.py"))
+DISPLAY_SERVER_SCRIPT: str = os.path.join(os.path.dirname(os.path.abspath(__file__)), "display_server.py")
 
 
 class Display:
@@ -22,21 +21,34 @@ class Display:
     def __init__(self, pipe_path: str = PIPE_PATH, ready_flag: str = READY_FLAG_PATH):
         self.pipe_path = pipe_path
         self.ready_flag = ready_flag
-        self.client = LCDPipeClient(pipe_path)
         self._last_payload = None
         self._last_send_t = 0.0
         # Simple "UI lock" to prevent important prompts (typing / confirmations)
         # from being immediately overwritten by background/status messages.
         self._lock_until = 0.0
         self._locked_category = None
+        self._pipe = None
 
     def _classify(self, message: str) -> str:
         m = (message or "").lower()
         # Critical should always break through
-        if any(k in m for k in ["illegal", "invalid", "game over", "promotion", "draw", "shutting down"]):
+        if any(
+            k in m
+            for k in [
+                "illegal",
+                "invalid",
+                "game over",
+                "promotion",
+                "draw",
+                "shutting down",
+            ]
+        ):
             return "critical"
         # High-salience prompts while user is actively entering a move
-        if any(k in m for k in ["enter from", "enter to", "confirm", "ok to send", "press ok"]):
+        if any(
+            k in m
+            for k in ["enter from", "enter to", "confirm", "ok to send", "press ok"]
+        ):
             return "prompt"
         # Low-value transient status
         if any(k in m for k in ["engine thinking", "engine starting", "loading"]):
@@ -98,7 +110,7 @@ class Display:
                 break
             time.sleep(0.05)
 
-    def send(self, message: str, size: str = "auto") -> None:
+    def send(self, message: str, size: str = "auto", force: bool = False) -> None:
         parts = message.split("\n")
         payload = "|".join(parts) + f"|{size}\n"
 
@@ -107,18 +119,21 @@ class Display:
 
         # If we're locked on a prompt, do not let background messages overwrite
         # it for a short window. Critical messages can always break through.
-        if now < self._lock_until and self._locked_category == "prompt" and cat not in ("prompt", "critical"):
+        if (
+            (not force)
+            and now < self._lock_until
+            and self._locked_category == "prompt"
+            and cat not in ("prompt", "critical")
+        ):
             return
 
         # Acquire/refresh prompt lock so the user can read it.
         if cat == "prompt":
             m = (message or "").lower()
-            # Confirm prompts need longer (prevents "Engine Thinking..." from
-            # overwriting before you can read it).
             hold = 1.15 if "confirm" in m or "ok to send" in m else 0.65
             self._lock_until = now + hold
             self._locked_category = "prompt"
-        elif cat == "critical":
+        elif cat == "critical" or force:
             self._lock_until = 0.0
             self._locked_category = None
 
@@ -126,19 +141,11 @@ class Display:
         if payload == self._last_payload:
             return
 
-        # (Optional) client-side rate limit (lets server stay quieter too)
-        # Comment out if you don't want it here.
-        # now = time.monotonic()
-        # if now - self._last_send_t < 0.02:   # 50 msg/s max
-        #     return
-        # self._last_send_t = now
-
         try:
             self._ensure_pipe()
             self._pipe.write(payload)
             self._last_payload = payload
         except (BrokenPipeError, OSError, ValueError):
-            # Server restarted or pipe broke: reopen and retry once
             try:
                 if self._pipe:
                     self._pipe.close()
@@ -150,7 +157,6 @@ class Display:
                 self._pipe.write(payload)
                 self._last_payload = payload
             except Exception:
-                # Avoid crashing game loop if display is down
                 self._pipe = None
                 return
 
@@ -169,56 +175,31 @@ class Display:
         if delay_s > 0:
             time.sleep(delay_s)
 
-    def show_arrow(self, uci: str, suffix: str = "") -> None:
+    def show_arrow(self, uci: str, suffix: str = "", force: bool = False) -> None:
         arrow = f"{uci[:2]} → {uci[2:4]}"
         if suffix:
-            self.send(f"{arrow}\n{suffix}")
+            self.send(f"{arrow}\n{suffix}", force=force)
         else:
-            self.send(arrow)
+            self.send(arrow, force=force)
 
-    def prompt_move(self, side: str) -> None:
-        # side is human-friendly descriptor: "WHITE" or "BLACK"
-        self.send(f"You are {side.lower()}\nEnter move:")
+    def prompt_move(self, side: str, force: bool = False) -> None:
+        self.send(f"You are {side.lower()}\nEnter move:", force=force)
 
     def show_hint_result(self, uci: str) -> None:
-        """
-        Show hint in the format:
-        Hint received: e2 → e4
-        Falls back gracefully if UCI is shorter than 4.
-        """
+        """Show a hint in the format 'Hint received: e2 → e4'."""
         try:
             frm, to = uci[:2], uci[2:4]
             if len(uci) >= 4:
                 self.send(f"Hint received:\n{frm} → {to}\nPress OK")
             else:
-                # Fallback: just show whatever we received
                 self.send(f"Hint received:\n{uci}")
         except Exception:
             self.send(f"Hint received:\n{uci}")
 
-    """
-        def show_hint_result(self, uci: str) -> None:
-            self.show_arrow(uci)
-    """
-
     def show_invalid(self, text: str) -> None:
         self.send(f"Invalid\n{text}\nTry again")
 
-    def show_illegal(self, uci: str, side_name: str) -> None:
-        """Show illegal move feedback + which square to return to.
-
-        Assumption: the piece was lifted from uci[:2] and needs to go back there.
-        """
-        try:
-            frm = (uci or "")[:2]
-            if len(frm) == 2 and frm[0].isalpha() and frm[1].isdigit():
-                self.send(f"Illegal move!\nReturn to {frm}\nPress OK")
-            else:
-                self.send("Illegal move!\nTry again")
-        except Exception:
-            self.send("Illegal move!\nTry again")
-
-    def _promo_name(self, promo_letter: str) -> str:
+    def promo_name(self, promo_letter: str) -> str:
         return {
             "q": "QUEEN",
             "r": "ROOK",
@@ -226,14 +207,9 @@ class Display:
             "n": "KNIGHT",
         }.get((promo_letter or "").lower(), (promo_letter or "").upper())
 
-    def show_promotion(self, who: str, promo_letter: str) -> None:
-        """Display a short promotion banner.
-
-        who: "Computer" | "Opponent" | "You"
-        promo_letter: one of q r b n
-        """
-        name = self._promo_name(promo_letter)
-        self.send(f"{who} promoted\nto {name}")
+    def format_promo_line(self, promo_letter: str) -> str:
+        """Return 'Promoted to {NAME}' for a promotion letter (q/r/b/n)."""
+        return f"Promoted to {self.promo_name(promo_letter)}"
 
     def show_draw(self, reason: str, move_no: int) -> None:
         """Display draw reason. move_no is full move count (approx)."""

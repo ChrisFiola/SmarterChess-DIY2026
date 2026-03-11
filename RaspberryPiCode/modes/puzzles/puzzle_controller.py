@@ -12,21 +12,43 @@ Features:
 
 from __future__ import annotations
 
+import io
+import json
+import os
+import random
+import re
+import time
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
-from collections import defaultdict
-import re
-
-import os
-import json
-import random
 
 import chess
 import chess.pgn
 
-from main.piDisplay import Display
-from main.piSerial import BoardLink
-from smartchess.modes.online.lichess_client import LichessClient
+from screen.display import Display
+from core.boardlink import BoardLink
+from modes.online.lichess_client import LichessClient
+from core.protocol import (
+    send_lcd_ack_for_payload,
+    parse_uci_move,
+    format_engine_move,
+    format_hint_move,
+    piece_name,
+    NEW_GAME_MSGS,
+    OK_MSGS,
+    HINT_MSGS,
+)
+from core.game_flow import (
+    shutdown_raspberry_pi,
+    wait_for_ok,
+    handle_illegal_move,
+    handle_typing_message,
+    handle_capq_message,
+    check_move_captures,
+    resolve_uci_promotion,
+    send_turn_notification,
+    ReturnToMenu,
+)
 
 
 def _pgn_opening_info(pgn_text: str) -> Tuple[str, str]:
@@ -36,7 +58,7 @@ def _pgn_opening_info(pgn_text: str) -> Tuple[str, str]:
     belongs to the requested opening angle.
     """
     try:
-        game = chess.pgn.read_game(__import__("io").StringIO(pgn_text))
+        game = chess.pgn.read_game(io.StringIO(pgn_text))
         if game is None:
             return "", ""
         eco = str(game.headers.get("ECO") or "")
@@ -48,7 +70,9 @@ def _pgn_opening_info(pgn_text: str) -> Tuple[str, str]:
 
 # -------------------- Mix puzzle ids --------------------
 
-PUZZLE_IDS_PATH = os.path.join(os.path.dirname(__file__), "puzzle_ids.txt")
+PUZZLE_IDS_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "puzzle_ids.txt"
+)
 
 
 # -------------------- Seen-puzzle cache (avoid repeats) --------------------
@@ -150,7 +174,7 @@ def _save_seen_cache(data: dict) -> None:
         pass
 
 
-def reset_seen_puzzles(angle: Optional[str] = None) -> None:
+def _reset_seen_puzzles(angle: Optional[str] = None) -> None:
     """Clear seen_puzzles.json.
 
     If angle is provided, clears only that angle bucket.
@@ -252,18 +276,6 @@ def _compute_place_steps_from_fen(target_fen: str):
     return steps
 
 
-def _piece_name(sym: str) -> str:
-    u = sym.upper()
-    return {
-        "P": "PAWN",
-        "N": "KNIGHT",
-        "B": "BISHOP",
-        "R": "ROOK",
-        "Q": "QUEEN",
-        "K": "KING",
-    }.get(u, "PIECE")
-
-
 # -------------------- Puzzle label (themes + rating) --------------------
 
 THEME_MAP = {
@@ -323,7 +335,7 @@ class PuzzleState:
 
 
 def _board_from_pgn_at_ply(pgn_text: str, initial_ply: int) -> chess.Board:
-    game = chess.pgn.read_game(__import__("io").StringIO(pgn_text))
+    game = chess.pgn.read_game(io.StringIO(pgn_text))
     if game is None:
         return chess.Board()
     board = game.board()
@@ -335,13 +347,6 @@ def _board_from_pgn_at_ply(pgn_text: str, initial_ply: int) -> chess.Board:
         ply += 1
     return board
 
-
-def _is_cap(board: chess.Board, uci: str) -> bool:
-    try:
-        mv = chess.Move.from_uci(uci)
-        return board.is_capture(mv)
-    except Exception:
-        return False
 
 
 def _play_solution_prefix_len(b: chess.Board, sol: List[str]) -> int:
@@ -411,7 +416,7 @@ def _find_best_start_board_from_pgn(
 # -------------------- Controller --------------------
 
 
-class DailyPuzzleController:
+class PuzzleController:
     """Run the daily puzzle loop using the Pico for input and LEDs."""
 
     def __init__(
@@ -474,7 +479,7 @@ class DailyPuzzleController:
         except Exception:
             pass
 
-    def fetch_daily(self) -> Tuple[Optional[PuzzleState], Optional[str]]:
+    def _fetch_daily(self) -> Tuple[Optional[PuzzleState], Optional[str]]:
         # Daily puzzle occasionally fails transiently (Wi‑Fi bring-up, DNS hiccup,
         # Lichess 5xx). Retry once to avoid bouncing back to the main menu.
         payload = self.client.get_daily_puzzle()
@@ -485,7 +490,7 @@ class DailyPuzzleController:
             except Exception:
                 pass
             try:
-                __import__("time").sleep(1.0)
+                time.sleep(1.0)
             except Exception:
                 pass
             payload = self.client.get_daily_puzzle()
@@ -543,7 +548,7 @@ class DailyPuzzleController:
             None,
         )
 
-    def fetch_mix(self) -> Tuple[Optional[PuzzleState], Optional[str]]:
+    def _fetch_mix(self) -> Tuple[Optional[PuzzleState], Optional[str]]:
         if not os.path.exists(PUZZLE_IDS_PATH):
             return None, "puzzle_ids.txt missing"
 
@@ -604,7 +609,7 @@ class DailyPuzzleController:
             None,
         )
 
-    def fetch_theme(self, angle: str) -> Tuple[Optional[PuzzleState], Optional[str]]:
+    def _fetch_theme(self, angle: str) -> Tuple[Optional[PuzzleState], Optional[str]]:
         """Fetch a puzzle for a given Lichess *angle*.
 
         Angle can be either:
@@ -678,7 +683,7 @@ class DailyPuzzleController:
 
                     # If we've exhausted the opening, allow replay by resetting only that angle.
                     if not unseen:
-                        reset_seen_puzzles(angle)
+                        _reset_seen_puzzles(angle)
                         self._seen_by_angle.pop(angle, None)
                         served_angle = set()
                         avoid = set(
@@ -759,7 +764,7 @@ class DailyPuzzleController:
         # If we keep getting the same seen puzzle(s), allow a one-time reset for this angle.
         # This is useful when you have "seen" everything in a category and want to replay them.
         if (not passed_checks) and seen_skips >= 6:
-            reset_seen_puzzles(angle)
+            _reset_seen_puzzles(angle)
             self._seen_by_angle.pop(angle, None)
             seen_set = set()
             last_for_angle = None
@@ -886,50 +891,28 @@ class DailyPuzzleController:
         # 1) Fetch puzzle
         display.send("Puzzle\nLoading…")
         if self.mode == "mix":
-            st, err = self.fetch_mix()
+            st, err = self._fetch_mix()
         elif self.mode == "theme":
-            st, err = self.fetch_theme(self.theme or "")
+            st, err = self._fetch_theme(self.theme or "")
         else:
-            st, err = self.fetch_daily()
+            st, err = self._fetch_daily()
 
         if err or st is None:
             display.send("Puzzle error\n" + (err or "unknown"))
-            link.sendtoboard("error_puzzle_fetch")
-
-            # Keep the error visible until the user acknowledges with OK.
-            # This also makes the underlying error easier to read.
-            try:
-                from smartchess.core.protocol import parse_payload, EventType
-                import time
-
-                while True:
-                    raw = link.getboard_nonblocking()
-                    if raw:
-                        ev = parse_payload(raw)
-                        if ev.type == EventType.OK:
-                            break
-                        if ev.type == EventType.SHUTDOWN:
-                            break
-                    time.sleep(0.05)
-            except Exception:
-                pass
+            link.send_to_board("error_puzzle_fetch")
+            wait_for_ok(link, display)
             return
 
         # 2) Guided setup on an EMPTY board
         steps = _compute_place_steps_from_fen(st.fen_start)
 
-        # Clear any stale button events from menu navigation so they can't
-        # interfere with the first setup prompts / LED commands.
         try:
             link.clear_input()
         except Exception:
             pass
 
-        # Disable hints on the Pico during setup so no hint requests can be
-        # triggered while the user is placing pieces.
-        link.sendtoboard("hint_disable")
-
-        link.sendtoboard("puzzle_setup_begin")
+        link.send_to_board("hint_disable")
+        link.send_to_board("puzzle_setup_begin")
         try:
             label = _format_puzzle_label(
                 st.themes,
@@ -945,362 +928,150 @@ class DailyPuzzleController:
                 ),
             )
             display.send(f"{label}\nSetup position\nOK = next")
-            __import__("time").sleep(0.8)
-            link.sendtoboard("setup_clear")
+            time.sleep(0.8)
+            link.send_to_board("setup_clear")
 
-            # Wait for OK after clearing
-            while True:
-                msg = link.getboard()
-                if msg is None:
-                    continue
-
-                if msg == "shutdown":
-                    from piGame import shutdown_pi
-
-                    shutdown_pi(link, display)
-                    return
-
-                if msg in ("n", "new", "in", "newgame", "btn_new"):
-                    return
-
-                if msg in ("btn_ok", "ok"):
-                    break
+            if not wait_for_ok(link, display):
+                return
 
             for side, sq, sym in steps:
                 display.send(
-                    f"PLACE {('WHITE' if side=='w' else 'BLACK')}\n{_piece_name(sym)} {sq}\nOK = next"
+                    f"PLACE {('WHITE' if side=='w' else 'BLACK')}\n{piece_name(sym)} {sq}\nOK = next"
                 )
-                link.sendtoboard(f"setup_place_{sq}_{side}")
-
-                while True:
-                    msg = link.getboard()
-                    if msg is None:
-                        continue
-
-                    if msg == "shutdown":
-                        from piGame import shutdown_pi
-
-                        shutdown_pi(link, display)
-                        return
-
-                    if msg in ("n", "new", "in", "newgame", "btn_new"):
-                        return
-
-                    if msg in ("btn_ok", "ok"):
-                        break
-
-                    if msg.startswith("typing_") or msg in ("hint", "btn_hint"):
-                        continue
+                link.send_to_board(f"setup_place_{sq}_{side}")
+                if not wait_for_ok(link, display):
+                    return
 
             display.send(f"{label}\nSetup done\nPuzzle begins")
-            __import__("time").sleep(0.8)
+            time.sleep(0.8)
         finally:
-            # Re-enable hints and always end setup mode.
-            # NOTE: we send hint_enable both before and after puzzle_setup_done.
-            # On the Pico, puzzle_setup_done flips into GAME_RUNNING and re-enables
-            # the HINT IRQ. Sending hint_enable again avoids a rare race where the
-            # first HINT press right after setup gets ignored.
-            link.sendtoboard("hint_enable")
-            link.sendtoboard("puzzle_setup_done")
+            link.send_to_board("hint_enable")
+            link.send_to_board("puzzle_setup_done")
             try:
                 link.clear_input()
             except Exception:
                 pass
-            __import__("time").sleep(0.05)
-            link.sendtoboard("hint_enable")
+            time.sleep(0.05)
+            link.send_to_board("hint_enable")
 
         # 3) Load board state
         board = chess.Board(st.fen_start)
         player_color = "WHITE" if board.turn == chess.WHITE else "BLACK"
         side_prefix = f"You are {player_color}"
 
-        def _show_prompt_enter_move() -> None:
+        def _prompt():
             display.send(f"{side_prefix}\nEnter move:")
 
-        def _show_try_again(extra: str = "") -> None:
-            if extra:
-                display.send(f"{side_prefix}\n{extra}\nEnter move")
-            else:
-                display.send(f"{side_prefix}\nTry again\nEnter move")
+        def _rearm():
+            send_turn_notification(link, board)
+            _prompt()
 
-        def _wait_ack_ok() -> bool:
-            while True:
-                m = link.getboard()
-                if m is None:
-                    continue
-
-                if m == "shutdown":
-                    from piGame import shutdown_pi
-
-                    shutdown_pi(link, display)
-                    return False
-
-                if m in ("n", "new", "in", "newgame", "btn_new"):
-                    return False
-
-                if m in ("btn_ok", "ok"):
-                    return True
-
-                if (
-                    m.startswith("typing_")
-                    or m.startswith("capq_")
-                    or m in ("hint", "btn_hint")
-                ):
-                    continue
-
-        def _wait_promotion_choice() -> Optional[str]:
-            """Wait for Pico to return btn_q/btn_r/btn_b/btn_n."""
-            while True:
-                m = link.getboard()
-                if m is None:
-                    continue
-
-                if m == "shutdown":
-                    from piGame import shutdown_pi
-
-                    shutdown_pi(link, display)
-                    return None
-
-                if m in ("n", "new", "in", "newgame", "btn_new"):
-                    return None
-
-                if m in ("btn_q", "btn_r", "btn_b", "btn_n"):
-                    return m[-1]
-
-                if (
-                    m.startswith("typing_")
-                    or m.startswith("capq_")
-                    or m in ("hint", "btn_hint")
-                ):
-                    continue
-
-        def _wrong_move_feedback(user_uci: str) -> bool:
-            """Show what piece moved and where to put it back. Lights red trail and waits OK."""
-            u = (user_uci or "").strip().lower()
-            if u.startswith("m"):
-                u = u[1:]
-            u = "".join(ch for ch in u if ch.isalnum())
-
-            if len(u) < 4:
-                display.send(f"Wrong move\nPut it back + OK")
-                link.sendtoboard("puzzle_wrong_")
-                return _wait_ack_ok()
-
-            frm, to = u[:2], u[2:4]
-
-            piece_txt = "PIECE"
-            try:
-                p = board.piece_at(chess.parse_square(frm))
-                if p:
-                    piece_txt = _piece_name(p.symbol())
-            except Exception:
-                pass
-
-            display.send(
-                f"Incorrect move: \n {piece_txt} {frm}->{to}\nPut it back + OK"
-            )
-            # Trail from TO back to FROM so the user knows where to return it
-            link.sendtoboard(f"puzzle_wrong_{to}{frm}")
-            return _wait_ack_ok()
-
-        def _illegal_move_feedback(user_uci: str) -> bool:
-            """Illegal move: show where to put the piece back (red trail) and wait for OK."""
-            u = (user_uci or "").strip().lower()
-            if u.startswith("m"):
-                u = u[1:]
-            u = "".join(ch for ch in u if ch.isalnum())
-
-            if len(u) < 4:
-                display.send(f"Illegal move\nOK = continue")
-                return _wait_ack_ok()
-
-            frm, to = u[:2], u[2:4]
-
-            piece_txt = "PIECE"
-            try:
-                p = board.piece_at(chess.parse_square(frm))
-                if p:
-                    piece_txt = _piece_name(p.symbol())
-            except Exception:
-                pass
-
-            display.send(f"Illegal move: \n {piece_txt} {frm}->{to}\nPut it back + OK")
-            # Trail from TO back to FROM so the user knows where to return it
-            link.sendtoboard(f"puzzle_wrong_{to}{frm}")
-            return _wait_ack_ok()
-
-        # Kick Pico into input state immediately after setup
-        link.sendtoboard(f"turn_{'white' if board.turn == chess.WHITE else 'black'}")
-        _show_prompt_enter_move()
+        send_turn_notification(link, board)
+        _prompt()
 
         # 4) Solve loop
         while True:
             if st.idx >= len(st.solution):
                 try:
-                    angle_key = (self.theme or self.mode or "").strip()
-                    self._mark_seen(angle_key, st.puzzle_id)
+                    self._mark_seen(
+                        (self.theme or self.mode or "").strip(), st.puzzle_id
+                    )
                 except Exception:
                     pass
-                display.send(f"{side_prefix}\nPuzzle solved!\nOK = menu")
-                link.sendtoboard("GameOver:1-0")
-                _wait_ack_ok()
+                display.send(f"Puzzle solved!\nOK = menu")
+                link.send_to_board("GameOver:1-0")
+                wait_for_ok(link, display)
                 return
 
             expected = st.solution[st.idx]
 
-            msg = link.getboard()
+            msg = link.read_from_board()
             if msg is None:
                 continue
 
             if msg == "shutdown":
-                from piGame import shutdown_pi
-
-                shutdown_pi(link, display)
+                shutdown_raspberry_pi(link, display)
                 return
 
-            if msg in ("n", "new", "in", "newgame", "btn_new"):
+            if msg in NEW_GAME_MSGS:
                 return
 
-            # Capture probe from Pico for preview cap blink
-            if msg.startswith("capq_"):
-                q = msg[len("capq_") :].strip().lower()
-                q = "".join(ch for ch in q if ch.isalnum())
-                cap_flag = 0
-                try:
-                    mvq = chess.Move.from_uci(q)
-                    cap_flag = 1 if board.is_capture(mvq) else 0
-                except Exception:
-                    cap_flag = 0
-                link.sendtoboard(f"capr_{cap_flag}")
+            if handle_capq_message(link, board, msg):
                 continue
 
-            # Hint button
-            if msg in ("hint", "btn_hint"):
-                link.sendtoboard(
-                    f"hint_{expected}{'_cap' if _is_cap(board, expected) else ''}"
+            if msg in HINT_MSGS:
+                link.send_to_board(
+                    format_hint_move(expected, check_move_captures(board, expected))
                 )
-                display.send(f"{side_prefix}\nHint: {expected[:2]}→{expected[2:4]}")
+                display.send(f"Hint:\n{expected[:2]}→{expected[2:4]}")
                 continue
 
-            # Typing previews
             if msg.startswith("typing_"):
-                try:
-                    from piGame import handle_typing_preview
-
-                    handle_typing_preview(display, msg[len("typing_") :], board)
-                except Exception:
-                    display.send(msg.replace("typing_", ""))
+                handle_typing_message(
+                    link,
+                    display,
+                    msg[len("typing_") :],
+                    board,
+                    log_prefix="[PUZZLE ACK]",
+                )
                 continue
 
-            # Navigation / acknowledgement tokens can leak through right after
-            # the last setup OK press. They are *not* UCI moves.
-            if msg in ("ok", "btn_ok", "btnok"):
+            if msg in OK_MSGS:
                 continue
 
-            # Parse user move
-            uci = msg.strip().lower()
-            if uci.startswith("m"):
-                uci = uci[1:]
-            uci = "".join(ch for ch in uci if ch.isalnum())
-            if uci in (
-                "ok",
-                "btnok",
-                "hint",
-                "btn_hint",
-                "n",
-                "new",
-                "in",
-                "newgame",
-                "btn_new",
-            ):
-                continue
-            if len(uci) not in (4, 5):
+            # Parse move
+            uci = parse_uci_move(msg)
+            if not uci:
                 continue
 
-            # Promotion: Pico sends 4-char; if a promotion is possible for that from->to, prompt for piece.
-            if len(uci) == 4:
-                try:
-                    frm_sq = chess.parse_square(uci[:2])
-                    to_sq = chess.parse_square(uci[2:4])
-                    promo_needed = any(
-                        (
-                            mvv.from_square == frm_sq
-                            and mvv.to_square == to_sq
-                            and mvv.promotion is not None
-                        )
-                        for mvv in board.legal_moves
-                    )
-                    if promo_needed:
-                        display.send(f"{side_prefix}\nPromotion!\n1Q 2R 3B 4N")
-                        link.sendtoboard("promotion_choice_needed")
-                        pick = _wait_promotion_choice()
-                        if pick is None:
-                            return
-                        uci = uci + pick
-                except Exception:
-                    pass
+            # Promotion
+            try:
+                uci = resolve_uci_promotion(link, display, board, uci) or uci
+            except ReturnToMenu:
+                return
 
-            # If it's not legal in the current position, treat as illegal (not as "wrong solution")
+            # Legality check
             try:
                 user_mv = chess.Move.from_uci(uci)
             except Exception:
-                # Bad/partial UCI from Pico; treat as illegal and guide the user to undo it.
-                if not _illegal_move_feedback(uci):
+                if not handle_illegal_move(
+                    link=link, display=display, board=board, uci=uci, label="Illegal"
+                ):
                     return
-                # Re-arm Pico input state and prompt again
-                link.sendtoboard(
-                    f"turn_{'white' if board.turn == chess.WHITE else 'black'}"
-                )
-                _show_prompt_enter_move()
                 continue
 
             if user_mv not in board.legal_moves:
-                # User made a move that's not legal in this position; guide them to undo it.
-                if not _illegal_move_feedback(uci):
+                if not handle_illegal_move(
+                    link=link, display=display, board=board, uci=uci, label="Illegal"
+                ):
                     return
-                link.sendtoboard(
-                    f"turn_{'white' if board.turn == chess.WHITE else 'black'}"
-                )
-                _show_prompt_enter_move()
                 continue
 
-            # Compare against expected (promotion-aware)
-            wrong = False
-            if uci[:4] != expected[:4]:
+            # Correctness check
+            wrong = uci[:4] != expected[:4]
+            if not wrong and len(expected) == 5:
+                wrong = len(uci) != 5 or uci[4] != expected[4]
+            elif not wrong and len(uci) == 5:
                 wrong = True
-            elif len(expected) == 5:
-                if len(uci) != 5 or uci[4] != expected[4]:
-                    wrong = True
-            else:
-                if len(uci) == 5:
-                    wrong = True
 
             if wrong:
-                if not _wrong_move_feedback(uci):
+                if not handle_illegal_move(
+                    link=link, display=display, board=board, uci=uci, label="Incorrect"
+                ):
                     return
-                _show_prompt_enter_move()
-                # Ensure Pico is back in input state
-                link.sendtoboard(
-                    f"turn_{'white' if board.turn == chess.WHITE else 'black'}"
-                )
                 continue
 
-            # Correct move (must use expected string to match solution exactly)
+            # Correct move
             mv = chess.Move.from_uci(expected)
             if mv not in board.legal_moves:
-                # Shouldn't happen, but keep user unblocked.
-                link.sendtoboard("error_puzzle_internal")
-                _show_try_again("Puzzle error")
-                __import__("time").sleep(1.0)
-                link.sendtoboard(
-                    f"turn_{'white' if board.turn == chess.WHITE else 'black'}"
-                )
-                _show_prompt_enter_move()
+                link.send_to_board("error_puzzle_internal")
+                display.send("Puzzle error\nTry again")
+                time.sleep(1.0)
+                _rearm()
                 continue
 
-            display.send(f"{side_prefix}\nCorrect")
-            __import__("time").sleep(2)
-
+            display.send(f"Correct move!\n{expected[:2]}→{expected[2:4]}")
+            time.sleep(2)
             board.push(mv)
             st.idx += 1
 
@@ -1311,43 +1082,27 @@ class DailyPuzzleController:
                     rmv = chess.Move.from_uci(reply)
                 except Exception:
                     display.send("Puzzle error")
-                    link.sendtoboard("error_puzzle_parse")
+                    link.send_to_board("error_puzzle_parse")
                     return
 
                 if rmv in board.legal_moves:
                     opp = "WHITE" if board.turn == chess.WHITE else "BLACK"
                     cap = board.is_capture(rmv)
-
-                    # If the opponent reply is a promotion (e.g. a7a8q), show what it became.
                     promo_line = ""
                     try:
-                        if isinstance(reply, str) and len(reply) >= 5:
-                            promo_letter = reply[4].lower()
-                            if promo_letter in ("q", "r", "b", "n"):
-                                promo_name = (
-                                    display._promo_name(promo_letter)
-                                    if hasattr(display, "_promo_name")
-                                    else promo_letter.upper()
-                                )
-                                promo_line = f"Promoted to {promo_name}\n"
+                        pl = reply[4].lower() if len(reply) >= 5 else ""
+                        if pl in ("q", "r", "b", "n"):
+                            promo_line = f"{display.format_promo_line(pl)}\n"
                     except Exception:
-                        promo_line = ""
-
+                        pass
                     display.send(
-                        f"{side_prefix}\n{opp} played {reply[:2]}→{reply[2:4]}\n{promo_line}OK = continue"
+                        f"{opp} played\n{reply[:2]}→{reply[2:4]}\n{promo_line}OK = continue"
                     )
-                    link.sendtoboard(f"m{reply}{'_cap' if cap else ''}")
-
+                    link.send_to_board(format_engine_move(reply, cap))
                     board.push(rmv)
                     st.idx += 1
-
-                    if not _wait_ack_ok():
+                    if not wait_for_ok(link, display):
                         return
+                    _prompt()
 
-                    _show_prompt_enter_move()
-
-            # Prompt next move
-            link.sendtoboard(
-                f"turn_{'white' if board.turn == chess.WHITE else 'black'}"
-            )
-            _show_prompt_enter_move()
+            _rearm()
