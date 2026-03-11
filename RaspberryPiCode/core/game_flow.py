@@ -952,6 +952,8 @@ def _paged_menu(
             idx = int(m) - 1
             if idx < len(chunk) and chunk[idx]:
                 return chunk[idx]
+            # Out-of-range: Pico has exited its menu loop — put it back.
+            link.send_to_board("MenuPaged")
 
 
 def _run_puzzle_game(link: BoardLink, display: Display) -> None:
