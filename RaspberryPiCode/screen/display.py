@@ -211,7 +211,7 @@ class Display:
     def show_invalid(self, text: str) -> None:
         self.send(f"Invalid\n{text}\nTry again")
 
-    def show_illegal(self, uci: str, side_name: str) -> None:
+    def _show_illegal(self, uci: str, side_name: str) -> None:
         """Show illegal move feedback + which square to return to.
 
         Assumption: the piece was lifted from uci[:2] and needs to go back there.
@@ -225,7 +225,7 @@ class Display:
         except Exception:
             self.send("Illegal move!\nTry again")
 
-    def _promo_name(self, promo_letter: str) -> str:
+    def promo_name(self, promo_letter: str) -> str:
         return {
             "q": "QUEEN",
             "r": "ROOK",
@@ -233,13 +233,13 @@ class Display:
             "n": "KNIGHT",
         }.get((promo_letter or "").lower(), (promo_letter or "").upper())
 
-    def show_promotion(self, who: str, promo_letter: str) -> None:
+    def _show_promotion(self, who: str, promo_letter: str) -> None:
         """Display a short promotion banner.
 
         who: "Computer" | "Opponent" | "You"
         promo_letter: one of q r b n
         """
-        name = self._promo_name(promo_letter)
+        name = self.promo_name(promo_letter)
         self.send(f"{who} promoted\nto {name}")
 
     def show_draw(self, reason: str, move_no: int) -> None:

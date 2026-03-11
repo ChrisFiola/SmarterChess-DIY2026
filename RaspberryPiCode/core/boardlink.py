@@ -39,7 +39,7 @@ class BoardLink:
         except Exception:
             pass
 
-    def clear_output(self) -> None:
+    def _clear_output(self) -> None:
         """Drop any pending outgoing bytes to the Pico."""
         try:
             self.ser.reset_output_buffer()
@@ -47,7 +47,7 @@ class BoardLink:
             pass
 
     # Writes
-    def send_raw(self, text: str) -> None:
+    def _send_raw(self, text: str) -> None:
         self.ser.write(text.encode("utf-8") + b"\n")
 
     def send_to_board(self, text: str) -> None:

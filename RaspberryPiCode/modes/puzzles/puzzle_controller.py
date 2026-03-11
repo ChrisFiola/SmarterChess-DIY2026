@@ -30,7 +30,7 @@ from modes.online.lichess_client import LichessClient
 from core.protocol import (
     send_lcd_ack_for_payload,
     parse_uci_move,
-    _piece_name,
+    piece_name,
     NEW_GAME_MSGS,
     OK_MSGS,
     HINT_MSGS,
@@ -167,7 +167,7 @@ def _save_seen_cache(data: dict) -> None:
         pass
 
 
-def reset_seen_puzzles(angle: Optional[str] = None) -> None:
+def _reset_seen_puzzles(angle: Optional[str] = None) -> None:
     """Clear seen_puzzles.json.
 
     If angle is provided, clears only that angle bucket.
@@ -480,7 +480,7 @@ class PuzzleController:
         except Exception:
             pass
 
-    def fetch_daily(self) -> Tuple[Optional[PuzzleState], Optional[str]]:
+    def _fetch_daily(self) -> Tuple[Optional[PuzzleState], Optional[str]]:
         # Daily puzzle occasionally fails transiently (Wi‑Fi bring-up, DNS hiccup,
         # Lichess 5xx). Retry once to avoid bouncing back to the main menu.
         payload = self.client.get_daily_puzzle()
@@ -549,7 +549,7 @@ class PuzzleController:
             None,
         )
 
-    def fetch_mix(self) -> Tuple[Optional[PuzzleState], Optional[str]]:
+    def _fetch_mix(self) -> Tuple[Optional[PuzzleState], Optional[str]]:
         if not os.path.exists(PUZZLE_IDS_PATH):
             return None, "puzzle_ids.txt missing"
 
@@ -610,7 +610,7 @@ class PuzzleController:
             None,
         )
 
-    def fetch_theme(self, angle: str) -> Tuple[Optional[PuzzleState], Optional[str]]:
+    def _fetch_theme(self, angle: str) -> Tuple[Optional[PuzzleState], Optional[str]]:
         """Fetch a puzzle for a given Lichess *angle*.
 
         Angle can be either:
@@ -684,7 +684,7 @@ class PuzzleController:
 
                     # If we've exhausted the opening, allow replay by resetting only that angle.
                     if not unseen:
-                        reset_seen_puzzles(angle)
+                        _reset_seen_puzzles(angle)
                         self._seen_by_angle.pop(angle, None)
                         served_angle = set()
                         avoid = set(
@@ -765,7 +765,7 @@ class PuzzleController:
         # If we keep getting the same seen puzzle(s), allow a one-time reset for this angle.
         # This is useful when you have "seen" everything in a category and want to replay them.
         if (not passed_checks) and seen_skips >= 6:
-            reset_seen_puzzles(angle)
+            _reset_seen_puzzles(angle)
             self._seen_by_angle.pop(angle, None)
             seen_set = set()
             last_for_angle = None
@@ -892,11 +892,11 @@ class PuzzleController:
         # 1) Fetch puzzle
         display.send("Puzzle\nLoading…")
         if self.mode == "mix":
-            st, err = self.fetch_mix()
+            st, err = self._fetch_mix()
         elif self.mode == "theme":
-            st, err = self.fetch_theme(self.theme or "")
+            st, err = self._fetch_theme(self.theme or "")
         else:
-            st, err = self.fetch_daily()
+            st, err = self._fetch_daily()
 
         if err or st is None:
             display.send("Puzzle error\n" + (err or "unknown"))
@@ -933,7 +933,7 @@ class PuzzleController:
 
             for side, sq, sym in steps:
                 display.send(
-                    f"PLACE {('WHITE' if side=='w' else 'BLACK')}\n{_piece_name(sym)} {sq}\nOK = next"
+                    f"PLACE {('WHITE' if side=='w' else 'BLACK')}\n{piece_name(sym)} {sq}\nOK = next"
                 )
                 link.send_to_board(f"setup_place_{sq}_{side}")
                 if not wait_for_ok(link, display):
@@ -1075,7 +1075,7 @@ class PuzzleController:
                     try:
                         if len(reply) >= 5 and reply[4].lower() in ("q", "r", "b", "n"):
                             pl = reply[4].lower()
-                            promo_name = display._promo_name(pl) if hasattr(display, "_promo_name") else pl.upper()
+                            promo_name = display.promo_name(pl) if hasattr(display, "promo_name") else pl.upper()
                             promo_line = f"Promoted to {promo_name}\n"
                     except Exception:
                         pass

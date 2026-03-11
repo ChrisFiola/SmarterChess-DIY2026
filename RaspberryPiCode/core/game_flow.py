@@ -21,11 +21,10 @@ from core.engine import EngineContext, engine_bestmove, engine_hint
 
 # Phase 1: daily puzzle controller
 from modes.online.lichess_client import LichessClient
-from modes.puzzles.puzzle_controller import PuzzleController
 from core.protocol import (
     send_lcd_ack_for_payload,
     parse_uci_move,
-    _piece_name,
+    piece_name,
     NEW_GAME_MSGS,
     OK_MSGS,
     HINT_MSGS,
@@ -97,7 +96,7 @@ def handle_typing_message(
     Called identically in every mode — keeping this centralised guarantees
     that typing-preview behaviour stays in sync everywhere.
     """
-    update_typing_display(display, payload, board)
+    _update_typing_display(display, payload, board)
     send_lcd_ack_for_payload(link, payload, log_prefix=log_prefix)
 
 
@@ -133,7 +132,7 @@ def resolve_uci_promotion(
                 if (piece.color == chess.WHITE and rank == 8) or (
                     piece.color == chess.BLACK and rank == 1
                 ):
-                    promo = prompt_promotion_choice(link, display)
+                    promo = _prompt_promotion_choice(link, display)
                     return uci + promo
         except ReturnToMenu:
             raise
@@ -142,8 +141,8 @@ def resolve_uci_promotion(
 
     try:
         move = chess.Move.from_uci(uci)
-        if move_needs_promotion(move, board):
-            promo = prompt_promotion_choice(link, display)
+        if _move_needs_promotion(move, board):
+            promo = _prompt_promotion_choice(link, display)
             return uci + promo
     except (ValueError, Exception):
         pass
@@ -223,7 +222,7 @@ def handle_illegal_move(
         if frm:
             p = board.piece_at(chess.parse_square(frm))
             if p:
-                piece_txt = _piece_name(p.symbol())
+                piece_txt = piece_name(p.symbol())
     except Exception:
         pass
 
@@ -246,7 +245,7 @@ def handle_illegal_move(
     return True
 
 
-def parse_color_choice(s: str) -> Optional[bool]:
+def _parse_color_choice(s: str) -> Optional[bool]:
     s = (s or "").strip().lower()
     if s.startswith("s1"):
         return True
@@ -286,7 +285,7 @@ def check_move_captures(brd: chess.Board, uci: str) -> bool:
 # -------------------- Promotion --------------------
 
 
-def move_needs_promotion(move: chess.Move, brd: chess.Board) -> bool:
+def _move_needs_promotion(move: chess.Move, brd: chess.Board) -> bool:
     if move not in brd.legal_moves:
         return False
     piece = brd.piece_at(move.from_square)
@@ -300,7 +299,7 @@ def move_needs_promotion(move: chess.Move, brd: chess.Board) -> bool:
     return False
 
 
-def prompt_promotion_choice(link: BoardLink, display: Display) -> str:
+def _prompt_promotion_choice(link: BoardLink, display: Display) -> str:
     """
     Ask Pico to collect promotion choice:
       1=Queen, 2=Rook, 3=Bishop, 4=Knight  -> 'q','r','b','n'
@@ -341,7 +340,7 @@ def send_move_hint(
         display.send("Game Over\nNo hints\nPress n to start over")
         return
 
-    show_engine_thinking(display)
+    _show_engine_thinking(display)
     best = engine_hint(ctx, state.board, cfg.move_time_ms)
     if not best:
         link.send_to_board("hint_none")
@@ -360,13 +359,13 @@ def send_move_hint(
     print(f"[Hint] {best}")
 
 
-def current_side_name(brd: chess.Board) -> str:
+def _current_side_name(brd: chess.Board) -> str:
     return "WHITE" if brd.turn == chess.WHITE else "BLACK"
 
 
 def notify_game_over(link: BoardLink, display: Display, brd: chess.Board) -> str:
     result = brd.result(claim_draw=True)
-    winner = result_to_winner_text(result)
+    winner = _result_to_winner_text(result)
     link.send_to_board(f"GameOver:{result}")
     display.send(f"GAME OVER\n{winner}\nStart new game?")
     return result
@@ -486,7 +485,7 @@ def wait_for_mode_selection(link: BoardLink, display: Display, state: GameState)
         display.send("Unknown mode\n" + m + "\nSend again")
 
 
-def configure_vs_computer(link: BoardLink, display: Display, cfg: GameConfig) -> None:
+def _configure_vs_computer(link: BoardLink, display: Display, cfg: GameConfig) -> None:
     """
     DIY-like setup flow:
       - Difficulty (skill)
@@ -534,13 +533,13 @@ def configure_vs_computer(link: BoardLink, display: Display, cfg: GameConfig) ->
             continue
         if msg in OK_MSGS or msg.startswith("n"):
             raise ReturnToMenu()
-        side = parse_color_choice(msg)
+        side = _parse_color_choice(msg)
         if side is not None:
             cfg.human_is_white = side
             break
 
 
-def configure_local_game(link: BoardLink, display: Display, cfg: GameConfig) -> None:
+def _configure_local_game(link: BoardLink, display: Display, cfg: GameConfig) -> None:
     display.send("Local 2-Player\nHints enabled")
     time.sleep(2)
     cfg.skill_level = 20  # max hint skill for local
@@ -574,11 +573,11 @@ def configure_local_game(link: BoardLink, display: Display, cfg: GameConfig) -> 
 # -------------------- UI helpers & engine handoff --------------------
 
 
-def show_new_game_banner(display: Display):
+def _show_new_game_banner(display: Display):
     display.banner("NEW GAME", delay_s=1.0)
 
 
-def show_engine_thinking(display: Display):
+def _show_engine_thinking(display: Display):
     display.send("Engine Thinking...")
 
 
@@ -609,8 +608,8 @@ def prompt_next_turn(
         promo_line = ""
         if promo_letter in ("q", "r", "b", "n"):
             promo_name = (
-                display._promo_name(promo_letter)
-                if hasattr(display, "_promo_name")
+                display.promo_name(promo_letter)
+                if hasattr(display, "promo_name")
                 else promo_letter.upper()
             )
             promo_line = f"Promoted to {promo_name}\n"
@@ -624,7 +623,7 @@ def prompt_next_turn(
         display.show_arrow(last_uci, suffix="ENGINE thinking", force=True)
 
 
-def play_engine_move(
+def _play_engine_move(
     link: BoardLink,
     display: Display,
     ctx: EngineContext,
@@ -661,7 +660,7 @@ def play_engine_move(
         prompt_next_turn(link, display, state.board, state.mode, cfg, reply)
 
 
-def result_to_winner_text(res: str) -> str:
+def _result_to_winner_text(res: str) -> str:
     res = (res or "").strip()
     if res == "1-0":
         return "White wins"
@@ -712,7 +711,7 @@ def _get_piece_label(board: Optional["chess.Board"], sq: str) -> Optional[str]:
 
 
 
-def update_typing_display(
+def _update_typing_display(
     display: Display, payload: str, board: Optional["chess.Board"] = None
 ) -> None:
     """
@@ -795,7 +794,7 @@ def apply_human_move(
 # -------------------- Unified play loop --------------------
 
 
-def run_local_game(
+def _run_local_game(
     link: BoardLink,
     display: Display,
     ctx: EngineContext,
@@ -808,7 +807,7 @@ def run_local_game(
     """
     state.board = chess.Board()
     link.send_to_board("GameStart")
-    show_new_game_banner(display)
+    _show_new_game_banner(display)
     time.sleep(0.3)
 
     link.send_to_board("turn_white")
@@ -876,12 +875,12 @@ def run_local_game(
 # -------------------- Online placeholder --------------------
 
 
-def run_online_game(link: BoardLink, display: Display, cfg: GameConfig) -> None:
+def _run_online_game(link: BoardLink, display: Display, cfg: GameConfig) -> None:
     from modes.online.online_controller import OnlineController
     OnlineController(link, display, cfg).run()
 
 
-def run_puzzle_game(link: BoardLink, display: Display) -> None:
+def _run_puzzle_game(link: BoardLink, display: Display) -> None:
     """Puzzle mode.
 
     Submenu:
@@ -889,8 +888,7 @@ def run_puzzle_game(link: BoardLink, display: Display) -> None:
       2) Mix & Match (random from optional local list; falls back to daily)
     """
     client = LichessClient()
-
-    # -------------------- Small paged menu helper --------------------
+    from modes.puzzles.puzzle_controller import PuzzleController
 
     def _short(s: str, n: int) -> str:
         s = (s or "").strip()
@@ -1340,7 +1338,7 @@ def run_selected_mode(
     cfg: GameConfig,
 ) -> None:
     if state.mode in ("stockfish", "pc", "btn_mode_pc", "vs_computer", "vs"):
-        configure_vs_computer(link, display, cfg)
+        _configure_vs_computer(link, display, cfg)
         link.send_to_board("SetupComplete")
 
         display.send("Engine loading...")
@@ -1362,16 +1360,16 @@ def run_selected_mode(
         )
         controller.run_stockfish_game(move_time_ms=cfg.move_time_ms)
     elif state.mode in ("local", "btn_mode_local", "local_2p"):
-        configure_local_game(link, display, cfg)
+        _configure_local_game(link, display, cfg)
         link.send_to_board("SetupComplete")
-        run_local_game(link, display, ctx, state, cfg)
+        _run_local_game(link, display, ctx, state, cfg)
     elif state.mode in ("puzzle", "puzzles", "btn_mode_puzzle", "btn_mode_puzzles"):
         # No Pico setup screens for puzzle yet.
         link.send_to_board("SetupComplete")
-        run_puzzle_game(link, display)
+        _run_puzzle_game(link, display)
         raise ReturnToMenu()
     elif state.mode == "online":
-        run_online_game(link, display, cfg)
+        _run_online_game(link, display, cfg)
     else:
         # Don't silently fall back to online; it hides mode-token bugs.
         print(f"[MODE DISPATCH] unknown mode={state.mode!r}", flush=True)

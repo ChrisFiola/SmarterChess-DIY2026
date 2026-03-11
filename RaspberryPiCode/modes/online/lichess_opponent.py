@@ -2,9 +2,9 @@
 """Lichess opponent adapter (manual-start).
 
 This runs a background stream reader for a single game and exposes:
-  - wait_for_game(): blocks until a gameStart event is seen, then returns (game_id, is_white)
-  - pop_remote_move(): returns next remote move uci (blocking with timeout)
-  - submit_our_move(): POSTs our move to lichess
+  - _wait_for_game(): blocks until a gameStart event is seen, then returns (game_id, is_white)
+  - _pop_remote_move(): returns next remote move uci (blocking with timeout)
+  - _submit_our_move(): POSTs our move to lichess
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ class LichessOpponent:
 
         self._seen_moves: List[str] = []
 
-    def wait_for_game(self) -> OnlineGame:
+    def _wait_for_game(self) -> OnlineGame:
         # Wait for a gameStart event
         for evt in self.client.stream_events():
             if self._stop.is_set():
@@ -69,9 +69,9 @@ class LichessOpponent:
                     return self.game
         raise RuntimeError("Event stream ended")
 
-    def start_stream(self) -> None:
+    def _start_stream(self) -> None:
         if not self.game:
-            raise RuntimeError("Call wait_for_game() first")
+            raise RuntimeError("Call _wait_for_game() first")
         if self._thread and self._thread.is_alive():
             return
         self._thread = threading.Thread(target=self._run_stream, daemon=True)
@@ -95,13 +95,13 @@ class LichessOpponent:
                 self._moves_q.put(mv)
             self._seen_moves = moves
 
-    def pop_remote_move(self, timeout_s: float = 0.1) -> Optional[str]:
+    def _pop_remote_move(self, timeout_s: float = 0.1) -> Optional[str]:
         try:
             return self._moves_q.get(timeout=timeout_s)
         except queue.Empty:
             return None
 
-    def submit_our_move(self, uci: str) -> bool:
+    def _submit_our_move(self, uci: str) -> bool:
         if not self.game:
             return False
         return self.client.make_move(self.game.game_id, uci)

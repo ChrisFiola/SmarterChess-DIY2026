@@ -219,7 +219,7 @@ class OnlineController:
                     promo_line = ""
                     if mv.promotion:
                         pl = chess.piece_symbol(mv.promotion)
-                        promo_name = display._promo_name(pl) if hasattr(display, "_promo_name") else pl.upper()
+                        promo_name = display.promo_name(pl) if hasattr(display, "promo_name") else pl.upper()
                         promo_line = f"Promoted to {promo_name}"
                     display.send(
                         f"{uci_to_oled(uci)}\n{promo_line}\n{side_to_move} to move"

@@ -43,12 +43,12 @@ MEASURE_CACHE = {}  # (size, text) -> (w,h)
 FONTS = {}
 
 
-def open_fifo_blocking(path: str):
+def _open_fifo_blocking(path: str):
     fd = os.open(path, os.O_RDWR)
     return os.fdopen(fd, "r", buffering=1)
 
 
-def get_font(size: int):
+def _get_font(size: int):
     if size not in FONTS:
         FONTS[size] = ImageFont.truetype(FONT_PATH, size)
     return FONTS[size]
@@ -57,9 +57,9 @@ def get_font(size: int):
 # ------------------------------------------------------
 # AUTO FONT SCALING
 # ------------------------------------------------------
-def find_best_font_size(lines, min_size=14, max_size=28, vpad=4, spacing=6):
+def _find_best_font_size(lines, min_size=14, max_size=28, vpad=4, spacing=6):
     for size in range(max_size, min_size - 1, -1):
-        font = get_font(size)
+        font = _get_font(size)
 
         total_h = 0
         max_w = 0
@@ -92,11 +92,11 @@ def find_best_font_size(lines, min_size=14, max_size=28, vpad=4, spacing=6):
 # ------------------------------------------------------
 # Draw centered text with explicit size/spacing
 # ------------------------------------------------------
-def draw_centered_text_with_size(lines, size: int, spacing: int = 6, vpad: int = 0):
+def _draw_centered_text_with_size(lines, size: int, spacing: int = 6, vpad: int = 0):
     # Clear framebuffer (no new allocations)
     DRAW.rectangle((0, 0, W, H), fill="BLACK")
 
-    font = get_font(size)
+    font = _get_font(size)
 
     # Measure using DRAW_MEASURE (doesn't touch framebuffer)
     heights = []
@@ -134,14 +134,14 @@ def draw_centered_text_with_size(lines, size: int, spacing: int = 6, vpad: int =
     disp.ShowImage(FRAME)
 
 
-def draw_centered_text_auto(lines, min_size=14, max_size=28, vpad=4, spacing=6):
+def _draw_centered_text_auto(lines, min_size=14, max_size=28, vpad=4, spacing=6):
     """
     Autosize to fit, then render centered.
     """
-    size, sp = find_best_font_size(
+    size, sp = _find_best_font_size(
         lines, min_size=min_size, max_size=max_size, vpad=vpad, spacing=spacing
     )
-    draw_centered_text_with_size(lines, size=size, spacing=sp, vpad=vpad)
+    _draw_centered_text_with_size(lines, size=size, spacing=sp, vpad=vpad)
 
 
 # ------------------------------------------------------
@@ -149,13 +149,13 @@ def draw_centered_text_auto(lines, min_size=14, max_size=28, vpad=4, spacing=6):
 # ------------------------------------------------------
 
 
-def draw_qr(data: str, caption_lines):
+def _draw_qr(data: str, caption_lines):
     if not data:
-        draw_centered_text_auto(["QR", "(empty)"])
+        _draw_centered_text_auto(["QR", "(empty)"])
         return
 
     if _qr_encode_text is None:
-        draw_centered_text_auto(["QR unsupported", data[:18]])
+        _draw_centered_text_auto(["QR unsupported", data[:18]])
         return
 
     try:
@@ -165,7 +165,7 @@ def draw_qr(data: str, caption_lines):
         # Reserve caption height
         caption_h = 0
         if caption_lines:
-            font_cap = get_font(14)
+            font_cap = _get_font(14)
             for ln in caption_lines[:3]:
                 if not ln:
                     continue
@@ -200,7 +200,7 @@ def draw_qr(data: str, caption_lines):
 
         # Caption
         if caption_lines:
-            font_cap = get_font(14)
+            font_cap = _get_font(14)
             ycur = min(H - caption_h + 4, oy + qr_px + 6)
             for ln in caption_lines[:3]:
                 if not ln:
@@ -212,17 +212,17 @@ def draw_qr(data: str, caption_lines):
 
         disp.ShowImage(FRAME)
     except Exception:
-        draw_centered_text_auto(["QR error", data[:18]])
+        _draw_centered_text_auto(["QR error", data[:18]])
 
 
 # ------------------------------------------------------
 # Splash screen
 # ------------------------------------------------------
-def draw_splash():
+def _draw_splash():
     DRAW.rectangle((0, 0, W, H), fill="BLACK")
 
     size = 28
-    font = get_font(size)
+    font = _get_font(size)
     txt = "SMARTCHESS"
 
     bbox = DRAW_MEASURE.textbbox((0, 0), txt, font=font)
@@ -234,7 +234,7 @@ def draw_splash():
 
 
 # Draw splash on start
-draw_splash()
+_draw_splash()
 
 # Signal ready to Pi
 with open(READY_FLAG, "w") as f:
@@ -243,7 +243,7 @@ with open(READY_FLAG, "w") as f:
 # ------------------------------------------------------
 # Main loop
 # ------------------------------------------------------
-pipe = open_fifo_blocking(PIPE)
+pipe = _open_fifo_blocking(PIPE)
 FPS_CAP = 10.0
 MIN_DT = 1.0 / FPS_CAP
 
@@ -267,7 +267,7 @@ while True:
                 except Exception:
                     pass
                 time.sleep(0.1)
-                pipe = open_fifo_blocking(PIPE)
+                pipe = _open_fifo_blocking(PIPE)
                 pending_msg = None
                 last_drawn = None
                 break
@@ -314,11 +314,11 @@ while True:
         if raw_size.lower() == "qr":
             qr_data = (lines[0] if lines else "").strip()
             captions = [ln.strip() for ln in lines[1:]] if len(lines) > 1 else []
-            draw_qr(qr_data, captions)
+            _draw_qr(qr_data, captions)
         elif raw_size.lower() == "auto":
-            draw_centered_text_auto(lines)
+            _draw_centered_text_auto(lines)
         else:
             size = int(raw_size)
-            draw_centered_text_with_size(lines, size=size, spacing=6)
+            _draw_centered_text_with_size(lines, size=size, spacing=6)
     except Exception:
-        draw_centered_text_auto(lines)
+        _draw_centered_text_auto(lines)

@@ -96,14 +96,14 @@ def format_engine_move(uci: str, is_capture: bool) -> str:
     return f"m{uci}{'_cap' if is_capture else ''}"
 
 
-def format_hint(uci: str, is_capture: bool) -> str:
+def _format_hint(uci: str, is_capture: bool) -> str:
     return f"hint_{uci}{'_cap' if is_capture else ''}"
 
 
 def format_capture_reply(is_capture: bool) -> str:
     return f"capr_{1 if is_capture else 0}"
 
-def _piece_name(sym: str) -> str:
+def piece_name(sym: str) -> str:
     """Return the display name for a piece symbol (e.g. 'P' -> 'PAWN')."""
     return {
         "P": "PAWN", "N": "KNIGHT", "B": "BISHOP",

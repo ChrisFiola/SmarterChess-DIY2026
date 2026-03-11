@@ -28,7 +28,7 @@ def _sanitize(s: str) -> str:
     return (s or "").replace("|", "/").strip()
 
 
-def encode_message(lines: Iterable[str], size: str = "auto") -> str:
+def _encode_message(lines: Iterable[str], size: str = "auto") -> str:
     parts = [_sanitize(x) for x in list(lines)[:4]]
     while len(parts) < 4:
         parts.append("")
@@ -51,17 +51,17 @@ class LCDPipeClient:
         return False
 
     def send(self, l1: str = "", l2: str = "", l3: str = "", l4: str = "", *, size: str = "auto") -> None:
-        msg = encode_message([l1, l2, l3, l4], size=size)
+        msg = _encode_message([l1, l2, l3, l4], size=size)
         # Use a short open/write/close to keep behavior simple and robust.
         with open(self.pipe_path, "w") as f:
             f.write(msg + "\n")
             f.flush()
 
-    def send_lines(self, lines: List[str], *, size: str = "auto") -> None:
+    def _send_lines(self, lines: List[str], *, size: str = "auto") -> None:
         padded = (lines + [""] * 4)[:4]
         self.send(*padded, size=size)
 
     def qr(self, data: str, captions: Optional[List[str]] = None) -> None:
         caps = captions or []
         padded = [data] + caps
-        self.send_lines(padded, size="qr")
+        self._send_lines(padded, size="qr")

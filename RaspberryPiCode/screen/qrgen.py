@@ -27,8 +27,8 @@ def encode_text(text: str, *, ecl: str = "M") -> "QrCode":
         "Q": QrCode.Ecc.QUARTILE,
         "H": QrCode.Ecc.HIGH,
     }.get((ecl or "M").upper(), QrCode.Ecc.MEDIUM)
-    segs = QrSegment.make_segments(text)
-    return QrCode.encode_segments(segs, e)
+    segs = QrSegment._make_segments(text)
+    return QrCode._encode_segments(segs, e)
 
 
 # ---- Implementation (compact port of Nayuki) ----
@@ -89,7 +89,7 @@ class QrCode:
         return bool(self._modules[y][x])
 
     @staticmethod
-    def encode_segments(
+    def _encode_segments(
         segs: List["QrSegment"],
         ecl: "QrCode.Ecc",
         min_version: int = 1,
@@ -105,7 +105,7 @@ class QrCode:
         # Find minimal version
         for version in range(min_version, max_version + 1):
             data_capacity_bits = QrCode._get_num_data_codewords(version, ecl) * 8
-            used_bits = QrSegment.get_total_bits(segs, version)
+            used_bits = QrSegment._get_total_bits(segs, version)
             if used_bits is not None and used_bits <= data_capacity_bits:
                 # Boost ECC if possible
                 if boost_ecl:
@@ -122,18 +122,18 @@ class QrCode:
                 # Build bit buffer
                 bb = _BitBuffer()
                 for seg in segs:
-                    bb.append_bits(seg.mode.mode_bits, 4)
-                    bb.append_bits(seg.num_chars, seg.mode.num_char_count_bits(version))
-                    bb.extend(seg.data)
+                    bb._append_bits(seg.mode.mode_bits, 4)
+                    bb._append_bits(seg.num_chars, seg.mode.num_char_count_bits(version))
+                    bb._extend(seg.data)
                 # Terminator
-                bb.append_bits(0, min(4, data_capacity_bits - len(bb)))
+                bb._append_bits(0, min(4, data_capacity_bits - len(bb)))
                 # Pad to byte
-                bb.append_bits(0, (-len(bb)) % 8)
+                bb._append_bits(0, (-len(bb)) % 8)
                 # Pad bytes
                 pad_bytes = (data_capacity_bits - len(bb)) // 8
                 for i in range(pad_bytes):
-                    bb.append_bits(0xEC if i % 2 == 0 else 0x11, 8)
-                data_codewords = bb.to_bytes()
+                    bb._append_bits(0xEC if i % 2 == 0 else 0x11, 8)
+                data_codewords = bb._to_bytes()
                 return QrCode(version, ecl, data_codewords, mask)
 
         raise ValueError("Data too long")
@@ -437,7 +437,7 @@ class QrSegment:
         self.data = data
 
     @staticmethod
-    def make_segments(text: str) -> List["QrSegment"]:
+    def _make_segments(text: str) -> List["QrSegment"]:
         if text == "":
             return []
         data = []
@@ -447,7 +447,7 @@ class QrSegment:
         return [QrSegment(QrSegment.Mode.BYTE, len(text.encode("utf-8")), data)]
 
     @staticmethod
-    def get_total_bits(segs: List["QrSegment"], ver: int) -> Optional[int]:
+    def _get_total_bits(segs: List["QrSegment"], ver: int) -> Optional[int]:
         result = 0
         for seg in segs:
             ccbits = seg.mode.num_char_count_bits(ver)
@@ -458,16 +458,16 @@ class QrSegment:
 
 
 class _BitBuffer(list):
-    def append_bits(self, val: int, length: int) -> None:
+    def _append_bits(self, val: int, length: int) -> None:
         if length < 0 or val >> length != 0:
             raise ValueError("Value out of range")
         for i in reversed(range(length)):
             self.append((val >> i) & 1)
 
-    def extend(self, bits: List[int]) -> None:
-        super().extend(bits)
+    def _extend(self, bits: List[int]) -> None:
+        super()._extend(bits)
 
-    def to_bytes(self) -> bytes:
+    def _to_bytes(self) -> bytes:
         out = bytearray()
         val = 0
         for i, bit in enumerate(self):
