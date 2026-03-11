@@ -211,6 +211,13 @@ class OnlineController:
                 is_cap = board.is_capture(mv)
                 board.push(mv)
                 last_move_count += 1
+                # Signal check before the opponent-move overlay so the Pico's
+                # blink_square_keep completes before engine_ack_pending is set.
+                if announce_new and board.is_check():
+                    ksq = board.king(board.turn)
+                    if ksq is not None:
+                        link.send_to_board(f"check_{chess.square_name(ksq)}")
+                        time.sleep(1.6)
                 link.send_to_board(format_engine_move(uci, is_cap))
                 time.sleep(0.3)
                 send_turn_if_human()
@@ -391,6 +398,10 @@ class OnlineController:
 
             board.push(move)
             last_move_count += 1
+            if board.is_check():
+                ksq = board.king(board.turn)
+                if ksq is not None:
+                    link.send_to_board(f"check_{chess.square_name(ksq)}")
             send_turn_if_human()
             prompted_for_this_turn = False
             in_move_entry = False
