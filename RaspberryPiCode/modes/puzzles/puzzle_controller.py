@@ -1074,7 +1074,7 @@ class PuzzleController:
                 _rearm()
                 continue
 
-            display.send(f"Correct move!\n{mv[:2]}→{mv[2:4]}")
+            display.send(f"Correct move!\n{expected[:2]}→{expected[2:4]}")
             __import__("time").sleep(2)
             board.push(mv)
             st.idx += 1
