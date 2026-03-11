@@ -37,9 +37,13 @@ OK_MSGS: frozenset = frozenset({"ok", "btnok", "btn_ok"})
 HINT_MSGS: frozenset = frozenset({"hint", "btn_hint"})
 
 #: Tokens that should be silently ignored in most message loops
-IGNORED_MSGS: frozenset = NEW_GAME_MSGS | OK_MSGS | HINT_MSGS | frozenset({"draw", "btn_draw"})
+IGNORED_MSGS: frozenset = (
+    NEW_GAME_MSGS | OK_MSGS | HINT_MSGS | frozenset({"draw", "btn_draw"})
+)
 
-RESERVED_NON_MOVES: frozenset = NEW_GAME_MSGS | HINT_MSGS | OK_MSGS | {"draw", "btn_draw"}
+RESERVED_NON_MOVES: frozenset = (
+    NEW_GAME_MSGS | HINT_MSGS | OK_MSGS | {"draw", "btn_draw"}
+)
 
 
 def parse_uci_move(s: str) -> Optional[str]:
@@ -74,10 +78,10 @@ def parse_payload(payload: str) -> Event:
         return Event(EventType.OK, low)
 
     if low.startswith("typing_"):
-        return Event(EventType.TYPING, low[len("typing_"):])
+        return Event(EventType.TYPING, low[len("typing_") :])
 
     if low.startswith("capq_"):
-        return Event(EventType.CAPTURE_QUERY, low[len("capq_"):].strip())
+        return Event(EventType.CAPTURE_QUERY, low[len("capq_") :].strip())
 
     move = parse_uci_move(low)
     if move:
@@ -86,8 +90,16 @@ def parse_payload(payload: str) -> Event:
     return Event(EventType.UNKNOWN, p)
 
 
-def format_engine_move(uci: str, is_capture: bool) -> str:
-    return f"m{uci}{'_cap' if is_capture else ''}"
+def format_engine_move(
+    uci: str, is_capture: bool, is_check: bool, ksq, square_name
+) -> str:
+    if is_capture:
+        return f"m{uci}_cap"
+    elif is_check():
+        if ksq is not None:
+            return f"check_{square_name}"
+    else:
+        return ""
 
 
 def format_hint_move(uci: str, is_capture: bool) -> str:
@@ -101,12 +113,18 @@ def format_capture_reply(is_capture: bool) -> str:
 def piece_name(sym: str) -> str:
     """Return the display name for a piece symbol (e.g. 'P' -> 'PAWN')."""
     return {
-        "P": "PAWN", "N": "KNIGHT", "B": "BISHOP",
-        "R": "ROOK",  "Q": "QUEEN",  "K": "KING",
+        "P": "PAWN",
+        "N": "KNIGHT",
+        "B": "BISHOP",
+        "R": "ROOK",
+        "Q": "QUEEN",
+        "K": "KING",
     }.get((sym or "").upper(), "PIECE")
 
 
-def send_lcd_ack_for_payload(link, payload: str, *, log_prefix: str = "[LCD ACK]") -> None:
+def send_lcd_ack_for_payload(
+    link, payload: str, *, log_prefix: str = "[LCD ACK]"
+) -> None:
     """Send the matching LCD ACK for a typing_* payload.
 
     Shared across game, puzzle, and online flows so typing preview behavior
