@@ -35,6 +35,15 @@ from core.protocol import (
     OK_MSGS,
     HINT_MSGS,
 )
+from core.game_flow import (
+    shutdown_raspberry_pi,
+    wait_for_ok,
+    handle_illegal_move,
+    handle_typing_message,
+    handle_capq_message,
+    resolve_uci_promotion,
+    ReturnToMenu,
+)
 
 
 def _pgn_opening_info(pgn_text: str) -> Tuple[str, str]:
@@ -892,111 +901,47 @@ class PuzzleController:
         if err or st is None:
             display.send("Puzzle error\n" + (err or "unknown"))
             link.send_to_board("error_puzzle_fetch")
-
-            # Keep the error visible until the user acknowledges with OK.
-            # This also makes the underlying error easier to read.
-            try:
-                from core.protocol import parse_payload, EventType
-                import time
-
-                while True:
-                    raw = link.try_read_from_board()
-                    if raw:
-                        ev = parse_payload(raw)
-                        if ev.type == EventType.OK:
-                            break
-                        if ev.type == EventType.SHUTDOWN:
-                            break
-                    time.sleep(0.05)
-            except Exception:
-                pass
+            wait_for_ok(link, display)
             return
 
         # 2) Guided setup on an EMPTY board
         steps = _compute_place_steps_from_fen(st.fen_start)
 
-        # Clear any stale button events from menu navigation so they can't
-        # interfere with the first setup prompts / LED commands.
         try:
             link.clear_input()
         except Exception:
             pass
 
-        # Disable hints on the Pico during setup so no hint requests can be
-        # triggered while the user is placing pieces.
         link.send_to_board("hint_disable")
-
         link.send_to_board("puzzle_setup_begin")
         try:
             label = _format_puzzle_label(
                 st.themes,
                 st.rating,
                 fallback=(
-                    "Mix & Match"
-                    if self.mode == "mix"
-                    else (
-                        self.theme_label or THEME_MAP.get(self.theme or "", "Theme")
-                        if self.mode == "theme"
-                        else "Daily"
-                    )
+                    "Mix & Match" if self.mode == "mix"
+                    else (self.theme_label or THEME_MAP.get(self.theme or "", "Theme") if self.mode == "theme"
+                          else "Daily")
                 ),
             )
             display.send(f"{label}\nSetup position\nOK = next")
             __import__("time").sleep(0.8)
             link.send_to_board("setup_clear")
 
-            # Wait for OK after clearing
-            while True:
-                msg = link.read_from_board()
-                if msg is None:
-                    continue
-
-                if msg == "shutdown":
-                    from core.game_flow import shutdown_raspberry_pi
-
-                    shutdown_raspberry_pi(link, display)
-                    return
-
-                if msg in NEW_GAME_MSGS:
-                    return
-
-                if msg in OK_MSGS:
-                    break
+            if not wait_for_ok(link, display):
+                return
 
             for side, sq, sym in steps:
                 display.send(
                     f"PLACE {('WHITE' if side=='w' else 'BLACK')}\n{_piece_name(sym)} {sq}\nOK = next"
                 )
                 link.send_to_board(f"setup_place_{sq}_{side}")
-
-                while True:
-                    msg = link.read_from_board()
-                    if msg is None:
-                        continue
-
-                    if msg == "shutdown":
-                        from core.game_flow import shutdown_raspberry_pi
-
-                        shutdown_raspberry_pi(link, display)
-                        return
-
-                    if msg in NEW_GAME_MSGS:
-                        return
-
-                    if msg in OK_MSGS:
-                        break
-
-                    if msg.startswith("typing_") or msg in HINT_MSGS:
-                        continue
+                if not wait_for_ok(link, display):
+                    return
 
             display.send(f"{label}\nSetup done\nPuzzle begins")
             __import__("time").sleep(0.8)
         finally:
-            # Re-enable hints and always end setup mode.
-            # NOTE: we send hint_enable both before and after puzzle_setup_done.
-            # On the Pico, puzzle_setup_done flips into GAME_RUNNING and re-enables
-            # the HINT IRQ. Sending hint_enable again avoids a rare race where the
-            # first HINT press right after setup gets ignored.
             link.send_to_board("hint_enable")
             link.send_to_board("puzzle_setup_done")
             try:
@@ -1011,136 +956,26 @@ class PuzzleController:
         player_color = "WHITE" if board.turn == chess.WHITE else "BLACK"
         side_prefix = f"You are {player_color}"
 
-        def _show_prompt_enter_move() -> None:
+        def _prompt():
             display.send(f"{side_prefix}\nEnter move:")
 
-        def _show_try_again(extra: str = "") -> None:
-            if extra:
-                display.send(f"{side_prefix}\n{extra}\nEnter move")
-            else:
-                display.send(f"{side_prefix}\nTry again\nEnter move")
+        def _rearm():
+            link.send_to_board(f"turn_{'white' if board.turn == chess.WHITE else 'black'}")
+            _prompt()
 
-        def _wait_ack_ok() -> bool:
-            while True:
-                m = link.read_from_board()
-                if m is None:
-                    continue
-
-                if m == "shutdown":
-                    from core.game_flow import shutdown_raspberry_pi
-
-                    shutdown_raspberry_pi(link, display)
-                    return False
-
-                if m in NEW_GAME_MSGS:
-                    return False
-
-                if m in OK_MSGS:
-                    return True
-
-                if (
-                    m.startswith("typing_")
-                    or m.startswith("capq_")
-                    or m in HINT_MSGS
-                ):
-                    continue
-
-        def _wait_promotion_choice() -> Optional[str]:
-            """Wait for Pico to return btn_q/btn_r/btn_b/btn_n."""
-            while True:
-                m = link.read_from_board()
-                if m is None:
-                    continue
-
-                if m == "shutdown":
-                    from core.game_flow import shutdown_raspberry_pi
-
-                    shutdown_raspberry_pi(link, display)
-                    return None
-
-                if m in NEW_GAME_MSGS:
-                    return None
-
-                if m in ("btn_q", "btn_r", "btn_b", "btn_n"):
-                    return m[-1]
-
-                if (
-                    m.startswith("typing_")
-                    or m.startswith("capq_")
-                    or m in HINT_MSGS
-                ):
-                    continue
-
-        def _wrong_move_feedback(user_uci: str) -> bool:
-            """Show what piece moved and where to put it back. Lights red trail and waits OK."""
-            u = (user_uci or "").strip().lower()
-            if u.startswith("m"):
-                u = u[1:]
-            u = "".join(ch for ch in u if ch.isalnum())
-
-            if len(u) < 4:
-                display.send(f"Wrong move\nPut it back + OK")
-                link.send_to_board("puzzle_wrong_")
-                return _wait_ack_ok()
-
-            frm, to = u[:2], u[2:4]
-
-            piece_txt = "PIECE"
-            try:
-                p = board.piece_at(chess.parse_square(frm))
-                if p:
-                    piece_txt = _piece_name(p.symbol())
-            except Exception:
-                pass
-
-            display.send(
-                f"Incorrect move: \n {piece_txt} {frm}->{to}\nPut it back + OK"
-            )
-            # Trail from TO back to FROM so the user knows where to return it
-            link.send_to_board(f"puzzle_wrong_{to}{frm}")
-            return _wait_ack_ok()
-
-        def _illegal_move_feedback(user_uci: str) -> bool:
-            """Illegal move: show where to put the piece back (red trail) and wait for OK."""
-            u = (user_uci or "").strip().lower()
-            if u.startswith("m"):
-                u = u[1:]
-            u = "".join(ch for ch in u if ch.isalnum())
-
-            if len(u) < 4:
-                display.send(f"Illegal move\nOK = continue")
-                return _wait_ack_ok()
-
-            frm, to = u[:2], u[2:4]
-
-            piece_txt = "PIECE"
-            try:
-                p = board.piece_at(chess.parse_square(frm))
-                if p:
-                    piece_txt = _piece_name(p.symbol())
-            except Exception:
-                pass
-
-            display.send(f"Illegal move: \n {piece_txt} {frm}->{to}\nPut it back + OK")
-            # Trail from TO back to FROM so the user knows where to return it
-            link.send_to_board(f"puzzle_wrong_{to}{frm}")
-            return _wait_ack_ok()
-
-        # Kick Pico into input state immediately after setup
         link.send_to_board(f"turn_{'white' if board.turn == chess.WHITE else 'black'}")
-        _show_prompt_enter_move()
+        _prompt()
 
         # 4) Solve loop
         while True:
             if st.idx >= len(st.solution):
                 try:
-                    angle_key = (self.theme or self.mode or "").strip()
-                    self._mark_seen(angle_key, st.puzzle_id)
+                    self._mark_seen((self.theme or self.mode or "").strip(), st.puzzle_id)
                 except Exception:
                     pass
                 display.send(f"{side_prefix}\nPuzzle solved!\nOK = menu")
                 link.send_to_board("GameOver:1-0")
-                _wait_ack_ok()
+                wait_for_ok(link, display)
                 return
 
             expected = st.solution[st.idx]
@@ -1150,28 +985,15 @@ class PuzzleController:
                 continue
 
             if msg == "shutdown":
-                from core.game_flow import shutdown_raspberry_pi
-
                 shutdown_raspberry_pi(link, display)
                 return
 
             if msg in NEW_GAME_MSGS:
                 return
 
-            # Capture probe from Pico for preview cap blink
-            if msg.startswith("capq_"):
-                q = msg[len("capq_") :].strip().lower()
-                q = "".join(ch for ch in q if ch.isalnum())
-                cap_flag = 0
-                try:
-                    mvq = chess.Move.from_uci(q)
-                    cap_flag = 1 if board.is_capture(mvq) else 0
-                except Exception:
-                    cap_flag = 0
-                link.send_to_board(f"capr_{cap_flag}")
+            if handle_capq_message(link, board, msg):
                 continue
 
-            # Hint button
             if msg in HINT_MSGS:
                 link.send_to_board(
                     f"hint_{expected}{'_cap' if _is_cap(board, expected) else ''}"
@@ -1179,121 +1001,60 @@ class PuzzleController:
                 display.send(f"{side_prefix}\nHint: {expected[:2]}→{expected[2:4]}")
                 continue
 
-            # Typing previews
             if msg.startswith("typing_"):
-                try:
-                    from core.game_flow import update_typing_display
-
-                    payload = msg[len("typing_") :]
-
-                    print(f"[PUZZLE typing] payload={payload!r}", flush=True)
-                    update_typing_display(display, payload, board)
-                    send_lcd_ack_for_payload(link, payload, log_prefix="[PUZZLE ACK]")
-
-                except Exception as e:
-                    print(f"[PUZZLE typing ERROR] {e}", flush=True)
-                    display.send(msg.replace("typing_", ""))
+                handle_typing_message(link, display, msg[len("typing_"):], board, log_prefix="[PUZZLE ACK]")
                 continue
 
-            # Navigation / acknowledgement tokens can leak through right after
-            # the last setup OK press. They are *not* UCI moves.
-            if msg in ("ok", "btn_ok", "btnok"):
+            if msg in OK_MSGS:
                 continue
 
-            # Parse user move
-            uci = msg.strip().lower()
-            if uci.startswith("m"):
-                uci = uci[1:]
-            uci = "".join(ch for ch in uci if ch.isalnum())
-            if uci in NEW_GAME_MSGS | OK_MSGS | HINT_MSGS:
-                continue
-            if len(uci) not in (4, 5):
+            # Parse move
+            uci = parse_uci_move(msg)
+            if not uci:
                 continue
 
-            # Promotion: Pico sends 4-char; if a promotion is possible for that from->to, prompt for piece.
-            if len(uci) == 4:
-                try:
-                    frm_sq = chess.parse_square(uci[:2])
-                    to_sq = chess.parse_square(uci[2:4])
-                    promo_needed = any(
-                        (
-                            mvv.from_square == frm_sq
-                            and mvv.to_square == to_sq
-                            and mvv.promotion is not None
-                        )
-                        for mvv in board.legal_moves
-                    )
-                    if promo_needed:
-                        display.send(f"{side_prefix}\nPromotion!\n1Q 2R 3B 4N")
-                        link.send_to_board("promotion_choice_needed")
-                        pick = _wait_promotion_choice()
-                        if pick is None:
-                            return
-                        uci = uci + pick
-                except Exception:
-                    pass
+            # Promotion
+            try:
+                uci = resolve_uci_promotion(link, display, board, uci) or uci
+            except ReturnToMenu:
+                return
 
-            # If it's not legal in the current position, treat as illegal (not as "wrong solution")
+            # Legality check
             try:
                 user_mv = chess.Move.from_uci(uci)
             except Exception:
-                # Bad/partial UCI from Pico; treat as illegal and guide the user to undo it.
-                if not _illegal_move_feedback(uci):
+                if not handle_illegal_move(link=link, display=display, board=board, uci=uci, label="Illegal"):
                     return
-                # Re-arm Pico input state and prompt again
-                link.send_to_board(
-                    f"turn_{'white' if board.turn == chess.WHITE else 'black'}"
-                )
-                _show_prompt_enter_move()
                 continue
 
             if user_mv not in board.legal_moves:
-                # User made a move that's not legal in this position; guide them to undo it.
-                if not _illegal_move_feedback(uci):
+                if not handle_illegal_move(link=link, display=display, board=board, uci=uci, label="Illegal"):
                     return
-                link.send_to_board(
-                    f"turn_{'white' if board.turn == chess.WHITE else 'black'}"
-                )
-                _show_prompt_enter_move()
                 continue
 
-            # Compare against expected (promotion-aware)
-            wrong = False
-            if uci[:4] != expected[:4]:
+            # Correctness check
+            wrong = uci[:4] != expected[:4]
+            if not wrong and len(expected) == 5:
+                wrong = len(uci) != 5 or uci[4] != expected[4]
+            elif not wrong and len(uci) == 5:
                 wrong = True
-            elif len(expected) == 5:
-                if len(uci) != 5 or uci[4] != expected[4]:
-                    wrong = True
-            else:
-                if len(uci) == 5:
-                    wrong = True
 
             if wrong:
-                if not _wrong_move_feedback(uci):
+                if not handle_illegal_move(link=link, display=display, board=board, uci=uci, label="Incorrect"):
                     return
-                _show_prompt_enter_move()
-                # Ensure Pico is back in input state
-                link.send_to_board(
-                    f"turn_{'white' if board.turn == chess.WHITE else 'black'}"
-                )
                 continue
 
-            # Correct move (must use expected string to match solution exactly)
+            # Correct move
             mv = chess.Move.from_uci(expected)
             if mv not in board.legal_moves:
-                # Shouldn't happen, but keep user unblocked.
                 link.send_to_board("error_puzzle_internal")
-                _show_try_again("Puzzle error")
+                display.send("Puzzle error\nTry again")
                 __import__("time").sleep(1.0)
-                link.send_to_board(
-                    f"turn_{'white' if board.turn == chess.WHITE else 'black'}"
-                )
-                _show_prompt_enter_move()
+                _rearm()
                 continue
 
             display.send(f"{side_prefix}\nCorrect")
             __import__("time").sleep(2)
-
             board.push(mv)
             st.idx += 1
 
@@ -1310,37 +1071,22 @@ class PuzzleController:
                 if rmv in board.legal_moves:
                     opp = "WHITE" if board.turn == chess.WHITE else "BLACK"
                     cap = board.is_capture(rmv)
-
-                    # If the opponent reply is a promotion (e.g. a7a8q), show what it became.
                     promo_line = ""
                     try:
-                        if isinstance(reply, str) and len(reply) >= 5:
-                            promo_letter = reply[4].lower()
-                            if promo_letter in ("q", "r", "b", "n"):
-                                promo_name = (
-                                    display._promo_name(promo_letter)
-                                    if hasattr(display, "_promo_name")
-                                    else promo_letter.upper()
-                                )
-                                promo_line = f"Promoted to {promo_name}\n"
+                        if len(reply) >= 5 and reply[4].lower() in ("q", "r", "b", "n"):
+                            pl = reply[4].lower()
+                            promo_name = display._promo_name(pl) if hasattr(display, "_promo_name") else pl.upper()
+                            promo_line = f"Promoted to {promo_name}\n"
                     except Exception:
-                        promo_line = ""
-
+                        pass
                     display.send(
                         f"{side_prefix}\n{opp} played {reply[:2]}→{reply[2:4]}\n{promo_line}OK = continue"
                     )
                     link.send_to_board(f"m{reply}{'_cap' if cap else ''}")
-
                     board.push(rmv)
                     st.idx += 1
-
-                    if not _wait_ack_ok():
+                    if not wait_for_ok(link, display):
                         return
+                    _prompt()
 
-                    _show_prompt_enter_move()
-
-            # Prompt next move
-            link.send_to_board(
-                f"turn_{'white' if board.turn == chess.WHITE else 'black'}"
-            )
-            _show_prompt_enter_move()
+            _rearm()

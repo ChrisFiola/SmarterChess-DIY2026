@@ -96,14 +96,8 @@ class GameController:
             raise ReturnToMenu()
 
         if typ == EventType.TYPING:
-            from core.game_flow import update_typing_display
-
-            update_typing_display(self.deps.display, payload, self.board)
-
-            # ACK must be tied to the LCD update that just happened,
-            # not to a later OK press.
-            send_lcd_ack_for_payload(self.deps.link, payload)
-
+            from core.game_flow import handle_typing_message
+            handle_typing_message(self.deps.link, self.deps.display, payload, self.board)
             return
 
         if typ == EventType.OK:

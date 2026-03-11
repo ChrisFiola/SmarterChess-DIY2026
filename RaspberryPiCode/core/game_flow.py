@@ -80,6 +80,123 @@ def wait_for_ok(link: BoardLink, display: Display) -> bool:
             continue
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Shared single-call helpers used by every game mode
+# ─────────────────────────────────────────────────────────────────────────────
+
+def handle_typing_message(
+    link: BoardLink,
+    display: Display,
+    payload: str,
+    board: Optional["chess.Board"] = None,
+    *,
+    log_prefix: str = "[ACK]",
+) -> None:
+    """Update the typing-preview display and send the matching ACK in one call.
+
+    Called identically in every mode — keeping this centralised guarantees
+    that typing-preview behaviour stays in sync everywhere.
+    """
+    update_typing_display(display, payload, board)
+    send_lcd_ack_for_payload(link, payload, log_prefix=log_prefix)
+
+
+def handle_capq_message(link: BoardLink, board: "chess.Board", msg: str) -> bool:
+    """If *msg* is a capture-query from the Pico, answer it and return True."""
+    if not msg.startswith("capq_"):
+        return False
+    uci = msg[5:].strip()
+    try:
+        cap = check_move_captures(board, uci)
+    except Exception:
+        cap = False
+    link.send_to_board(f"capr_{1 if cap else 0}")
+    return True
+
+
+def resolve_uci_promotion(
+    link: BoardLink,
+    display: Display,
+    board: "chess.Board",
+    uci: str,
+) -> Optional[str]:
+    """Append a promotion letter to *uci* if the move requires one.
+
+    Returns the (possibly extended) uci string, or None if the user backed out.
+    Raises ReturnToMenu if the user pressed the back/new-game button.
+    """
+    if len(uci) == 4:
+        try:
+            piece = board.piece_at(chess.parse_square(uci[:2]))
+            if piece and piece.piece_type == chess.PAWN:
+                rank = int(uci[3])
+                if (piece.color == chess.WHITE and rank == 8) or (
+                    piece.color == chess.BLACK and rank == 1
+                ):
+                    promo = prompt_promotion_choice(link, display)
+                    return uci + promo
+        except ReturnToMenu:
+            raise
+        except Exception:
+            pass
+
+    try:
+        move = chess.Move.from_uci(uci)
+        if move_needs_promotion(move, board):
+            promo = prompt_promotion_choice(link, display)
+            return uci + promo
+    except (ValueError, Exception):
+        pass
+
+    return uci
+
+
+def validate_and_push_move(
+    *,
+    link: BoardLink,
+    display: Display,
+    board: "chess.Board",
+    uci: str,
+) -> Optional["chess.Move"]:
+    """Parse, promote, validate, and push a human move in one call.
+
+    Returns the pushed Move on success, None on failure.
+    On failure the appropriate error is already sent to Pico + display.
+    """
+    # 1) Promotion
+    try:
+        uci = resolve_uci_promotion(link, display, board, uci) or uci
+    except ReturnToMenu:
+        raise
+
+    # 2) Parse
+    try:
+        move = chess.Move.from_uci(uci)
+    except ValueError:
+        link.send_to_board(f"error_invalid_{uci}")
+        display.show_invalid(uci)
+        return None
+
+    # 3) Legality
+    if move not in board.legal_moves:
+        handle_illegal_move(link=link, display=display, board=board, uci=uci, label="ILLEGAL")
+        return None
+
+    # 4) Push
+    board.push(move)
+
+    # 5) Check signal
+    try:
+        if board.is_check():
+            ksq = board.king(board.turn)
+            if ksq is not None:
+                link.send_to_board(f"check_{chess.square_name(ksq)}")
+    except Exception:
+        pass
+
+    return move
+
+
 def handle_illegal_move(
     *,
     link: BoardLink,
@@ -662,89 +779,17 @@ def update_typing_display(
 def apply_human_move(
     *, link: BoardLink, display: Display, board: chess.Board, uci: str
 ) -> None:
-    """Validate, handle promotion, push, and report/handoff.
-
-    Extracted from the previous monolithic play loop to make the core loop
-    easier to read and extend (Lichess later).
-
-    Protocol + display behavior are preserved:
-      - invalid -> heyArduinoerror_invalid_* + OLED invalid
-      - illegal -> heyArduinoerror_illegal_* + OLED illegal
-      - game over -> heyArduinoGameOver:* + OLED game over
-    """
-
-    # 1) Parse UCI
-    try:
-        move = chess.Move.from_uci(uci)
-    except ValueError:
-        link.send_to_board(f"error_invalid_{uci}")
-        display.show_invalid(uci)
+    """Validate, handle promotion, push, and report/handoff."""
+    move = validate_and_push_move(link=link, display=display, board=board, uci=uci)
+    if move is None:
         return
 
-    # 2) Promotion pre-detection if user did not include promotion letter
-    if len(uci) == 4:
-        try:
-            from_sq = uci[:2]
-            to_sq = uci[2:4]
-            piece = board.piece_at(chess.parse_square(from_sq))
-            if piece and piece.piece_type == chess.PAWN:
-                rank = int(to_sq[1])
-                if (piece.color == chess.WHITE and rank == 8) or (
-                    piece.color == chess.BLACK and rank == 1
-                ):
-                    promo = prompt_promotion_choice(link, display)
-                    uci = uci + promo
-                    move = chess.Move.from_uci(uci)
-        except ReturnToMenu:
-            raise
-        except Exception:
-            # fall through to normal validation
-            pass
-
-    # 3) If still requires promotion (legal but missing promotion)
-    if move_needs_promotion(move, board):
-        promo = prompt_promotion_choice(link, display)
-        uci = uci + promo
-        try:
-            move = chess.Move.from_uci(uci)
-        except ValueError:
-            link.send_to_board(f"error_invalid_{uci}")
-            display.show_invalid(uci)
-            return
-
-    # 4) Legality check
-    if move not in board.legal_moves:
-        # Standardized illegal UX across *all* modes:
-        #   - show piece + squares on LCD
-        #   - Pico shows red put-back trail
-        #   - wait for OK acknowledgement
-        #   - Pi re-enters move collection via a deterministic turn_ message
-        handle_illegal_move(
-            link=link, display=display, board=board, uci=uci, label="ILLEGAL"
-        )
-        return
-
-    # 5) Push
-    board.push(move)
-
-    # UX: if the move gives check, tell the Pico to blink the checked king square once.
-    # Sent only after the move is accepted/confirmed here.
-    try:
-        if board.is_check():
-            ksq = board.king(board.turn)  # side-to-move is the side in check
-            if ksq is not None:
-                link.send_to_board(f"check_{chess.square_name(ksq)}")
-    except Exception:
-        pass
-
-    # 6) Game over or handoff
     if board.is_game_over():
         notify_game_over(link, display, board)
         return
 
-    # Keep your existing "arrow + whose turn" messaging
     dummy_cfg = GameConfig(skill_level=5, move_time_ms=2000, human_is_white=True)
-    prompt_next_turn(link, display, board, "stockfish", dummy_cfg, uci)
+    prompt_next_turn(link, display, board, "local", dummy_cfg, chess.Move.uci(move))
 
 
 # -------------------- Unified play loop --------------------
@@ -757,235 +802,83 @@ def run_local_game(
     state: GameState,
     cfg: GameConfig,
 ) -> None:
-    # Reset and banner
+    """Local 2-player game loop.
+
+    Both sides are human; the engine context is kept available for hints only.
+    """
     state.board = chess.Board()
     link.send_to_board("GameStart")
     show_new_game_banner(display)
     time.sleep(0.3)
 
-    # Initial side to move
-    if state.mode in ("stockfish", "pc", "btn_mode_pc", "vs_computer", "vs"):
-        if not cfg.human_is_white:
-            display.send("Computer starts first.")
-            time.sleep(0.4)
-            play_engine_move(link, display, ctx, state, cfg)
-        else:
-            link.send_to_board("turn_white")
-            display.prompt_move("WHITE")
-    else:
-        # Local 2-player always starts with White
-        link.send_to_board("turn_white")
-        display.prompt_move("WHITE")
+    link.send_to_board("turn_white")
+    display.prompt_move("WHITE")
 
     while True:
-        # 1) Non-blocking: show typing previews if any
-        peek = link.try_read_from_board()
-        if peek is not None:
-            print(f"[PLAY_GAME NB] peek={peek!r}", flush=True)
-
-            if peek == "shutdown":
-                shutdown_raspberry_pi(link, display)
-                return
-
-            if peek.startswith("typing_"):
-                payload = peek[len("typing_") :]
-                print(f"[PLAY_GAME NB typing] payload={payload!r}", flush=True)
-                update_typing_display(display, payload, state.board)
-
-                try:
-                    send_lcd_ack_for_payload(link, payload)
-                    print(
-                        f"[PLAY_GAME NB ack] sent for payload={payload!r}", flush=True
-                    )
-                except Exception as e:
-                    print(f"[PLAY_GAME NB ack ERROR] {e}", flush=True)
-
-            # Pico asks: "capq_<uci>" -> answer quickly with "capr_0/1"
-            if peek.startswith("capq_"):
-                uci = peek[5:].strip()
-                try:
-                    cap = check_move_captures(state.board, uci)
-                except Exception:
-                    cap = False
-                print(f"[PLAY_GAME NB capq] uci={uci!r} cap={cap}", flush=True)
-                link.send_to_board(f"capr_{1 if cap else 0}")
-
-        # 2) Engine turn (Stockfish mode)
-        if state.mode == "stockfish" and not state.board.is_game_over():
-            engine_should_move = (
-                state.board.turn == chess.WHITE and not cfg.human_is_white
-            ) or (state.board.turn == chess.BLACK and cfg.human_is_white)
-            if engine_should_move:
-                print("[PLAY_GAME] engine turn", flush=True)
-                play_engine_move(link, display, ctx, state, cfg)
-                continue
-
-        # 3) Blocking read for next Pico message
         msg = link.read_from_board()
         if msg is None:
             continue
-
-        print(f"[PLAY_GAME] msg={msg!r}", flush=True)
 
         if msg == "shutdown":
             shutdown_raspberry_pi(link, display)
             return
 
-        # 4) Also handle typing previews in the blocking path
+        if handle_capq_message(link, state.board, msg):
+            continue
+
         if msg.startswith("typing_"):
-            payload = msg[len("typing_") :]
-            print(f"[PLAY_GAME typing] payload={payload!r}", flush=True)
-            update_typing_display(display, payload, state.board)
-
-            try:
-                send_lcd_ack_for_payload(link, payload)
-                print(f"[PLAY_GAME ack] sent for payload={payload!r}", flush=True)
-            except Exception as e:
-                print(f"[PLAY_GAME ack ERROR] {e}", flush=True)
-
+            handle_typing_message(link, display, msg[len("typing_"):], state.board)
             continue
 
-        # Capture preview probe (blocking path)
-        if msg.startswith("capq_"):
-            uci = msg[5:].strip()
-            try:
-                cap = check_move_captures(state.board, uci)
-            except Exception:
-                cap = False
-            print(f"[PLAY_GAME capq] uci={uci!r} cap={cap}", flush=True)
-            link.send_to_board(f"capr_{1 if cap else 0}")
-            continue
-
-        # 5) New game request
         if msg in NEW_GAME_MSGS:
-            print("[PLAY_GAME] new game request", flush=True)
             raise ReturnToMenu()
 
-        # 6) Hint request
         if msg in HINT_MSGS:
-            print("[PLAY_GAME] hint request", flush=True)
             send_move_hint(link, display, ctx, state, cfg)
             continue
 
-        # 7) OK acknowledgement / enter move trigger
         if msg in OK_MSGS:
             side = "WHITE" if state.board.turn == chess.WHITE else "BLACK"
-            print(f"[PLAY_GAME] OK received -> prompt_move({side})", flush=True)
             display.prompt_move(side, force=True)
             continue
 
-        # 8) Try parsing a move
         uci = parse_uci_move(msg)
         if not uci:
-            print(f"[PLAY_GAME] invalid payload={msg!r}", flush=True)
             link.send_to_board(f"error_invalid_{msg}")
             display.show_invalid(msg)
             continue
 
-        print(f"[PLAY_GAME] parsed uci={uci!r}", flush=True)
-
-        # Promotion pre-detection
-        from_sq = uci[:2]
-        to_sq = uci[2:4]
-
-        if len(uci) == 4:
-            piece = state.board.piece_at(chess.parse_square(from_sq))
-            if piece and piece.piece_type == chess.PAWN:
-                rank = int(to_sq[1])
-                if (piece.color == chess.WHITE and rank == 8) or (
-                    piece.color == chess.BLACK and rank == 1
-                ):
-                    print(f"[PLAY_GAME] promotion pre-detect for {uci!r}", flush=True)
-                    promo = prompt_promotion_choice(link, display)
-                    uci = uci + promo
-                    print(f"[PLAY_GAME] promotion chosen -> {uci!r}", flush=True)
-
-        # Validate UCI
-        try:
-            move = chess.Move.from_uci(uci)
-        except ValueError:
-            print(f"[PLAY_GAME] bad UCI after parse {uci!r}", flush=True)
-            link.send_to_board(f"error_invalid_{uci}")
-            display.show_invalid(uci)
+        move = validate_and_push_move(
+            link=link, display=display, board=state.board, uci=uci
+        )
+        if move is None:
             continue
 
-        # Promotion needed?
-        if move_needs_promotion(move, state.board):
-            print(f"[PLAY_GAME] move_needs_promotion {uci!r}", flush=True)
-            promo = prompt_promotion_choice(link, display)
-            uci = uci + promo
-            try:
-                move = chess.Move.from_uci(uci)
-            except ValueError:
-                print(f"[PLAY_GAME] bad promoted UCI {uci!r}", flush=True)
-                link.send_to_board(f"error_invalid_{uci}")
-                display.show_invalid(uci)
-                continue
-
-        # Legality check
-        if move not in state.board.legal_moves:
-            print(f"[PLAY_GAME] illegal move {uci!r}", flush=True)
-            handle_illegal_move(
-                link=link,
-                display=display,
-                board=state.board,
-                uci=uci,
-                label="ILLEGAL",
-            )
-            continue
-
-        # Accept and push
-        print(f"[PLAY_GAME] push move {uci!r}", flush=True)
-        state.board.push(move)
-
-        # Auto-draw
         if _check_and_handle_draw(link, display, state.board):
-            print("[PLAY_GAME] auto draw -> mode select", flush=True)
             raise ReturnToMenu()
 
-        # Game over?
         if state.board.is_game_over():
-            print("[PLAY_GAME] game over after move", flush=True)
-            _res = notify_game_over(link, display, state.board)
+            notify_game_over(link, display, state.board)
             while True:
                 msg2 = link.read_from_board()
                 if msg2 is None:
                     continue
-                print(f"[PLAY_GAME gameover wait] msg2={msg2!r}", flush=True)
                 if msg2 in NEW_GAME_MSGS:
                     raise ReturnToMenu()
                 if msg2.startswith("typing_") or msg2 in HINT_MSGS:
                     continue
         else:
-            print(f"[PLAY_GAME] prompt_next_turn uci={uci!r}", flush=True)
-            prompt_next_turn(link, display, state.board, state.mode, cfg, uci)
+            prompt_next_turn(
+                link, display, state.board, state.mode, cfg, chess.Move.uci(move)
+            )
 
 
 # -------------------- Online placeholder --------------------
 
 
 def run_online_game(link: BoardLink, display: Display, cfg: GameConfig) -> None:
-    """Online mode (manual start) — thin wrapper.
-
-    Phase 1: implementation moved to app.online_controller.OnlineController.
-    """
-    from modes.online.online_controller import OnlineController, OnlineDeps
-
-    deps = OnlineDeps(
-        link=link,
-        display=display,
-        cfg=cfg,
-        parse_uci_move=parse_uci_move,
-        check_move_captures=check_move_captures,
-        prompt_promotion_choice=prompt_promotion_choice,
-        current_side_name=current_side_name,
-        update_typing_display=update_typing_display,
-        notify_game_over=notify_game_over,
-        handle_illegal_move=handle_illegal_move,
-        shutdown_raspberry_pi=shutdown_raspberry_pi,
-        ReturnToMenu=ReturnToMenu,
-    )
-    OnlineController(deps).run()
+    from modes.online.online_controller import OnlineController
+    OnlineController(link, display, cfg).run()
 
 
 def run_puzzle_game(link: BoardLink, display: Display) -> None:
