@@ -1,3 +1,6 @@
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+
 #!/home/king/chessenv/bin/python
 # -*- coding: utf-8 -*-
 """
@@ -14,10 +17,10 @@ import sys
 import time
 import traceback
 
-from display import Display
-from boardlink import BoardLink
-from engine import EngineContext
-from game_flow import (
+from screen.display import Display
+from core.boardlink import BoardLink
+from core.engine import EngineContext
+from core.game_flow import (
     GameConfig,
     GameState,
     wait_for_mode_selection,

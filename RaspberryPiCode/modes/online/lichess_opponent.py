@@ -14,7 +14,7 @@ import queue
 from dataclasses import dataclass
 from typing import Optional, Tuple, List
 
-from lichess_client import LichessClient
+from modes.online.lichess_client import LichessClient
 
 
 @dataclass

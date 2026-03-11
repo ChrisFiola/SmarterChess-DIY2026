@@ -15,14 +15,14 @@ import sys
 
 import chess
 
-from display import Display
-from boardlink import BoardLink
-from engine import EngineContext, engine_bestmove, engine_hint
+from screen.display import Display
+from core.boardlink import BoardLink
+from core.engine import EngineContext, engine_bestmove, engine_hint
 
 # Phase 1: daily puzzle controller
-from lichess_client import LichessClient
-from puzzle_controller import PuzzleController
-from protocol import (
+from modes.online.lichess_client import LichessClient
+from modes.puzzles.puzzle_controller import PuzzleController
+from core.protocol import (
     send_lcd_ack_for_payload,
     parse_uci_move,
     _piece_name,
@@ -969,7 +969,7 @@ def run_online_game(link: BoardLink, display: Display, cfg: GameConfig) -> None:
 
     Phase 1: implementation moved to app.online_controller.OnlineController.
     """
-    from online_controller import OnlineController, OnlineDeps
+    from modes.online.online_controller import OnlineController, OnlineDeps
 
     deps = OnlineDeps(
         link=link,
@@ -1454,8 +1454,8 @@ def run_selected_mode(
         ctx.ensure()  # uses default STOCKFISH_PATH
 
         # Refactored: run through the explicit GameController state machine.
-        from game_controller import GameController, GameDeps
-        from stockfish_opponent import StockfishOpponent
+        from modes.vs_computer.game_controller import GameController, GameDeps
+        from modes.vs_computer.stockfish_opponent import StockfishOpponent
 
         opponent = StockfishOpponent(
             ctx,

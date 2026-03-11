@@ -24,10 +24,10 @@ import random
 import chess
 import chess.pgn
 
-from display import Display
-from boardlink import BoardLink
-from lichess_client import LichessClient
-from protocol import (
+from screen.display import Display
+from core.boardlink import BoardLink
+from modes.online.lichess_client import LichessClient
+from core.protocol import (
     send_lcd_ack_for_payload,
     parse_uci_move,
     _piece_name,
@@ -896,7 +896,7 @@ class PuzzleController:
             # Keep the error visible until the user acknowledges with OK.
             # This also makes the underlying error easier to read.
             try:
-                from protocol import parse_payload, EventType
+                from core.protocol import parse_payload, EventType
                 import time
 
                 while True:
@@ -952,7 +952,7 @@ class PuzzleController:
                     continue
 
                 if msg == "shutdown":
-                    from piGame import shutdown_raspberry_pi
+                    from core.game_flow import shutdown_raspberry_pi
 
                     shutdown_raspberry_pi(link, display)
                     return
@@ -975,7 +975,7 @@ class PuzzleController:
                         continue
 
                     if msg == "shutdown":
-                        from piGame import shutdown_raspberry_pi
+                        from core.game_flow import shutdown_raspberry_pi
 
                         shutdown_raspberry_pi(link, display)
                         return
@@ -1027,7 +1027,7 @@ class PuzzleController:
                     continue
 
                 if m == "shutdown":
-                    from piGame import shutdown_raspberry_pi
+                    from core.game_flow import shutdown_raspberry_pi
 
                     shutdown_raspberry_pi(link, display)
                     return False
@@ -1053,7 +1053,7 @@ class PuzzleController:
                     continue
 
                 if m == "shutdown":
-                    from piGame import shutdown_raspberry_pi
+                    from core.game_flow import shutdown_raspberry_pi
 
                     shutdown_raspberry_pi(link, display)
                     return None
@@ -1150,7 +1150,7 @@ class PuzzleController:
                 continue
 
             if msg == "shutdown":
-                from piGame import shutdown_raspberry_pi
+                from core.game_flow import shutdown_raspberry_pi
 
                 shutdown_raspberry_pi(link, display)
                 return
@@ -1182,7 +1182,7 @@ class PuzzleController:
             # Typing previews
             if msg.startswith("typing_"):
                 try:
-                    from piGame import update_typing_display
+                    from core.game_flow import update_typing_display
 
                     payload = msg[len("typing_") :]
 

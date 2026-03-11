@@ -6,8 +6,8 @@ from __future__ import annotations
 from typing import Optional
 import chess
 
-from opponent import Opponent
-from engine import EngineContext, engine_bestmove
+from core.opponent import Opponent
+from core.engine import EngineContext, engine_bestmove
 
 print("LOADED StockfishOpponent from:", __file__, flush=True)
 
