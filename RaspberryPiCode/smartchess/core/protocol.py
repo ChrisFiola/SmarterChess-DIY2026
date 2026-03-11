@@ -31,9 +31,26 @@ class Event:
     payload: str = ""
 
 
-NEW_GAME_TOKENS = {"n", "new", "in", "newgame", "btn_new"}
-HINT_TOKENS = {"hint", "btn_hint"}
-OK_TOKENS = {"ok", "btnok", "btn_ok"}
+NEW_GAME_TOKENS: frozenset = frozenset({"n", "new", "in", "newgame", "btn_new"}
+HINT_TOKENS: frozenset = frozenset({"hint", "btn_hint"}
+OK_TOKENS: frozenset = frozenset({"ok", "btnok", "btn_ok"}
+
+
+# ── Shared message token sets ──────────────────────────────────────────────────
+# Centralised here so every module can `from smartchess.core.protocol import ...`
+# instead of repeating inline tuples.
+
+#: Tokens the Pico sends when the user wants to start a new game / go back
+NEW_GAME_MSGS: frozenset = frozenset({"n", "new", "in", "newgame", "btn_new"})
+
+#: Tokens the Pico sends when the user presses the OK button
+OK_MSGS: frozenset = frozenset({"ok", "btnok", "btn_ok"})
+
+#: Tokens the Pico sends when the user presses the Hint button
+HINT_MSGS: frozenset = frozenset({"hint", "btn_hint"})
+
+#: Tokens that should be silently ignored in most message loops
+IGNORED_MSGS: frozenset = NEW_GAME_MSGS | OK_MSGS | HINT_MSGS | frozenset({"draw", "btn_draw"})
 
 
 def parse_payload(payload: str) -> Event:
@@ -58,7 +75,7 @@ def parse_payload(payload: str) -> Event:
     if low.startswith("capq_"):
         return Event(EventType.CAPTURE_QUERY, low[len("capq_"):].strip())
 
-    move = _parse_uci_like(low)
+    move = parse_uci_move(low)
     if move:
         return Event(EventType.MOVE, move)
 
@@ -68,7 +85,8 @@ def parse_payload(payload: str) -> Event:
 RESERVED_NON_MOVES = NEW_GAME_TOKENS | HINT_TOKENS | OK_TOKENS | {"draw", "btn_draw"}
 
 
-def _parse_uci_like(s: str) -> Optional[str]:
+def parse_uci_move(s: str) -> Optional[str]:
+    """Parse a raw Pico payload into a 4-5 char UCI string, or None."""
     s = (s or "").strip().lower()
     if not s:
         return None
@@ -101,10 +119,10 @@ def send_lcd_ack_for_payload(link, payload: str, *, log_prefix: str = "[LCD ACK]
     """
     if payload.startswith("confirm_"):
         print(f"{log_prefix} confirm payload={payload!r}", flush=True)
-        link.sendtoboard("lcd_ack_confirm")
+        link.send_to_board("lcd_ack_confirm")
     elif payload.startswith("to_"):
         print(f"{log_prefix} to payload={payload!r}", flush=True)
-        link.sendtoboard("lcd_ack_to")
+        link.send_to_board("lcd_ack_to")
     elif payload.startswith("from_"):
         print(f"{log_prefix} from payload={payload!r}", flush=True)
-        link.sendtoboard("lcd_ack_from")
+        link.send_to_board("lcd_ack_from")

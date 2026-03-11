@@ -24,58 +24,58 @@ from smartchess.modes.vs_computer.stockfish_opponent import StockfishOpponent
 
 
 @dataclass
-class LoopDeps:
+class GameDeps:
     link: "BoardLink"  # from piSerial
     display: "Display"  # from piDisplay
     opponent: StockfishOpponent
 
 
 class GameController:
-    def __init__(self, deps: LoopDeps, *, human_is_white: bool = True):
+    def __init__(self, deps: GameDeps, *, human_is_white: bool = True):
         self.deps = deps
         self.board = chess.Board()
         self.human_is_white = human_is_white
 
-    def _human_to_move(self) -> bool:
+    def _is_human_turn(self) -> bool:
         if self.board.turn == chess.WHITE:
             return self.human_is_white
         return not self.human_is_white
 
-    def _send_turn_prompt(self) -> None:
+    def _send_turn_notification(self) -> None:
         side = "white" if self.board.turn == chess.WHITE else "black"
-        self.deps.link.sendtoboard(f"turn_{side}")
+        self.deps.link.send_to_board(f"turn_{side}")
 
-    def _drain_nonblocking(self) -> None:
+    def _process_pending_messages(self) -> None:
         # Drain a few events per tick so typing previews remain responsive.
         for _ in range(6):
-            payload = self.deps.link.getboard_nonblocking()
+            payload = self.deps.link.try_read_from_board()
             if payload is None:
                 return
             evt = parse_payload(payload)
             self._handle_event(evt.type, evt.payload, nonblocking=True)
 
-    def play_stockfish(self, *, move_time_ms: int) -> None:
+    def run_stockfish_game(self, *, move_time_ms: int) -> None:
         self.deps.opponent.set_time_ms(move_time_ms)
         self.board = chess.Board()
-        self.deps.link.sendtoboard("GameStart")
+        self.deps.link.send_to_board("GameStart")
 
         if not self.human_is_white:
             self.deps.display.send("Computer starts first.")
             time.sleep(0.25)
-            self._engine_step()
+            self._play_one_engine_move()
         else:
-            self._send_turn_prompt()
+            self._send_turn_notification()
             self.deps.display.prompt_move("WHITE")
 
         while True:
-            self._drain_nonblocking()
+            self._process_pending_messages()
 
-            if not self.board.is_game_over() and not self._human_to_move():
+            if not self.board.is_game_over() and not self._is_human_turn():
                 # self.deps.display.send("Engine Thinking...")
-                self._engine_step()
+                self._play_one_engine_move()
                 continue
 
-            payload = self.deps.link.getboard()
+            payload = self.deps.link.read_from_board()
             if payload is None:
                 continue
             evt = parse_payload(payload)
@@ -84,21 +84,21 @@ class GameController:
     def _handle_event(
         self, typ: EventType, payload: str, nonblocking: bool = False
     ) -> None:
-        from piGame import GoToModeSelect  # keep exception class stable
+        from piGame import ReturnToMenu  # keep exception class stable
 
         if typ == EventType.SHUTDOWN:
-            from piGame import shutdown_pi
+            from piGame import shutdown_raspberry_pi
 
-            shutdown_pi(self.deps.link, self.deps.display)
-            raise GoToModeSelect()
+            shutdown_raspberry_pi(self.deps.link, self.deps.display)
+            raise ReturnToMenu()
 
         if typ == EventType.NEW_GAME:
-            raise GoToModeSelect()
+            raise ReturnToMenu()
 
         if typ == EventType.TYPING:
-            from piGame import handle_typing_preview
+            from piGame import update_typing_display
 
-            handle_typing_preview(self.deps.display, payload, self.board)
+            update_typing_display(self.deps.display, payload, self.board)
 
             # ACK must be tied to the LCD update that just happened,
             # not to a later OK press.
@@ -115,33 +115,33 @@ class GameController:
             return
 
         if typ == EventType.CAPTURE_QUERY:
-            from piGame import compute_capture_preview
+            from piGame import check_move_captures
 
             try:
-                cap = compute_capture_preview(self.board, payload)
+                cap = check_move_captures(self.board, payload)
             except Exception:
                 cap = False
-            self.deps.link.sendtoboard(format_capture_reply(cap))
+            self.deps.link.send_to_board(format_capture_reply(cap))
             return
 
         if typ == EventType.HINT:
-            from piGame import send_hint_to_board, RuntimeState, GameConfig
+            from piGame import send_move_hint, GameState, GameConfig
 
-            state = RuntimeState(board=self.board, mode="stockfish")
+            state = GameState(board=self.board, mode="stockfish")
             cfg = GameConfig(
                 skill_level=5,
                 move_time_ms=int(self.deps.opponent.move_time_ms),
                 human_is_white=self.human_is_white,
             )
-            send_hint_to_board(
+            send_move_hint(
                 self.deps.link, self.deps.display, self.deps.opponent.ctx, state, cfg
             )
             return
 
         if typ == EventType.MOVE:
-            from piGame import process_human_move
+            from piGame import apply_human_move
 
-            process_human_move(
+            apply_human_move(
                 link=self.deps.link,
                 display=self.deps.display,
                 board=self.board,
@@ -151,25 +151,25 @@ class GameController:
 
         # Unknown messages: ignore in nonblocking mode, else show as invalid
         if not nonblocking:
-            from piGame import parse_move_payload
+            from piGame import parse_uci_move
 
-            if not parse_move_payload(payload):
-                self.deps.link.sendtoboard(f"error_invalid_{payload}")
+            if not parse_uci_move(payload):
+                self.deps.link.send_to_board(f"error_invalid_{payload}")
                 self.deps.display.show_invalid(payload)
 
-    def _engine_step(self) -> None:
+    def _play_one_engine_move(self) -> None:
         uci = self.deps.opponent.get_move(self.board)
         if not uci:
             return
         mv = chess.Move.from_uci(uci)
         is_cap = self.board.is_capture(mv)
-        self.deps.link.sendtoboard(format_engine_move(uci, is_cap))
+        self.deps.link.send_to_board(format_engine_move(uci, is_cap))
         self.board.push(mv)
 
-        from piGame import report_game_over, handoff_next_turn, GameConfig
+        from piGame import notify_game_over, prompt_next_turn, GameConfig
 
         if self.board.is_game_over():
-            report_game_over(self.deps.link, self.deps.display, self.board)
+            notify_game_over(self.deps.link, self.deps.display, self.board)
             return
 
         # Preserve OLED arrow/status behavior
@@ -178,6 +178,6 @@ class GameController:
             move_time_ms=int(self.deps.opponent.move_time_ms),
             human_is_white=self.human_is_white,
         )
-        handoff_next_turn(
+        prompt_next_turn(
             self.deps.link, self.deps.display, self.board, "stockfish", dummy_cfg, uci
         )

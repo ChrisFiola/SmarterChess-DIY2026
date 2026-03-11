@@ -1,7 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-Serial link wrapper for Pico <-> Pi protocol (modular version)
-- Preserves UART protocol strings (heyArduino / heypi / heypixshutdown).
+Serial link wrapper for Pico <-> Pi protocol.
+
+Key public methods:
+  send_to_board(text)      – prefix with heyArduino and send
+  read_from_board()        – blocking read (strips heypi prefix)
+  try_read_from_board()    – non-blocking read, returns None immediately
+
+Protocol strings (heyArduino / heypi / heypixshutdown) are preserved.
 """
 from typing import Optional
 import serial
@@ -44,7 +50,7 @@ class BoardLink:
     def send_raw(self, text: str) -> None:
         self.ser.write(text.encode("utf-8") + b"\n")
 
-    def sendtoboard(self, text: str) -> None:
+    def send_to_board(self, text: str) -> None:
         payload = "heyArduino" + text
         self.ser.write(payload.encode("utf-8") + b"\n")
         self.ser.flush()
@@ -60,7 +66,7 @@ class BoardLink:
         except UnicodeDecodeError:
             return None
 
-    def get_raw_from_board(self) -> Optional[str]:
+    def _read_raw_line(self) -> Optional[str]:
         raw = self._readline()
         if raw is None:
             return None
@@ -69,7 +75,7 @@ class BoardLink:
             return "heypixshutdown"
         return low
 
-    def getboard_nonblocking(self) -> Optional[str]:
+    def try_read_from_board(self) -> Optional[str]:
         if self.ser.in_waiting:
             raw = self._readline()
             if not raw:
@@ -83,9 +89,9 @@ class BoardLink:
                 return payload
         return None
 
-    def getboard(self) -> Optional[str]:
+    def read_from_board(self) -> Optional[str]:
         while True:
-            raw = self.get_raw_from_board()
+            raw = self._read_raw_line()
             if raw is None:
                 return None
             if raw.startswith("heypixshutdown"):

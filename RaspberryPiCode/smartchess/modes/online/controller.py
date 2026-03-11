@@ -21,7 +21,13 @@ from smartchess.modes.online.lichess_game import (
     extract_winner,
 )
 from smartchess.core.net_utils import is_ap_mode, wifi_config_url
-from smartchess.core.protocol import send_lcd_ack_for_payload
+from smartchess.core.protocol import (
+    send_lcd_ack_for_payload,
+    NEW_GAME_MSGS,
+    OK_MSGS,
+    HINT_MSGS,
+    IGNORED_MSGS,
+)
 
 
 @dataclass
@@ -30,15 +36,15 @@ class OnlineDeps:
     display: object
     cfg: object
 
-    parse_move_payload: Callable[[str], Optional[str]]
-    compute_capture_preview: Callable[[chess.Board, str], bool]
-    ask_promotion_piece: Callable[[object, object], str]
-    side_name_from_board: Callable[[chess.Board], str]
-    handle_typing_preview: Callable[[object, str, Optional[chess.Board]], None]
-    report_game_over: Callable[[object, object, chess.Board], str]
-    illegal_putback_flow: Callable[..., bool]
-    shutdown_pi: Callable[[object, object], None]
-    GoToModeSelect: type
+    parse_uci_move: Callable[[str], Optional[str]]
+    check_move_captures: Callable[[chess.Board, str], bool]
+    prompt_promotion_choice: Callable[[object, object], str]
+    current_side_name: Callable[[chess.Board], str]
+    update_typing_display: Callable[[object, str, Optional[chess.Board]], None]
+    notify_game_over: Callable[[object, object, chess.Board], str]
+    handle_illegal_move: Callable[..., bool]
+    shutdown_raspberry_pi: Callable[[object, object], None]
+    ReturnToMenu: type
 
 
 class OnlineController:
@@ -52,8 +58,8 @@ class OnlineController:
         display = self.d.display
 
         # Handshake with Pico
-        link.sendtoboard("SetupComplete")
-        link.sendtoboard("GameStart")
+        link.send_to_board("SetupComplete")
+        link.send_to_board("GameStart")
 
         # ------------------------------------------------------------
         # Connect phase (with retries + OK=back)
@@ -61,7 +67,7 @@ class OnlineController:
 
         # Tell the Pico that OK should act as "Back" while we are connecting / waiting.
         # (Without this, the Pico may ignore OK unless it's in a move-entry state.)
-        link.sendtoboard("ok_back_enable")
+        link.send_to_board("ok_back_enable")
 
         display.send("Lichess connecting...\nOK = cancel")
 
@@ -75,37 +81,28 @@ class OnlineController:
                 display.send(f"AP mode\nOpen:\n{url}\nOK = cancel")
             # Wait for user to go back
             while True:
-                m = link.getboard()
+                m = link.read_from_board()
                 if not m:
                     continue
-                if m in ("ok", "btn_ok", "btnok"):
-                    link.sendtoboard("ok_back_disable")
-                    raise self.d.GoToModeSelect()
+                if m in OK_MSGS:
+                    link.send_to_board("ok_back_disable")
+                    raise self.d.ReturnToMenu()
                 if m == "shutdown":
-                    self.d.shutdown_pi(link, display)
+                    self.d.shutdown_raspberry_pi(link, display)
                     return
-                if m in ("n", "new", "in", "newgame", "btn_new"):
-                    link.sendtoboard("ok_back_disable")
-                    raise self.d.GoToModeSelect()
+                if m in NEW_GAME_MSGS:
+                    link.send_to_board("ok_back_disable")
+                    raise self.d.ReturnToMenu()
 
         acct = None
         for attempt in range(1, 4):
             # Allow immediate back while we are looping/retrying
-            peek = link.getboard_nonblocking()
-            if peek in (
-                "ok",
-                "btn_ok",
-                "btnok",
-                "n",
-                "new",
-                "in",
-                "newgame",
-                "btn_new",
-            ):
-                link.sendtoboard("ok_back_disable")
-                raise self.d.GoToModeSelect()
+            peek = link.try_read_from_board()
+            if peek in OK_MSGS | NEW_GAME_MSGS:
+                link.send_to_board("ok_back_disable")
+                raise self.d.ReturnToMenu()
             if peek == "shutdown":
-                self.d.shutdown_pi(link, display)
+                self.d.shutdown_raspberry_pi(link, display)
                 return
 
             acct = self.client.get_account()
@@ -119,11 +116,11 @@ class OnlineController:
             # After 3 attempts, show a sticky error until OK to go back
             display.send("Lichess offline\nWiFi/DNS error\nOK = Menu")
             while True:
-                m = link.getboard()
+                m = link.read_from_board()
                 if not m:
                     continue
                 if m == "shutdown":
-                    self.d.shutdown_pi(link, display)
+                    self.d.shutdown_raspberry_pi(link, display)
                     return
                 if m in (
                     "ok",
@@ -135,8 +132,8 @@ class OnlineController:
                     "newgame",
                     "btn_new",
                 ):
-                    link.sendtoboard("ok_back_disable")
-                    raise self.d.GoToModeSelect()
+                    link.send_to_board("ok_back_disable")
+                    raise self.d.ReturnToMenu()
 
         username = (acct.get("username") or acct.get("id") or "").strip().lower()
         display.send("Lichess online\nStart a game\non lichess.org\nOK = cancel")
@@ -146,22 +143,13 @@ class OnlineController:
         last_banner_ms = 0
         while not game_id:
             # Back out of the wait state
-            peek = link.getboard_nonblocking()
+            peek = link.try_read_from_board()
             if peek == "shutdown":
-                self.d.shutdown_pi(link, display)
+                self.d.shutdown_raspberry_pi(link, display)
                 return
-            if peek in (
-                "ok",
-                "btn_ok",
-                "btnok",
-                "n",
-                "new",
-                "in",
-                "newgame",
-                "btn_new",
-            ):
-                link.sendtoboard("ok_back_disable")
-                raise self.d.GoToModeSelect()
+            if peek in OK_MSGS | NEW_GAME_MSGS:
+                link.send_to_board("ok_back_disable")
+                raise self.d.ReturnToMenu()
 
             # Re-affirm banner occasionally (some users see a delay)
             now = int(time.time() * 1000)
@@ -176,7 +164,7 @@ class OnlineController:
                         game_id = (ev.get("game") or {}).get("id")
                         break
                     # Allow back between events
-                    peek2 = link.getboard_nonblocking()
+                    peek2 = link.try_read_from_board()
                     if peek2 in (
                         "ok",
                         "btn_ok",
@@ -187,10 +175,10 @@ class OnlineController:
                         "newgame",
                         "btn_new",
                     ):
-                        link.sendtoboard("ok_back_disable")
-                        raise self.d.GoToModeSelect()
+                        link.send_to_board("ok_back_disable")
+                        raise self.d.ReturnToMenu()
                     if peek2 == "shutdown":
-                        self.d.shutdown_pi(link, display)
+                        self.d.shutdown_raspberry_pi(link, display)
                         return
                     if game_id:
                         break
@@ -203,13 +191,13 @@ class OnlineController:
         if not game_id:
             display.send("No game found\nTry again")
             time.sleep(2)
-            link.sendtoboard("ok_back_disable")
-            raise self.d.GoToModeSelect()
+            link.send_to_board("ok_back_disable")
+            raise self.d.ReturnToMenu()
 
         display.send("Lichess connecting...\nLoading game")
 
         # From here on, OK should no longer be treated as "Back" on the Pico.
-        link.sendtoboard("ok_back_disable")
+        link.send_to_board("ok_back_disable")
 
         stream = self.client.stream_game(game_id)
 
@@ -234,7 +222,7 @@ class OnlineController:
             """
             if board.turn != your_color:
                 return
-            link.sendtoboard(
+            link.send_to_board(
                 "turn_white" if board.turn == chess.WHITE else "turn_black"
             )
 
@@ -258,7 +246,7 @@ class OnlineController:
                 board.push(mv)
                 last_move_count += 1
                 # Pico: show trail + OK-only (engine_ack_pending behavior)
-                link.sendtoboard(f"m{uci}{'_cap' if is_cap else ''}")
+                link.send_to_board(f"m{uci}{'_cap' if is_cap else ''}")
                 time.sleep(
                     0.3
                 )  # give Pico time to show the move before we potentially overwrite with prompt_move
@@ -291,7 +279,7 @@ class OnlineController:
         except Exception:
             display.send("Lichess error\nGame stream")
             time.sleep(3)
-            raise self.d.GoToModeSelect()
+            raise self.d.ReturnToMenu()
 
         white_name, black_name = extract_players(first)
 
@@ -318,10 +306,10 @@ class OnlineController:
 
         while True:
             # --- Non blocking handling (buttons from Pico) ---
-            peek = link.getboard_nonblocking()
+            peek = link.try_read_from_board()
             if peek:
                 if peek == "shutdown":
-                    self.d.shutdown_pi(link, display)
+                    self.d.shutdown_raspberry_pi(link, display)
                     return
 
                 if peek.startswith("typing_"):
@@ -329,24 +317,24 @@ class OnlineController:
                     awaiting_ok_ack = False
                     in_move_entry = True
                     payload = peek[7:]
-                    self.d.handle_typing_preview(display, payload, board)
+                    self.d.update_typing_display(display, payload, board)
                     send_lcd_ack_for_payload(link, payload, log_prefix="[ONLINE ACK]")
 
                 if peek.startswith("capq_"):
                     uciq = peek[5:].strip()
                     try:
-                        cap = self.d.compute_capture_preview(board, uciq)
+                        cap = self.d.check_move_captures(board, uciq)
                     except Exception:
                         cap = False
-                    link.sendtoboard(f"capr_{1 if cap else 0}")
+                    link.send_to_board(f"capr_{1 if cap else 0}")
 
-                if peek in ("n", "new", "in", "newgame", "btn_new"):
+                if peek in NEW_GAME_MSGS:
                     display.send("Resigning...")
                     try:
                         self.client.resign_game(game_id)
                     except Exception:
                         pass
-                    raise self.d.GoToModeSelect()
+                    raise self.d.ReturnToMenu()
 
                 if peek in ("draw", "btn_draw"):
                     display.send("Offering draw...")
@@ -355,12 +343,12 @@ class OnlineController:
                     except Exception:
                         pass
 
-                if peek in ("hint", "btn_hint"):
+                if peek in HINT_MSGS:
                     display.send("Online mode\nHints disabled")
 
             if board.is_game_over():
-                self.d.report_game_over(link, display, board)
-                raise self.d.GoToModeSelect()
+                self.d.notify_game_over(link, display, board)
+                raise self.d.ReturnToMenu()
 
             # --- Opponent turn ---
             if board.turn != your_color:
@@ -387,19 +375,19 @@ class OnlineController:
                             elif winner == "black":
                                 result = "0-1"
 
-                            link.sendtoboard(f"GameOver:{result}")
+                            link.send_to_board(f"GameOver:{result}")
                             display.send(f"GAME OVER\nResult {result}\nOK = Menu")
-                            raise self.d.GoToModeSelect()
+                            raise self.d.ReturnToMenu()
 
                 except StopIteration:
                     display.send("Lichess ended")
                     time.sleep(2)
-                    raise self.d.GoToModeSelect()
+                    raise self.d.ReturnToMenu()
 
                 except Exception:
                     display.send("Lichess error\nStream lost")
                     time.sleep(3)
-                    raise self.d.GoToModeSelect()
+                    raise self.d.ReturnToMenu()
 
                 prompted_for_this_turn = False
                 continue
@@ -419,38 +407,38 @@ class OnlineController:
                 display.prompt_move(side)
                 prompted_for_this_turn = True
 
-            msg = link.getboard()
+            msg = link.read_from_board()
             if not msg:
                 continue
 
             if msg == "shutdown":
-                self.d.shutdown_pi(link, display)
+                self.d.shutdown_raspberry_pi(link, display)
                 return
 
             if msg.startswith("typing_"):
                 awaiting_ok_ack = False
                 in_move_entry = True
                 payload = msg[7:]
-                self.d.handle_typing_preview(display, payload, board)
+                self.d.update_typing_display(display, payload, board)
                 send_lcd_ack_for_payload(link, payload, log_prefix="[ONLINE ACK]")
                 continue
 
             if msg.startswith("capq_"):
                 uciq = msg[5:].strip()
                 try:
-                    cap = self.d.compute_capture_preview(board, uciq)
+                    cap = self.d.check_move_captures(board, uciq)
                 except Exception:
                     cap = False
-                link.sendtoboard(f"capr_{1 if cap else 0}")
+                link.send_to_board(f"capr_{1 if cap else 0}")
                 continue
 
-            if msg in ("n", "new", "in", "newgame", "btn_new"):
+            if msg in NEW_GAME_MSGS:
                 display.send("Resigning...")
                 try:
                     self.client.resign_game(game_id)
                 except Exception:
                     pass
-                raise self.d.GoToModeSelect()
+                raise self.d.ReturnToMenu()
 
             if msg in ("draw", "btn_draw"):
                 display.send("Offering draw...")
@@ -460,11 +448,11 @@ class OnlineController:
                     pass
                 continue
 
-            if msg in ("hint", "btn_hint"):
+            if msg in HINT_MSGS:
                 display.send("Online mode\nHints disabled")
                 continue
 
-            if msg in ("ok", "btnok", "btn_ok"):
+            if msg in OK_MSGS:
                 # OK is used as an acknowledgement / 'enter move' trigger.
                 # Do not treat it as a move payload.
                 awaiting_ok_ack = False
@@ -478,9 +466,9 @@ class OnlineController:
             awaiting_ok_ack = False
             in_move_entry = True
 
-            uci = self.d.parse_move_payload(msg)
+            uci = self.d.parse_uci_move(msg)
             if not uci:
-                link.sendtoboard(f"error_invalid_{msg}")
+                link.send_to_board(f"error_invalid_{msg}")
                 display.show_invalid(msg)
                 continue
 
@@ -493,7 +481,7 @@ class OnlineController:
                         if (piece.color == chess.WHITE and rank == 8) or (
                             piece.color == chess.BLACK and rank == 1
                         ):
-                            promo = self.d.ask_promotion_piece(link, display)
+                            promo = self.d.prompt_promotion_choice(link, display)
                             uci += promo
                 except Exception:
                     pass
@@ -501,14 +489,14 @@ class OnlineController:
             try:
                 move = chess.Move.from_uci(uci)
             except ValueError:
-                link.sendtoboard(f"error_invalid_{uci}")
+                link.send_to_board(f"error_invalid_{uci}")
                 display.show_invalid(uci)
                 continue
 
             if move not in board.legal_moves:
                 # Match the exact same illegal-move UX used everywhere else
                 # (red put-back trail + wait for OK; no Pico auto move-entry).
-                self.d.illegal_putback_flow(
+                self.d.handle_illegal_move(
                     link=link, display=display, board=board, uci=uci, label="ILLEGAL"
                 )
                 # The helper re-sends turn_ and prompts for input.

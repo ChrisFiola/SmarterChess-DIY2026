@@ -26,8 +26,15 @@ import chess.pgn
 
 from main.piDisplay import Display
 from main.piSerial import BoardLink
+from smartchess.core.game_flow import _piece_name
 from smartchess.modes.online.lichess_client import LichessClient
-from smartchess.core.protocol import send_lcd_ack_for_payload
+from smartchess.core.protocol import (
+    send_lcd_ack_for_payload,
+    parse_uci_move,
+    NEW_GAME_MSGS,
+    OK_MSGS,
+    HINT_MSGS,
+)
 
 
 def _pgn_opening_info(pgn_text: str) -> Tuple[str, str]:
@@ -253,17 +260,6 @@ def _compute_place_steps_from_fen(target_fen: str):
     return steps
 
 
-def _piece_name(sym: str) -> str:
-    u = sym.upper()
-    return {
-        "P": "PAWN",
-        "N": "KNIGHT",
-        "B": "BISHOP",
-        "R": "ROOK",
-        "Q": "QUEEN",
-        "K": "KING",
-    }.get(u, "PIECE")
-
 
 # -------------------- Puzzle label (themes + rating) --------------------
 
@@ -412,7 +408,7 @@ def _find_best_start_board_from_pgn(
 # -------------------- Controller --------------------
 
 
-class DailyPuzzleController:
+class PuzzleController:
     """Run the daily puzzle loop using the Pico for input and LEDs."""
 
     def __init__(
@@ -895,7 +891,7 @@ class DailyPuzzleController:
 
         if err or st is None:
             display.send("Puzzle error\n" + (err or "unknown"))
-            link.sendtoboard("error_puzzle_fetch")
+            link.send_to_board("error_puzzle_fetch")
 
             # Keep the error visible until the user acknowledges with OK.
             # This also makes the underlying error easier to read.
@@ -904,7 +900,7 @@ class DailyPuzzleController:
                 import time
 
                 while True:
-                    raw = link.getboard_nonblocking()
+                    raw = link.try_read_from_board()
                     if raw:
                         ev = parse_payload(raw)
                         if ev.type == EventType.OK:
@@ -928,9 +924,9 @@ class DailyPuzzleController:
 
         # Disable hints on the Pico during setup so no hint requests can be
         # triggered while the user is placing pieces.
-        link.sendtoboard("hint_disable")
+        link.send_to_board("hint_disable")
 
-        link.sendtoboard("puzzle_setup_begin")
+        link.send_to_board("puzzle_setup_begin")
         try:
             label = _format_puzzle_label(
                 st.themes,
@@ -947,50 +943,50 @@ class DailyPuzzleController:
             )
             display.send(f"{label}\nSetup position\nOK = next")
             __import__("time").sleep(0.8)
-            link.sendtoboard("setup_clear")
+            link.send_to_board("setup_clear")
 
             # Wait for OK after clearing
             while True:
-                msg = link.getboard()
+                msg = link.read_from_board()
                 if msg is None:
                     continue
 
                 if msg == "shutdown":
-                    from piGame import shutdown_pi
+                    from piGame import shutdown_raspberry_pi
 
-                    shutdown_pi(link, display)
+                    shutdown_raspberry_pi(link, display)
                     return
 
-                if msg in ("n", "new", "in", "newgame", "btn_new"):
+                if msg in NEW_GAME_MSGS:
                     return
 
-                if msg in ("btn_ok", "ok"):
+                if msg in OK_MSGS:
                     break
 
             for side, sq, sym in steps:
                 display.send(
                     f"PLACE {('WHITE' if side=='w' else 'BLACK')}\n{_piece_name(sym)} {sq}\nOK = next"
                 )
-                link.sendtoboard(f"setup_place_{sq}_{side}")
+                link.send_to_board(f"setup_place_{sq}_{side}")
 
                 while True:
-                    msg = link.getboard()
+                    msg = link.read_from_board()
                     if msg is None:
                         continue
 
                     if msg == "shutdown":
-                        from piGame import shutdown_pi
+                        from piGame import shutdown_raspberry_pi
 
-                        shutdown_pi(link, display)
+                        shutdown_raspberry_pi(link, display)
                         return
 
-                    if msg in ("n", "new", "in", "newgame", "btn_new"):
+                    if msg in NEW_GAME_MSGS:
                         return
 
-                    if msg in ("btn_ok", "ok"):
+                    if msg in OK_MSGS:
                         break
 
-                    if msg.startswith("typing_") or msg in ("hint", "btn_hint"):
+                    if msg.startswith("typing_") or msg in HINT_MSGS:
                         continue
 
             display.send(f"{label}\nSetup done\nPuzzle begins")
@@ -1001,14 +997,14 @@ class DailyPuzzleController:
             # On the Pico, puzzle_setup_done flips into GAME_RUNNING and re-enables
             # the HINT IRQ. Sending hint_enable again avoids a rare race where the
             # first HINT press right after setup gets ignored.
-            link.sendtoboard("hint_enable")
-            link.sendtoboard("puzzle_setup_done")
+            link.send_to_board("hint_enable")
+            link.send_to_board("puzzle_setup_done")
             try:
                 link.clear_input()
             except Exception:
                 pass
             __import__("time").sleep(0.05)
-            link.sendtoboard("hint_enable")
+            link.send_to_board("hint_enable")
 
         # 3) Load board state
         board = chess.Board(st.fen_start)
@@ -1026,43 +1022,43 @@ class DailyPuzzleController:
 
         def _wait_ack_ok() -> bool:
             while True:
-                m = link.getboard()
+                m = link.read_from_board()
                 if m is None:
                     continue
 
                 if m == "shutdown":
-                    from piGame import shutdown_pi
+                    from piGame import shutdown_raspberry_pi
 
-                    shutdown_pi(link, display)
+                    shutdown_raspberry_pi(link, display)
                     return False
 
-                if m in ("n", "new", "in", "newgame", "btn_new"):
+                if m in NEW_GAME_MSGS:
                     return False
 
-                if m in ("btn_ok", "ok"):
+                if m in OK_MSGS:
                     return True
 
                 if (
                     m.startswith("typing_")
                     or m.startswith("capq_")
-                    or m in ("hint", "btn_hint")
+                    or m in HINT_MSGS
                 ):
                     continue
 
         def _wait_promotion_choice() -> Optional[str]:
             """Wait for Pico to return btn_q/btn_r/btn_b/btn_n."""
             while True:
-                m = link.getboard()
+                m = link.read_from_board()
                 if m is None:
                     continue
 
                 if m == "shutdown":
-                    from piGame import shutdown_pi
+                    from piGame import shutdown_raspberry_pi
 
-                    shutdown_pi(link, display)
+                    shutdown_raspberry_pi(link, display)
                     return None
 
-                if m in ("n", "new", "in", "newgame", "btn_new"):
+                if m in NEW_GAME_MSGS:
                     return None
 
                 if m in ("btn_q", "btn_r", "btn_b", "btn_n"):
@@ -1071,7 +1067,7 @@ class DailyPuzzleController:
                 if (
                     m.startswith("typing_")
                     or m.startswith("capq_")
-                    or m in ("hint", "btn_hint")
+                    or m in HINT_MSGS
                 ):
                     continue
 
@@ -1084,7 +1080,7 @@ class DailyPuzzleController:
 
             if len(u) < 4:
                 display.send(f"Wrong move\nPut it back + OK")
-                link.sendtoboard("puzzle_wrong_")
+                link.send_to_board("puzzle_wrong_")
                 return _wait_ack_ok()
 
             frm, to = u[:2], u[2:4]
@@ -1101,7 +1097,7 @@ class DailyPuzzleController:
                 f"Incorrect move: \n {piece_txt} {frm}->{to}\nPut it back + OK"
             )
             # Trail from TO back to FROM so the user knows where to return it
-            link.sendtoboard(f"puzzle_wrong_{to}{frm}")
+            link.send_to_board(f"puzzle_wrong_{to}{frm}")
             return _wait_ack_ok()
 
         def _illegal_move_feedback(user_uci: str) -> bool:
@@ -1127,11 +1123,11 @@ class DailyPuzzleController:
 
             display.send(f"Illegal move: \n {piece_txt} {frm}->{to}\nPut it back + OK")
             # Trail from TO back to FROM so the user knows where to return it
-            link.sendtoboard(f"puzzle_wrong_{to}{frm}")
+            link.send_to_board(f"puzzle_wrong_{to}{frm}")
             return _wait_ack_ok()
 
         # Kick Pico into input state immediately after setup
-        link.sendtoboard(f"turn_{'white' if board.turn == chess.WHITE else 'black'}")
+        link.send_to_board(f"turn_{'white' if board.turn == chess.WHITE else 'black'}")
         _show_prompt_enter_move()
 
         # 4) Solve loop
@@ -1143,23 +1139,23 @@ class DailyPuzzleController:
                 except Exception:
                     pass
                 display.send(f"{side_prefix}\nPuzzle solved!\nOK = menu")
-                link.sendtoboard("GameOver:1-0")
+                link.send_to_board("GameOver:1-0")
                 _wait_ack_ok()
                 return
 
             expected = st.solution[st.idx]
 
-            msg = link.getboard()
+            msg = link.read_from_board()
             if msg is None:
                 continue
 
             if msg == "shutdown":
-                from piGame import shutdown_pi
+                from piGame import shutdown_raspberry_pi
 
-                shutdown_pi(link, display)
+                shutdown_raspberry_pi(link, display)
                 return
 
-            if msg in ("n", "new", "in", "newgame", "btn_new"):
+            if msg in NEW_GAME_MSGS:
                 return
 
             # Capture probe from Pico for preview cap blink
@@ -1172,12 +1168,12 @@ class DailyPuzzleController:
                     cap_flag = 1 if board.is_capture(mvq) else 0
                 except Exception:
                     cap_flag = 0
-                link.sendtoboard(f"capr_{cap_flag}")
+                link.send_to_board(f"capr_{cap_flag}")
                 continue
 
             # Hint button
-            if msg in ("hint", "btn_hint"):
-                link.sendtoboard(
+            if msg in HINT_MSGS:
+                link.send_to_board(
                     f"hint_{expected}{'_cap' if _is_cap(board, expected) else ''}"
                 )
                 display.send(f"{side_prefix}\nHint: {expected[:2]}→{expected[2:4]}")
@@ -1186,12 +1182,12 @@ class DailyPuzzleController:
             # Typing previews
             if msg.startswith("typing_"):
                 try:
-                    from piGame import handle_typing_preview
+                    from piGame import update_typing_display
 
                     payload = msg[len("typing_") :]
 
                     print(f"[PUZZLE typing] payload={payload!r}", flush=True)
-                    handle_typing_preview(display, payload, board)
+                    update_typing_display(display, payload, board)
                     send_lcd_ack_for_payload(link, payload, log_prefix="[PUZZLE ACK]")
 
                 except Exception as e:
@@ -1209,17 +1205,7 @@ class DailyPuzzleController:
             if uci.startswith("m"):
                 uci = uci[1:]
             uci = "".join(ch for ch in uci if ch.isalnum())
-            if uci in (
-                "ok",
-                "btnok",
-                "hint",
-                "btn_hint",
-                "n",
-                "new",
-                "in",
-                "newgame",
-                "btn_new",
-            ):
+            if uci in NEW_GAME_MSGS | OK_MSGS | HINT_MSGS:
                 continue
             if len(uci) not in (4, 5):
                 continue
@@ -1239,7 +1225,7 @@ class DailyPuzzleController:
                     )
                     if promo_needed:
                         display.send(f"{side_prefix}\nPromotion!\n1Q 2R 3B 4N")
-                        link.sendtoboard("promotion_choice_needed")
+                        link.send_to_board("promotion_choice_needed")
                         pick = _wait_promotion_choice()
                         if pick is None:
                             return
@@ -1255,7 +1241,7 @@ class DailyPuzzleController:
                 if not _illegal_move_feedback(uci):
                     return
                 # Re-arm Pico input state and prompt again
-                link.sendtoboard(
+                link.send_to_board(
                     f"turn_{'white' if board.turn == chess.WHITE else 'black'}"
                 )
                 _show_prompt_enter_move()
@@ -1265,7 +1251,7 @@ class DailyPuzzleController:
                 # User made a move that's not legal in this position; guide them to undo it.
                 if not _illegal_move_feedback(uci):
                     return
-                link.sendtoboard(
+                link.send_to_board(
                     f"turn_{'white' if board.turn == chess.WHITE else 'black'}"
                 )
                 _show_prompt_enter_move()
@@ -1287,7 +1273,7 @@ class DailyPuzzleController:
                     return
                 _show_prompt_enter_move()
                 # Ensure Pico is back in input state
-                link.sendtoboard(
+                link.send_to_board(
                     f"turn_{'white' if board.turn == chess.WHITE else 'black'}"
                 )
                 continue
@@ -1296,10 +1282,10 @@ class DailyPuzzleController:
             mv = chess.Move.from_uci(expected)
             if mv not in board.legal_moves:
                 # Shouldn't happen, but keep user unblocked.
-                link.sendtoboard("error_puzzle_internal")
+                link.send_to_board("error_puzzle_internal")
                 _show_try_again("Puzzle error")
                 __import__("time").sleep(1.0)
-                link.sendtoboard(
+                link.send_to_board(
                     f"turn_{'white' if board.turn == chess.WHITE else 'black'}"
                 )
                 _show_prompt_enter_move()
@@ -1318,7 +1304,7 @@ class DailyPuzzleController:
                     rmv = chess.Move.from_uci(reply)
                 except Exception:
                     display.send("Puzzle error")
-                    link.sendtoboard("error_puzzle_parse")
+                    link.send_to_board("error_puzzle_parse")
                     return
 
                 if rmv in board.legal_moves:
@@ -1343,7 +1329,7 @@ class DailyPuzzleController:
                     display.send(
                         f"{side_prefix}\n{opp} played {reply[:2]}→{reply[2:4]}\n{promo_line}OK = continue"
                     )
-                    link.sendtoboard(f"m{reply}{'_cap' if cap else ''}")
+                    link.send_to_board(f"m{reply}{'_cap' if cap else ''}")
 
                     board.push(rmv)
                     st.idx += 1
@@ -1354,7 +1340,7 @@ class DailyPuzzleController:
                     _show_prompt_enter_move()
 
             # Prompt next move
-            link.sendtoboard(
+            link.send_to_board(
                 f"turn_{'white' if board.turn == chess.WHITE else 'black'}"
             )
             _show_prompt_enter_move()
