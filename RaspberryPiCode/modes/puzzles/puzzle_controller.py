@@ -32,6 +32,7 @@ from core.protocol import (
     send_lcd_ack_for_payload,
     parse_uci_move,
     format_engine_move,
+    format_hint_move,
     piece_name,
     NEW_GAME_MSGS,
     OK_MSGS,
@@ -45,6 +46,7 @@ from core.game_flow import (
     handle_capq_message,
     check_move_captures,
     resolve_uci_promotion,
+    send_turn_notification,
     ReturnToMenu,
 )
 
@@ -961,12 +963,10 @@ class PuzzleController:
             display.send(f"{side_prefix}\nEnter move:")
 
         def _rearm():
-            link.send_to_board(
-                f"turn_{'white' if board.turn == chess.WHITE else 'black'}"
-            )
+            send_turn_notification(link, board)
             _prompt()
 
-        link.send_to_board(f"turn_{'white' if board.turn == chess.WHITE else 'black'}")
+        send_turn_notification(link, board)
         _prompt()
 
         # 4) Solve loop
@@ -1001,7 +1001,7 @@ class PuzzleController:
 
             if msg in HINT_MSGS:
                 link.send_to_board(
-                    f"hint_{expected}{'_cap' if check_move_captures(board, expected) else ''}"
+                    format_hint_move(expected, check_move_captures(board, expected))
                 )
                 display.send(f"Hint:\n{expected[:2]}→{expected[2:4]}")
                 continue
@@ -1090,14 +1090,9 @@ class PuzzleController:
                     cap = board.is_capture(rmv)
                     promo_line = ""
                     try:
-                        if len(reply) >= 5 and reply[4].lower() in ("q", "r", "b", "n"):
-                            pl = reply[4].lower()
-                            promo_name = (
-                                display.promo_name(pl)
-                                if hasattr(display, "promo_name")
-                                else pl.upper()
-                            )
-                            promo_line = f"Promoted to {promo_name}\n"
+                        pl = reply[4].lower() if len(reply) >= 5 else ""
+                        if pl in ("q", "r", "b", "n"):
+                            promo_line = f"{display.format_promo_line(pl)}\n"
                     except Exception:
                         pass
                     display.send(

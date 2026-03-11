@@ -22,6 +22,7 @@ from core.protocol import (
     IGNORED_MSGS,
     NEW_GAME_MSGS,
     OK_MSGS,
+    format_hint_move,
     parse_uci_move,
     piece_name,
     send_lcd_ack_for_payload,
@@ -105,6 +106,11 @@ def handle_capq_message(link: BoardLink, board: "chess.Board", msg: str) -> bool
         cap = False
     link.send_to_board(f"capr_{1 if cap else 0}")
     return True
+
+
+def send_turn_notification(link: BoardLink, board: "chess.Board") -> None:
+    """Send the current turn colour to the Pico (turn_white or turn_black)."""
+    link.send_to_board(f"turn_{'white' if board.turn == chess.WHITE else 'black'}")
 
 
 def resolve_uci_promotion(
@@ -233,7 +239,7 @@ def handle_illegal_move(
         return False
 
     # Deterministic re-entry: Pi commands turn_ and then waits for a move.
-    link.send_to_board(f"turn_{'white' if board.turn == chess.WHITE else 'black'}")
+    send_turn_notification(link, board)
     try:
         display.prompt_move(side)
     except Exception:
@@ -361,7 +367,7 @@ def send_move_hint(
         is_cap = False
 
     # Send to Pico and update OLED with arrow format
-    link.send_to_board(f"hint_{best}{'_cap' if is_cap else ''}")
+    link.send_to_board(format_hint_move(best, is_cap))
     display.show_hint_result(best)
     print(f"[Hint] {best}")
 
@@ -572,20 +578,17 @@ def prompt_next_turn(
         )
     )
     if human_to_move:
-        link.send_to_board(f"turn_{'white' if brd.turn == chess.WHITE else 'black'}")
+        send_turn_notification(link, brd)
         promo_letter = (
             last_uci[4].lower()
             if isinstance(last_uci, str) and len(last_uci) >= 5
             else ""
         )
-        promo_line = ""
-        if promo_letter in ("q", "r", "b", "n"):
-            promo_name = (
-                display.promo_name(promo_letter)
-                if hasattr(display, "promo_name")
-                else promo_letter.upper()
-            )
-            promo_line = f"Promoted to {promo_name}\n"
+        promo_line = (
+            f"{display.format_promo_line(promo_letter)}\n"
+            if promo_letter in ("q", "r", "b", "n")
+            else ""
+        )
 
         display.show_arrow(
             last_uci,

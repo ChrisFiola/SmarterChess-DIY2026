@@ -207,6 +207,10 @@ class Display:
             "n": "KNIGHT",
         }.get((promo_letter or "").lower(), (promo_letter or "").upper())
 
+    def format_promo_line(self, promo_letter: str) -> str:
+        """Return 'Promoted to {NAME}' for a promotion letter (q/r/b/n)."""
+        return f"Promoted to {self.promo_name(promo_letter)}"
+
     def show_draw(self, reason: str, move_no: int) -> None:
         """Display draw reason. move_no is full move count (approx)."""
         # Keep it short for 3-line LCD

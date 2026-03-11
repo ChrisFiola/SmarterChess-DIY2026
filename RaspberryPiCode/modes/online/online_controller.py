@@ -38,6 +38,7 @@ from core.game_flow import (
     notify_game_over,
     handle_illegal_move,
     resolve_uci_promotion,
+    send_turn_notification,
     shutdown_raspberry_pi,
 )
 
@@ -65,7 +66,7 @@ class OnlineController:
 
         if msg.startswith("typing_"):
             handle_typing_message(
-                self.link, self.display, msg[7:], board, log_prefix="[ONLINE ACK]"
+                self.link, self.display, msg[len("typing_"):], board, log_prefix="[ONLINE ACK]"
             )
             return True
 
@@ -194,7 +195,7 @@ class OnlineController:
         def send_turn_if_human():
             if board.turn != your_color:
                 return
-            link.send_to_board("turn_white" if board.turn == chess.WHITE else "turn_black")
+            send_turn_notification(link, board)
 
         awaiting_ok_ack = False
         in_move_entry = False
@@ -218,8 +219,7 @@ class OnlineController:
                     promo_line = ""
                     if mv.promotion:
                         pl = chess.piece_symbol(mv.promotion)
-                        promo_name = display.promo_name(pl) if hasattr(display, "promo_name") else pl.upper()
-                        promo_line = f"Promoted to {promo_name}"
+                        promo_line = display.format_promo_line(pl)
                     display.show_arrow(
                         uci,
                         suffix=f"{promo_line}\n{side_to_move} to move" if promo_line else f"{side_to_move} to move",

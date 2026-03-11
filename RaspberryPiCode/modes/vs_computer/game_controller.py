@@ -21,6 +21,7 @@ from core.game_flow import (
     notify_game_over,
     prompt_next_turn,
     send_move_hint,
+    send_turn_notification,
     shutdown_raspberry_pi,
 )
 from core.protocol import (
@@ -53,8 +54,7 @@ class GameController:
         return not self.human_is_white
 
     def _send_turn_notification(self) -> None:
-        side = "white" if self.board.turn == chess.WHITE else "black"
-        self.deps.link.send_to_board(f"turn_{side}")
+        send_turn_notification(self.deps.link, self.board)
 
     def _process_pending_messages(self) -> None:
         # Drain a few events per tick so typing previews remain responsive.
