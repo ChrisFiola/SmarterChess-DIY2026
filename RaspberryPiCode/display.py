@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-Display abstraction for SmarterChess (modular version)
-- Communicates with display_server.py through a named pipe.
-- Preserves the same UI messaging style as the single-file version.
+Display abstraction for SmarterChess.
+Communicates with display_server.py via a named pipe (FIFO at /tmp/lcdpipe).
+Use send(message) for all LCD output; helper methods cover common UI patterns.
 """
 import os
 import sys
@@ -29,6 +29,7 @@ class Display:
         # from being immediately overwritten by background/status messages.
         self._lock_until = 0.0
         self._locked_category = None
+        self._pipe = None
 
     def _classify(self, message: str) -> str:
         m = (message or "").lower()

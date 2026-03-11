@@ -25,6 +25,7 @@ from puzzle_controller import PuzzleController
 from protocol import (
     send_lcd_ack_for_payload,
     parse_uci_move,
+    _piece_name,
     NEW_GAME_MSGS,
     OK_MSGS,
     HINT_MSGS,
@@ -48,18 +49,6 @@ class GameState:
 
 
 # -------------------- Parsing & helpers --------------------
-
-
-def _piece_name(sym: str) -> str:
-    u = (sym or "").upper()
-    return {
-        "P": "PAWN",
-        "N": "KNIGHT",
-        "B": "BISHOP",
-        "R": "ROOK",
-        "Q": "QUEEN",
-        "K": "KING",
-    }.get(u, "PIECE")
 
 
 def wait_for_ok(link: BoardLink, display: Display) -> bool:

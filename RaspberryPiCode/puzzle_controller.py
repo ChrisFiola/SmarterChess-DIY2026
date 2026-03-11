@@ -26,11 +26,11 @@ import chess.pgn
 
 from display import Display
 from boardlink import BoardLink
-from game_flow import _piece_name
 from lichess_client import LichessClient
 from protocol import (
     send_lcd_ack_for_payload,
     parse_uci_move,
+    _piece_name,
     NEW_GAME_MSGS,
     OK_MSGS,
     HINT_MSGS,
@@ -952,7 +952,7 @@ class PuzzleController:
                     continue
 
                 if msg == "shutdown":
-                    from game_flow import shutdown_raspberry_pi
+                    from piGame import shutdown_raspberry_pi
 
                     shutdown_raspberry_pi(link, display)
                     return
@@ -975,7 +975,7 @@ class PuzzleController:
                         continue
 
                     if msg == "shutdown":
-                        from game_flow import shutdown_raspberry_pi
+                        from piGame import shutdown_raspberry_pi
 
                         shutdown_raspberry_pi(link, display)
                         return
@@ -1027,7 +1027,7 @@ class PuzzleController:
                     continue
 
                 if m == "shutdown":
-                    from game_flow import shutdown_raspberry_pi
+                    from piGame import shutdown_raspberry_pi
 
                     shutdown_raspberry_pi(link, display)
                     return False
@@ -1053,7 +1053,7 @@ class PuzzleController:
                     continue
 
                 if m == "shutdown":
-                    from game_flow import shutdown_raspberry_pi
+                    from piGame import shutdown_raspberry_pi
 
                     shutdown_raspberry_pi(link, display)
                     return None
@@ -1150,7 +1150,7 @@ class PuzzleController:
                 continue
 
             if msg == "shutdown":
-                from game_flow import shutdown_raspberry_pi
+                from piGame import shutdown_raspberry_pi
 
                 shutdown_raspberry_pi(link, display)
                 return
@@ -1182,7 +1182,7 @@ class PuzzleController:
             # Typing previews
             if msg.startswith("typing_"):
                 try:
-                    from game_flow import update_typing_display
+                    from piGame import update_typing_display
 
                     payload = msg[len("typing_") :]
 

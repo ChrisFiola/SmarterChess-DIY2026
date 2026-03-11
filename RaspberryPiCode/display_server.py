@@ -2,7 +2,7 @@
 import os, sys, time, select
 from PIL import Image, ImageDraw, ImageFont
 
-# Ensure qrgen.py and other co-located modules load correctly when run via systemd
+# Add own directory to path so qrgen.py is importable when launched as a subprocess
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Optional QR rendering (pure python, bundled)

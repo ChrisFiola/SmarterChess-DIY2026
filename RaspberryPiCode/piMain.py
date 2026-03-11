@@ -1,46 +1,41 @@
 #!/home/king/chessenv/bin/python
 # -*- coding: utf-8 -*-
 """
-SmarterChess — Modular Main Entrypoint (2026)
-Single-responsibility modules:
-  - mc_display: Display abstraction
-  - mc_serial:  BoardLink (UART)
-  - mc_engine:  EngineContext + bestmove/hint helpers
-  - mc_game:    GameConfig/GameState + setup + unified play loop
+SmarterChess — Entry point.
 
-Behavior parity with single-file version:
-  - UART protocol preserved
-  - No pre-OK legality/capture preview (Pico side)
-  - Legality validated after OK on Pi
-  - Typing previews shown non-blocking and blocking
+Startup sequence:
+  1. Splash screen on LCD
+  2. Wait for mode selection from Pico (vs computer / online / local / puzzle)
+  3. Configure and run the selected mode
+  4. On ReturnToMenu, restart from step 2
 """
+import os
+import sys
 import time
 import traceback
 
 from display import Display
 from boardlink import BoardLink
 from engine import EngineContext
-from protocol import IGNORED_MSGS
 from game_flow import (
     GameConfig,
     GameState,
     wait_for_mode_selection,
     run_selected_mode,
     ReturnToMenu,
+    OK_MSGS,
+    IGNORED_MSGS,
 )
+import chess
 
 
 def main():
     display = Display()
     display.restart_server()
-    display.banner("SMARTCHESS")  # splash
+    display.banner("SMARTCHESS")
     display.wait_ready()
 
     ctx = EngineContext()
-    # ctx.ensure("/usr/games/stockfish")
-
-    import chess
-
     link = BoardLink()
     cfg = GameConfig()
     state = GameState(board=chess.Board(), mode="stockfish")
@@ -54,9 +49,8 @@ def main():
                     display.send(f"Mode forced:\n{forced}")
                     time.sleep(1.0)
                 else:
-                    selected = wait_for_mode_selection(link, display, state)
-                    state.mode = selected
-                    print(f"[MODE SELECT] selected={selected!r}", flush=True)
+                    state.mode = wait_for_mode_selection(link, display, state)
+                    print(f"[MODE SELECT] selected={state.mode!r}", flush=True)
 
                 run_selected_mode(link, display, ctx, state, cfg)
 
@@ -71,36 +65,17 @@ def main():
 
             except Exception as e:
                 traceback.print_exc()
-
-                # Force Pico back to mode select UI (best-effort).
                 try:
                     link.send_to_board("ChooseMode")
                 except Exception:
                     pass
-
-                # Show error briefly (or until OK) then return to menu.
                 try:
-
                     short = (str(e) or e.__class__.__name__)[:18]
                     display.send(f"ERROR\n{short}\nOK=menu")
-                    timeout_s = 2.0
                     t0 = time.monotonic()
-                    while time.monotonic() - t0 < timeout_s:
+                    while time.monotonic() - t0 < 2.0:
                         msg = link.read_from_board()
-                        if not msg:
-                            continue
-                        m = msg.strip().lower()
-                        if m in (
-                            "ok",
-                            "btn_ok",
-                            "btnok",
-                            "new",
-                            "newgame",
-                            "btn_new",
-                            "hint",
-                            "btn_hint",
-                            "in",
-                        ):
+                        if msg and msg.strip().lower() in IGNORED_MSGS:
                             break
                 except Exception:
                     time.sleep(2.0)
@@ -108,19 +83,16 @@ def main():
                 state.board = chess.Board()
                 display.send("SMARTCHESS")
                 time.sleep(0.4)
-                continue
 
     finally:
         try:
             display.close()
         except Exception:
             pass
-
         try:
             link.close()
         except Exception:
             pass
-
         try:
             ctx.quit()
         except Exception:

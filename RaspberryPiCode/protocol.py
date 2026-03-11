@@ -31,23 +31,15 @@ class Event:
     payload: str = ""
 
 
-NEW_GAME_TOKENS: frozenset = frozenset({"n", "new", "in", "newgame", "btn_new"})
-HINT_TOKENS: frozenset = frozenset({"hint", "btn_hint"})
-OK_TOKENS: frozenset = frozenset({"ok", "btnok", "btn_ok"})
-
-
 # ── Shared message token sets ──────────────────────────────────────────────────
-# Centralised here so every module can `from protocol import ...`
-# instead of repeating inline tuples.
-
-#: Tokens the Pico sends when the user wants to start a new game / go back
 NEW_GAME_MSGS: frozenset = frozenset({"n", "new", "in", "newgame", "btn_new"})
-
-#: Tokens the Pico sends when the user presses the OK button
 OK_MSGS: frozenset = frozenset({"ok", "btnok", "btn_ok"})
-
-#: Tokens the Pico sends when the user presses the Hint button
 HINT_MSGS: frozenset = frozenset({"hint", "btn_hint"})
+
+# Legacy aliases used internally by parse_payload
+NEW_GAME_TOKENS = NEW_GAME_MSGS
+OK_TOKENS = OK_MSGS
+HINT_TOKENS = HINT_MSGS
 
 #: Tokens that should be silently ignored in most message loops
 IGNORED_MSGS: frozenset = NEW_GAME_MSGS | OK_MSGS | HINT_MSGS | frozenset({"draw", "btn_draw"})
@@ -110,6 +102,14 @@ def format_hint(uci: str, is_capture: bool) -> str:
 
 def format_capture_reply(is_capture: bool) -> str:
     return f"capr_{1 if is_capture else 0}"
+
+def _piece_name(sym: str) -> str:
+    """Return the display name for a piece symbol (e.g. 'P' -> 'PAWN')."""
+    return {
+        "P": "PAWN", "N": "KNIGHT", "B": "BISHOP",
+        "R": "ROOK",  "Q": "QUEEN",  "K": "KING",
+    }.get((sym or "").upper(), "PIECE")
+
 
 def send_lcd_ack_for_payload(link, payload: str, *, log_prefix: str = "[LCD ACK]") -> None:
     """Send the matching LCD ACK for a typing_* payload.
