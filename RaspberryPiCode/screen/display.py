@@ -5,11 +5,10 @@ Communicates with display_server.py via a named pipe (FIFO at /tmp/lcdpipe).
 Use send(message) for all LCD output; helper methods cover common UI patterns.
 """
 import os
-import sys
-import time
 import subprocess
+import time
 
-from screen.lcd_pipe import LCDPipeClient, PIPE_PATH, READY_FLAG_PATH
+from screen.lcd_pipe import PIPE_PATH, READY_FLAG_PATH
 
 DISPLAY_SERVER_SCRIPT: str = os.path.join(os.path.dirname(os.path.abspath(__file__)), "display_server.py")
 
@@ -22,7 +21,6 @@ class Display:
     def __init__(self, pipe_path: str = PIPE_PATH, ready_flag: str = READY_FLAG_PATH):
         self.pipe_path = pipe_path
         self.ready_flag = ready_flag
-        self.client = LCDPipeClient(pipe_path)
         self._last_payload = None
         self._last_send_t = 0.0
         # Simple "UI lock" to prevent important prompts (typing / confirmations)
@@ -188,25 +186,15 @@ class Display:
         self.send(f"You are {side.lower()}\nEnter move:", force=force)
 
     def show_hint_result(self, uci: str) -> None:
-        """
-        Show hint in the format:
-        Hint received: e2 → e4
-        Falls back gracefully if UCI is shorter than 4.
-        """
+        """Show a hint in the format 'Hint received: e2 → e4'."""
         try:
             frm, to = uci[:2], uci[2:4]
             if len(uci) >= 4:
                 self.send(f"Hint received:\n{frm} → {to}\nPress OK")
             else:
-                # Fallback: just show whatever we received
                 self.send(f"Hint received:\n{uci}")
         except Exception:
             self.send(f"Hint received:\n{uci}")
-
-    """
-        def show_hint_result(self, uci: str) -> None:
-            self.show_arrow(uci)
-    """
 
     def show_invalid(self, text: str) -> None:
         self.send(f"Invalid\n{text}\nTry again")

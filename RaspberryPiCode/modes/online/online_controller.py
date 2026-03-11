@@ -22,6 +22,7 @@ from modes.online.lichess_game import (
 from core.net_utils import is_ap_mode, wifi_config_url
 from core.protocol import (
     send_lcd_ack_for_payload,
+    parse_uci_move,
     NEW_GAME_MSGS,
     OK_MSGS,
     HINT_MSGS,
@@ -35,6 +36,7 @@ from core.game_flow import (
     validate_and_push_move,
     notify_game_over,
     handle_illegal_move,
+    resolve_uci_promotion,
     shutdown_raspberry_pi,
 )
 
@@ -361,7 +363,6 @@ class OnlineController:
             awaiting_ok_ack = False
             in_move_entry = True
 
-            from core.protocol import parse_uci_move
             uci = parse_uci_move(msg)
             if not uci:
                 link.send_to_board(f"error_invalid_{msg}")
@@ -369,7 +370,6 @@ class OnlineController:
                 continue
 
             # Validate locally (promotion + legality) without pushing yet
-            from core.game_flow import resolve_uci_promotion
             try:
                 uci = resolve_uci_promotion(link, display, board, uci) or uci
             except ReturnToMenu:

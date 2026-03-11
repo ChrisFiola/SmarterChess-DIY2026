@@ -1,13 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-Serial link wrapper for Pico <-> Pi protocol.
+Serial link between Raspberry Pi and Pico over UART.
 
-Key public methods:
-  send_to_board(text)      – prefix with heyArduino and send
-  read_from_board()        – blocking read (strips heypi prefix)
-  try_read_from_board()    – non-blocking read, returns None immediately
+The protocol uses two prefixes:
+  - Pi → Pico: "heyArduino" + payload + newline
+  - Pico → Pi: "heypi" + payload + newline  (or "heypixshutdown" for shutdown)
 
-Protocol strings (heyArduino / heypi / heypixshutdown) are preserved.
+Public methods:
+  send_to_board(text)        — send a message to the Pico
+  read_from_board()          — blocking read; returns payload or "shutdown"
+  try_read_from_board()      — non-blocking read; returns None if nothing waiting
+  clear_input()              — drop any buffered input from the Pico
 """
 from typing import Optional
 import serial
@@ -33,30 +36,23 @@ class BoardLink:
             pass
 
     def clear_input(self) -> None:
-        """Drop any pending incoming messages from the Pico."""
+        """Drop any buffered incoming bytes from the Pico."""
         try:
             self.ser.reset_input_buffer()
         except Exception:
             pass
 
-    def _clear_output(self) -> None:
-        """Drop any pending outgoing bytes to the Pico."""
-        try:
-            self.ser.reset_output_buffer()
-        except Exception:
-            pass
-
-    # Writes
-    def _send_raw(self, text: str) -> None:
-        self.ser.write(text.encode("utf-8") + b"\n")
+    # ── Writes ────────────────────────────────────────────────────────────────
 
     def send_to_board(self, text: str) -> None:
+        """Send a message to the Pico. The "heyArduino" prefix is added automatically."""
         payload = "heyArduino" + text
         self.ser.write(payload.encode("utf-8") + b"\n")
         self.ser.flush()
         print(f"[-→Board] {payload}")
 
-    # Reads
+    # ── Reads ─────────────────────────────────────────────────────────────────
+
     def _readline(self) -> Optional[str]:
         line = self.ser.readline()
         if not line:
@@ -66,37 +62,32 @@ class BoardLink:
         except UnicodeDecodeError:
             return None
 
-    def _read_raw_line(self) -> Optional[str]:
+    def try_read_from_board(self) -> Optional[str]:
+        """Non-blocking read. Returns the payload string, "shutdown", or None."""
+        if not self.ser.in_waiting:
+            return None
         raw = self._readline()
-        if raw is None:
+        if not raw:
             return None
         low = raw.lower()
         if low.startswith("heypixshutdown"):
-            return "heypixshutdown"
-        return low
+            return "shutdown"
+        if low.startswith("heypi"):
+            payload = low[5:]
+            print(f"[Board→] {low}  | payload='{payload}'")
+            return payload
+        return None
 
-    def try_read_from_board(self) -> Optional[str]:
-        if self.ser.in_waiting:
+    def read_from_board(self) -> Optional[str]:
+        """Blocking read. Returns the payload string, "shutdown", or None on timeout."""
+        while True:
             raw = self._readline()
-            if not raw:
+            if raw is None:
                 return None
             low = raw.lower()
             if low.startswith("heypixshutdown"):
                 return "shutdown"
             if low.startswith("heypi"):
                 payload = low[5:]
-                print(f"[Board→] {low}  | payload='{payload}'")
-                return payload
-        return None
-
-    def read_from_board(self) -> Optional[str]:
-        while True:
-            raw = self._read_raw_line()
-            if raw is None:
-                return None
-            if raw.startswith("heypixshutdown"):
-                return "shutdown"
-            if raw.startswith("heypi"):
-                payload = raw[5:]
                 print(f"[Board→] {raw}  | payload='{payload}'")
                 return payload

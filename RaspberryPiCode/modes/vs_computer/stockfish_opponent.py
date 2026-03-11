@@ -1,15 +1,20 @@
 # -*- coding: utf-8 -*-
-"""Stockfish opponent wrapper (robust strength-aware version)."""
+"""
+Stockfish opponent wrapper.
 
+Maps the 1-8 skill scale from the Pico UI to Stockfish's internal
+Skill Level (0-20) or UCI_Elo parameters, then retrieves best moves.
+"""
 from __future__ import annotations
 
+import sys
+import traceback
 from typing import Optional
+
 import chess
 
-from core.opponent import Opponent
 from core.engine import EngineContext
-
-print("LOADED StockfishOpponent from:", __file__, flush=True)
+from core.opponent import Opponent
 
 
 def _clamp(n: int, lo: int, hi: int) -> int:
@@ -17,29 +22,24 @@ def _clamp(n: int, lo: int, hi: int) -> int:
 
 
 def _map_skill_to_elo(skill_level: int) -> int:
-    """
-    Beginner-friendly steps.
-    skill_level is 0..20; we bucket it into 8 UI-ish bands.
+    """Convert a 0-20 skill level to an approximate Elo rating.
+
+    Produces 8 equally spaced steps from 650 to 2050.
     """
     s = _clamp(skill_level, 0, 20)
-
-    # Convert 0..20 into an index 0..7
-    # (so low skill values stay low longer)
     idx = int(round((s / 20.0) * 7))
-
     elo_steps = [650, 850, 1050, 1250, 1450, 1650, 1850, 2050]
     return elo_steps[_clamp(idx, 0, 7)]
 
 
-def _map_raw_skill_to_beginner_skill(raw_0_20: int) -> int:
-    """
-    raw_0_20 comes from Pico (mapped 1..8 -> 1..20).
-    Convert to 8-step beginner-friendly Stockfish Skill Level 0..20.
+def _map_skill_to_stockfish_level(raw_0_20: int) -> int:
+    """Convert a 0-20 skill level to Stockfish's internal Skill Level (0-20).
+
+    Uses a beginner-friendly curve so the lower end of the slider is
+    noticeably weaker (more accessible for new players).
     """
     s = _clamp(int(raw_0_20), 0, 20)
-    idx = int(round((s / 20.0) * 7))  # 0..7
-
-    # Beginner-friendly curve (tweakable)
+    idx = int(round((s / 20.0) * 7))
     steps = [0, 1, 2, 4, 6, 9, 13, 18]
     return steps[_clamp(idx, 0, 7)]
 
@@ -67,19 +67,16 @@ class StockfishOpponent(Opponent):
         skill_level = _clamp(int(skill_level), 0, 20)
         if skill_level != self.skill_level:
             self.skill_level = skill_level
-            self._configured = False  # force reconfigure next move
+            self._configured = False  # force reconfigure on next move
 
     def _ensure_configured(self) -> None:
+        """Send skill/elo configuration to the engine if it has changed."""
         if self._configured and self._last_skill == self.skill_level:
             return
 
-        import sys, traceback
-
         engine = self.ctx.ensure()
-
-        # Print BEFORE we try anything
         print(
-            f"[ENGINE CONFIG] about to configure. skill={self.skill_level} use_elo={self.use_elo}",
+            f"[ENGINE] configuring skill={self.skill_level} use_elo={self.use_elo}",
             file=sys.stderr,
             flush=True,
         )
@@ -87,43 +84,20 @@ class StockfishOpponent(Opponent):
         try:
             if self.use_elo:
                 elo = _map_skill_to_elo(self.skill_level)
-                print(
-                    f"[ENGINE CONFIG] requesting UCI_Elo={elo}",
-                    file=sys.stderr,
-                    flush=True,
-                )
-
                 engine.configure({"UCI_LimitStrength": True, "UCI_Elo": elo})
-
-                print("[ENGINE CONFIG] configure OK (elo)", file=sys.stderr, flush=True)
+                print(f"[ENGINE] configured UCI_Elo={elo}", file=sys.stderr, flush=True)
             else:
-                mapped = _map_raw_skill_to_beginner_skill(self.skill_level)
-                print(
-                    f"[ENGINE CONFIG] requesting Skill Level={mapped} (raw={self.skill_level})",
-                    file=sys.stderr,
-                    flush=True,
-                )
-
-                engine.configure({"UCI_LimitStrength": False, "Skill Level": mapped})
-
-                print(
-                    "[ENGINE CONFIG] configure OK (skill)", file=sys.stderr, flush=True
-                )
-
+                level = _map_skill_to_stockfish_level(self.skill_level)
+                engine.configure({"UCI_LimitStrength": False, "Skill Level": level})
+                print(f"[ENGINE] configured Skill Level={level}", file=sys.stderr, flush=True)
         except Exception as e:
-            print("[ENGINE CONFIG ERROR]", repr(e), file=sys.stderr, flush=True)
+            print(f"[ENGINE] configuration failed: {e!r}", file=sys.stderr, flush=True)
             traceback.print_exc()
-            # IMPORTANT: still mark configured so you don't spam errors every move?
-            # For debugging, DON'T mark configured on error:
-            return
+            return  # don't mark configured so we retry next move
 
-        # If we reached here, config succeeded
         self._configured = True
         self._last_skill = self.skill_level
 
     def get_move(self, board: chess.Board) -> Optional[str]:
-        import sys
-
-        print("[DEBUG] StockfishOpponent.get_move called", file=sys.stderr, flush=True)
         self._ensure_configured()
         return self.ctx.bestmove(board, self.move_time_ms)

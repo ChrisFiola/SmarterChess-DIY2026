@@ -12,14 +12,15 @@ Features:
 
 from __future__ import annotations
 
+import io
+import json
+import os
+import random
+import re
+import time
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
-from collections import defaultdict
-import re
-
-import os
-import json
-import random
 
 import chess
 import chess.pgn
@@ -53,7 +54,7 @@ def _pgn_opening_info(pgn_text: str) -> Tuple[str, str]:
     belongs to the requested opening angle.
     """
     try:
-        game = chess.pgn.read_game(__import__("io").StringIO(pgn_text))
+        game = chess.pgn.read_game(io.StringIO(pgn_text))
         if game is None:
             return "", ""
         eco = str(game.headers.get("ECO") or "")
@@ -330,7 +331,7 @@ class PuzzleState:
 
 
 def _board_from_pgn_at_ply(pgn_text: str, initial_ply: int) -> chess.Board:
-    game = chess.pgn.read_game(__import__("io").StringIO(pgn_text))
+    game = chess.pgn.read_game(io.StringIO(pgn_text))
     if game is None:
         return chess.Board()
     board = game.board()
@@ -492,7 +493,7 @@ class PuzzleController:
             except Exception:
                 pass
             try:
-                __import__("time").sleep(1.0)
+                time.sleep(1.0)
             except Exception:
                 pass
             payload = self.client.get_daily_puzzle()
@@ -930,7 +931,7 @@ class PuzzleController:
                 ),
             )
             display.send(f"{label}\nSetup position\nOK = next")
-            __import__("time").sleep(0.8)
+            time.sleep(0.8)
             link.send_to_board("setup_clear")
 
             if not wait_for_ok(link, display):
@@ -945,7 +946,7 @@ class PuzzleController:
                     return
 
             display.send(f"{label}\nSetup done\nPuzzle begins")
-            __import__("time").sleep(0.8)
+            time.sleep(0.8)
         finally:
             link.send_to_board("hint_enable")
             link.send_to_board("puzzle_setup_done")
@@ -953,7 +954,7 @@ class PuzzleController:
                 link.clear_input()
             except Exception:
                 pass
-            __import__("time").sleep(0.05)
+            time.sleep(0.05)
             link.send_to_board("hint_enable")
 
         # 3) Load board state
@@ -1070,12 +1071,12 @@ class PuzzleController:
             if mv not in board.legal_moves:
                 link.send_to_board("error_puzzle_internal")
                 display.send("Puzzle error\nTry again")
-                __import__("time").sleep(1.0)
+                time.sleep(1.0)
                 _rearm()
                 continue
 
             display.send(f"Correct move!\n{expected[:2]}→{expected[2:4]}")
-            __import__("time").sleep(2)
+            time.sleep(2)
             board.push(mv)
             st.idx += 1
 

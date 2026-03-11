@@ -101,6 +101,18 @@ class Mode:
     PUZZLE = "puzzle"
 
 
+# Button index → (game mode, command string) for the mode-selection menu.
+_MODE_MAP = {
+    1: (Mode.PC, "btn_mode_pc"),
+    2: (Mode.ONLINE, "btn_mode_online"),
+    3: (Mode.LOCAL, "btn_mode_local"),
+    4: (Mode.PUZZLE, "btn_mode_puzzles"),
+}
+
+# Button index → UCI promotion piece token for the promotion picker.
+_PROMO = {1: "btn_q", 2: "btn_r", 3: "btn_b", 4: "btn_n"}
+
+
 class State:
     def __init__(self):
         self.game_state = Game.IDLE
@@ -187,8 +199,7 @@ class Screen:
         elif kind == "from":
             self.link.write_raw("heypityping_from_")
 
-    @staticmethod
-    def wait_for_lcd_ack(expected_ack="heyArduinolcd_ack_confirm", timeout_ms=300):
+    def wait_for_lcd_ack(self, expected_ack="heyArduinolcd_ack_confirm", timeout_ms=300):
         print("[PICO ACK] waiting for:", expected_ack, "timeout_ms=", timeout_ms)
         deadline = time.ticks_add(time.ticks_ms(), timeout_ms)
         ok_seen = False
@@ -199,7 +210,7 @@ class Screen:
             if cp.BTN_OK.value() == 0:
                 ok_seen = True
 
-            msg = link.read()
+            msg = self.link.read()
             if not msg:
                 time.sleep_ms(Config.Timing.FAST_POLL_MS)
                 continue
@@ -1142,7 +1153,7 @@ def _confirm_move(move):
 
     print("[PICO CONFIRM] send typing_confirm:", move)
     screen.typing_confirm(move)
-    acked, ok_seen_during_ack = Screen.wait_for_lcd_ack(
+    acked, ok_seen_during_ack = screen.wait_for_lcd_ack(
         "heyArduinolcd_ack_confirm", timeout_ms=300
     )
     print("[PICO CONFIRM] acked =", acked, "ok_seen_during_ack =", ok_seen_during_ack)
@@ -1474,12 +1485,6 @@ def _run_startup_sequence():
 def _select_game_mode():
     cp.profile.main_menu()
     cp.reset_edges()
-    _MODE_MAP = {
-        1: (Mode.PC, "btn_mode_pc"),
-        2: (Mode.ONLINE, "btn_mode_online"),
-        3: (Mode.LOCAL, "btn_mode_local"),
-        4: (Mode.PUZZLE, "btn_mode_puzzles"),
-    }
     while True:
         if cp.shutdown_held():
             _shutdown_pico()
@@ -1605,7 +1610,6 @@ def _handle_promotion_choice():
     board.scene_promotion()
     cp.show_coords_top(MAGENTA)
     cp.reset_edges()
-    _PROMO = {1: "btn_q", 2: "btn_r", 3: "btn_b", 4: "btn_n"}
     try:
         while True:
             if cp.shutdown_held():

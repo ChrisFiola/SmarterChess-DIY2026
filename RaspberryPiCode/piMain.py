@@ -1,6 +1,3 @@
-import os as _os, sys as _sys
-_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
-
 #!/home/king/chessenv/bin/python
 # -*- coding: utf-8 -*-
 """
@@ -17,19 +14,19 @@ import sys
 import time
 import traceback
 
-from screen.display import Display
+import chess
+
 from core.boardlink import BoardLink
 from core.engine import EngineContext
 from core.game_flow import (
     GameConfig,
     GameState,
+    ReturnToMenu,
     wait_for_mode_selection,
     run_selected_mode,
-    ReturnToMenu,
-    OK_MSGS,
-    IGNORED_MSGS,
 )
-import chess
+from core.protocol import IGNORED_MSGS, OK_MSGS
+from screen.display import Display
 
 
 def main():

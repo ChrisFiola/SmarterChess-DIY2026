@@ -5,28 +5,39 @@ This is a *behavior-preserving* refactor: the UART protocol and UI messaging
 remain the same, but the core play loop becomes easier to follow.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 import time
-from screen.display import Display
-from core.boardlink import BoardLink
+
 import chess
 
+from core.boardlink import BoardLink
+from core.game_flow import (
+    GameConfig,
+    GameState,
+    ReturnToMenu,
+    apply_human_move,
+    check_move_captures,
+    handle_typing_message,
+    notify_game_over,
+    prompt_next_turn,
+    send_move_hint,
+    shutdown_raspberry_pi,
+)
 from core.protocol import (
     EventType,
     parse_payload,
+    parse_uci_move,
     format_capture_reply,
     format_engine_move,
-    send_lcd_ack_for_payload,
 )
 from modes.vs_computer.stockfish_opponent import StockfishOpponent
+from screen.display import Display
 
 
 @dataclass
 class GameDeps:
-    link: "BoardLink"  # from piSerial
-    display: "Display"  # from piDisplay
+    link: BoardLink
+    display: Display
     opponent: StockfishOpponent
 
 
@@ -84,11 +95,7 @@ class GameController:
     def _handle_event(
         self, typ: EventType, payload: str, nonblocking: bool = False
     ) -> None:
-        from core.game_flow import ReturnToMenu  # keep exception class stable
-
         if typ == EventType.SHUTDOWN:
-            from core.game_flow import shutdown_raspberry_pi
-
             shutdown_raspberry_pi(self.deps.link, self.deps.display)
             raise ReturnToMenu()
 
@@ -96,7 +103,6 @@ class GameController:
             raise ReturnToMenu()
 
         if typ == EventType.TYPING:
-            from core.game_flow import handle_typing_message
             handle_typing_message(self.deps.link, self.deps.display, payload, self.board)
             return
 
@@ -109,8 +115,6 @@ class GameController:
             return
 
         if typ == EventType.CAPTURE_QUERY:
-            from core.game_flow import check_move_captures
-
             try:
                 cap = check_move_captures(self.board, payload)
             except Exception:
@@ -119,8 +123,6 @@ class GameController:
             return
 
         if typ == EventType.HINT:
-            from core.game_flow import send_move_hint, GameState, GameConfig
-
             state = GameState(board=self.board, mode="stockfish")
             cfg = GameConfig(
                 skill_level=5,
@@ -133,8 +135,6 @@ class GameController:
             return
 
         if typ == EventType.MOVE:
-            from core.game_flow import apply_human_move
-
             apply_human_move(
                 link=self.deps.link,
                 display=self.deps.display,
@@ -144,12 +144,9 @@ class GameController:
             return
 
         # Unknown messages: ignore in nonblocking mode, else show as invalid
-        if not nonblocking:
-            from core.protocol import parse_uci_move
-
-            if not parse_uci_move(payload):
-                self.deps.link.send_to_board(f"error_invalid_{payload}")
-                self.deps.display.show_invalid(payload)
+        if not nonblocking and not parse_uci_move(payload):
+            self.deps.link.send_to_board(f"error_invalid_{payload}")
+            self.deps.display.show_invalid(payload)
 
     def _play_one_engine_move(self) -> None:
         uci = self.deps.opponent.get_move(self.board)
@@ -159,8 +156,6 @@ class GameController:
         is_cap = self.board.is_capture(mv)
         self.deps.link.send_to_board(format_engine_move(uci, is_cap))
         self.board.push(mv)
-
-        from core.game_flow import notify_game_over, prompt_next_turn, GameConfig
 
         if self.board.is_game_over():
             notify_game_over(self.deps.link, self.deps.display, self.board)

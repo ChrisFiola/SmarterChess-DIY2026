@@ -11,25 +11,22 @@ import sys
 import time
 import traceback
 from dataclasses import dataclass
-from typing import Optional
+from typing import List, Optional, Tuple
 
 import chess
 
-from screen.display import Display
 from core.boardlink import BoardLink
 from core.engine import EngineContext
-
-# Phase 1: daily puzzle controller
-from modes.online.lichess_client import LichessClient
 from core.protocol import (
-    send_lcd_ack_for_payload,
-    parse_uci_move,
-    piece_name,
-    NEW_GAME_MSGS,
-    OK_MSGS,
     HINT_MSGS,
     IGNORED_MSGS,
+    NEW_GAME_MSGS,
+    OK_MSGS,
+    parse_uci_move,
+    piece_name,
+    send_lcd_ack_for_payload,
 )
+from screen.display import Display
 
 # -------------------- Data classes --------------------
 
@@ -809,391 +806,162 @@ def _run_online_game(link: BoardLink, display: Display, cfg: GameConfig) -> None
     OnlineController(link, display, cfg).run()
 
 
-def _run_puzzle_game(link: BoardLink, display: Display) -> None:
-    """Puzzle mode.
+# ── Puzzle phase tags (lichess.org/training/themes) ──────────────────────────
+# Each entry is (lichess_tag, display_label).
+PHASE_THEMES: List[Tuple[str, str]] = [
+    ("opening", "Opening"),
+    ("middlegame", "Middlegame"),
+    ("endgame", "Endgame"),
+    ("rookEndgame", "Rook endgame"),
+    ("bishopEndgame", "Bishop endgame"),
+    ("pawnEndgame", "Pawn endgame"),
+    ("knightEndgame", "Knight endgame"),
+    ("queenEndgame", "Queen endgame"),
+]
 
-    Submenu:
-      1) Daily puzzle (Lichess daily)
-      2) Mix & Match (random from optional local list; falls back to daily)
+# Opening names from lichess.org/training/openings, grouped alphabetically.
+# Used by /api/puzzle/next?angle=<opening_name>.
+OPENING_GROUPS: List[Tuple[str, List[str]]] = [
+    ("A to E", [
+        "Alekhine Defense", "Amar Opening", "Amazon Attack", "Anderssen's Opening",
+        "Barnes Defense", "Barnes Opening",
+        "Benko Gambit", "Benko Gambit Accepted", "Benko Gambit Declined",
+        "Benoni Defense", "Bird Opening", "Bishop's Opening",
+        "Blackmar Gambit", "Blackmar Gambit Accepted", "Blackmar Gambit Declined",
+        "Blumenfeld Countergambit", "Bogo-Indian Defense", "Borg Defense",
+        "Canard Opening", "Caro-Kann Defense", "Carr Defense", "Catalan Opening",
+        "Center Game", "Center Counter", "Clemenz Opening", "Czech Defense",
+        "Danish Gambit", "Danish Gambit Accepted", "Danish Gambit Declined",
+        "Dutch Defense", "East Indian Defense", "Elephant Gambit",
+        "English Defense", "English Opening", "Englund Gambit", "Englund Gambit Declined",
+    ]),
+    ("F to I", [
+        "French Defense", "Fried Fox Defense", "Goldsmith Defense", "Grob Opening",
+        "Grunfeld Defense", "Gunderam Defense", "Hippopotamus Defense",
+        "Horwitz Defense", "Hungarian Opening", "Indian Defense", "Italian Game",
+    ]),
+    ("K to N", [
+        "Kangaroo Defense",
+        "King's Gambit", "King's Gambit Accepted", "King's Gambit Declined",
+        "King's Indian Attack", "King's Indian Defense",
+        "King's Knight Opening", "King's Pawn Game", "King's Pawn Opening",
+        "Kadas Opening", "Lasker Simul Special",
+        "Latvian Gambit", "Latvian Gambit Accepted",
+        "Lemming Defense", "Lion Defense", "London System",
+        "Mexican Defense", "Mieses Opening", "Mikenas Defense", "Modern Defense",
+        "Neo-Grunfeld Defense", "Nimzo-Indian Defense",
+        "Nimzo-Larsen Attack", "Nimzowitsch Defense",
+    ]),
+    ("O to R", [
+        "Old Indian Defense", "Owen Defense", "Paleface Attack",
+        "Petrov's Defense", "Philidor Defense", "Pirc Defense",
+        "Polish Defense", "Polish Opening", "Ponziani Opening", "Portuguese Defense",
+        "Pseudo-Queen's Indian Defense", "Pterodactyl Defense",
+        "Queen's Gambit", "Queen's Gambit Accepted", "Queen's Gambit Declined",
+        "Queen's Indian Accelerated", "Queen's Indian Defense", "Queen's Pawn Game",
+        "Rapport-Jobava System", "Rat Defense", "Richter-Veresov Attack",
+        "Robatsch Defense", "Rubinstein Opening", "Ruy Lopez", "Réti Opening",
+    ]),
+    ("S to V", [
+        "Saragossa Opening", "Scandinavian Defense", "Scotch Game",
+        "Semi-Slav Defense", "Sicilian Defense", "Slav Defense", "Slav Indian",
+        "Sodium Attack", "St. George Defense", "Tarrasch Defense",
+        "Three Knights Game", "Torre Attack", "Trompowsky Attack",
+        "Van Geet Opening", "Van't Kruijs Opening", "Vienna Gambit", "Vienna Game",
+    ]),
+    ("W to Z", [
+        "Wade Defense", "Ware Defense", "Ware Opening",
+        "Yusupov-Rubinstein System", "Zukertort Opening",
+    ]),
+]
+
+
+def _menu_truncate(s: str, n: int) -> str:
+    """Truncate a string to n characters, appending '…' if shortened."""
+    s = (s or "").strip()
+    return s if len(s) <= n else (s[: max(0, n - 1)] + "…")
+
+
+def _render_paged_menu(title: str, page: int, pages: int, items: List[str]) -> str:
+    """Format up to 4 menu items for a 20-char wide 4-line LCD display.
+
+    When all 4 slots are filled, the page number is shown in the first item.
+    When fewer items are shown, a header line and navigation hint are added.
     """
-    client = LichessClient()
+    def _fmt(i: int, s: str) -> str:
+        return f"{i}) {_menu_truncate(s or '', 18)}"[:20].rstrip()
+
+    n = len(items)
+    if n >= 4:
+        line1 = _fmt(1, items[0])
+        if pages > 1:
+            suffix = f" {page + 1}/{pages}"
+            if len(line1) + len(suffix) <= 20:
+                line1 = line1 + suffix
+            else:
+                line1 = line1[: max(0, 20 - len(suffix))] + suffix
+        lines = [line1, _fmt(2, items[1]), _fmt(3, items[2]), _fmt(4, items[3])]
+        return "\n".join(x[:20] for x in lines)
+
+    # Fewer than 4 options: show header + items + navigation hint on last line.
+    header = (
+        f"{_menu_truncate(title, 14)} {page + 1}/{pages}"
+        if pages > 1
+        else _menu_truncate(title, 20)
+    )
+    lines = [header[:20].rstrip()] + [_fmt(i + 1, opt) for i, opt in enumerate(items)]
+    while len(lines) < 4:
+        lines.append("H=next OK=back"[:20] if len(lines) == 3 else "")
+    return "\n".join(x[:20] for x in lines)
+
+
+def _paged_menu(
+    link: BoardLink, display: Display, title: str, options: List[str]
+) -> Optional[str]:
+    """Show a scrollable 4-item menu and return the user's selection.
+
+    Navigation: buttons 1-4 select, HINT scrolls to next page, OK/back cancels.
+    Returns the selected option string, or None if the user pressed OK/back.
+    """
+    opts = list(options or [])
+    if not opts:
+        return None
+
+    per_page = 4
+    pages = (len(opts) + per_page - 1) // per_page
+    page = 0
+
+    link.send_to_board("MenuPaged")
+
+    while True:
+        chunk = opts[page * per_page : page * per_page + per_page]
+        display.send(_render_paged_menu(title, page, pages, chunk))
+        msg = link.read_from_board()
+        if msg is None:
+            continue
+        m = msg.strip().lower()
+        if m in OK_MSGS | NEW_GAME_MSGS:
+            return None
+        if m in HINT_MSGS:
+            page = (page + 1) % pages
+            continue
+        if m in ("1", "2", "3", "4"):
+            idx = int(m) - 1
+            if idx < len(chunk) and chunk[idx]:
+                return chunk[idx]
+
+
+def _run_puzzle_game(link: BoardLink, display: Display) -> None:
+    """Puzzle mode: show a submenu then launch the selected puzzle type."""
+    from modes.online.lichess_client import LichessClient
     from modes.puzzles.puzzle_controller import PuzzleController
 
-    def _short(s: str, n: int) -> str:
-        s = (s or "").strip()
-        return s if len(s) <= n else (s[: max(0, n - 1)] + "…")
+    client = LichessClient()
 
-    def _render_paged(title: str, page: int, pages: int, items4):
-        # 20x4-friendly: one option per line (readable).
-        # We prioritize readability over showing the header/footer at all times.
-        # - Up to 4 options displayed: 1) .. 4) ..
-        # - If <4 options, we use remaining lines for help / page info.
-        def fmt_opt(i: int, s: str) -> str:
-            s = _short(s or "", 18)  # leave room for "1)" prefix
-            return f"{i}) {s}"[:20].rstrip()
+    def menu(title: str, options: List[str]) -> Optional[str]:
+        return _paged_menu(link, display, title, options)
 
-        lines = []
-        n = len(items4)
-
-        # If we have a full 4 options, use all 4 lines for options.
-        # Include page info on line 1 suffix when multiple pages.
-        if n >= 4:
-            l1 = fmt_opt(1, items4[0])
-            if pages > 1:
-                # add "p/x" at end if it fits
-                suffix = f" {page+1}/{pages}"
-                if len(l1) + len(suffix) <= 20:
-                    l1 = l1 + suffix
-                else:
-                    l1 = l1[: max(0, 20 - len(suffix))] + suffix
-            lines = [
-                l1,
-                fmt_opt(2, items4[1]),
-                fmt_opt(3, items4[2]),
-                fmt_opt(4, items4[3]),
-            ]
-            return "\n".join([x[:20] for x in lines])
-
-        # Otherwise, show a compact header then one-option-per-line, plus help.
-        header = (
-            f"{_short(title, 14)} {page+1}/{pages}" if pages > 1 else _short(title, 20)
-        )
-        lines.append(header[:20].rstrip())
-        for i, opt in enumerate(items4, start=1):
-            lines.append(fmt_opt(i, opt))
-        # Fill remaining lines with help text
-        while len(lines) < 4:
-            # Put help on the last line
-            if len(lines) == 3:
-                lines.append("H=next OK=back"[:20])
-            else:
-                lines.append("")
-        return "\n".join([x[:20] for x in lines])
-
-    from typing import Optional, List
-
-    def _paged_menu(title: str, options: "List[str]") -> "Optional[str]":
-        # Returns selected option string, or None if back.
-        opts = list(options or [])
-        if not opts:
-            return None
-        per_page = 4
-        pages = (len(opts) + per_page - 1) // per_page
-        page = 0
-
-        # Tell the Pico we are entering a paged menu (1-4 + HINT next + OK back)
-        link.send_to_board("MenuPaged")
-
-        while True:
-            chunk = opts[page * per_page : page * per_page + per_page]
-            display.send(_render_paged(title, page, pages, chunk))
-            msg = link.read_from_board()
-            if msg is None:
-                continue
-            m = msg.strip().lower()
-            if m in ("ok", "btn_ok", "btnok", "n", "new", "in", "newgame", "btn_new"):
-                return None
-            if m in HINT_MSGS:
-                page = (page + 1) % pages
-                continue
-            if m in ("1", "2", "3", "4"):
-                idx = int(m) - 1
-                if idx < len(chunk) and chunk[idx]:
-                    return chunk[idx]
-                continue
-
-    # -------------------- Menu definitions --------------------
-
-    from typing import Tuple
-
-    PHASE_THEMES: "List[Tuple[str, str]]" = [
-        ("opening", "Opening"),
-        ("middlegame", "Middlegame"),
-        ("endgame", "Endgame"),
-        ("rookEndgame", "Rook endgame"),
-        ("bishopEndgame", "Bishop endgame"),
-        ("pawnEndgame", "Pawn endgame"),
-        ("knightEndgame", "Knight endgame"),
-        ("queenEndgame", "Queen endgame"),
-    ]
-
-    # Opening angles (names) for /api/puzzle/next?angle=<opening name>.
-    # These are *not* the same as the theme tags under /training/themes.
-    OPENING_GROUPS: "List[Tuple[str, List[str]]]" = [
-        (
-            "A to E",
-            [
-                "Alekhine Defense",
-                "Amar Opening",
-                "Amazon Attack",
-                "Anderssen's Opening",
-                "Barnes Defense",
-                "Barnes Opening",
-                "Benko Gambit",
-                "Benko Gambit Accepted",
-                "Benko Gambit Declined",
-                "Benoni Defense",
-                "Bird Opening",
-                "Bishop's Opening",
-                "Blackmar Gambit",
-                "Blackmar Gambit Accepted",
-                "Blackmar Gambit Declined",
-                "Blumenfeld Countergambit",
-                "Bogo-Indian Defense",
-                "Borg Defense",
-                "Canard Opening",
-                "Caro-Kann Defense",
-                "Carr Defense",
-                "Catalan Opening",
-                "Center Game",
-                "Center Counter",
-                "Clemenz Opening",
-                "Czech Defense",
-                "Danish Gambit",
-                "Danish Gambit Accepted",
-                "Danish Gambit Declined",
-                "Dutch Defense",
-                "East Indian Defense",
-                "Elephant Gambit",
-                "English Defense",
-                "English Opening",
-                "Englund Gambit",
-                "Englund Gambit Declined",
-            ],
-        ),
-        (
-            "F to I",
-            [
-                "French Defense",
-                "Fried Fox Defense",
-                "Goldsmith Defense",
-                "Grob Opening",
-                "Grunfeld Defense",
-                "Gunderam Defense",
-                "Hippopotamus Defense",
-                "Horwitz Defense",
-                "Hungarian Opening",
-                "Indian Defense",
-                "Italian Game",
-            ],
-        ),
-        (
-            "K to N",
-            [
-                "Kangaroo Defense",
-                "King's Gambit",
-                "King's Gambit Accepted",
-                "King's Gambit Declined",
-                "King's Indian Attack",
-                "King's Indian Defense",
-                "King's Knight Opening",
-                "King's Pawn Game",
-                "King's Pawn Opening",
-                "Kadas Opening",
-                "Lasker Simul Special",
-                "Latvian Gambit",
-                "Latvian Gambit Accepted",
-                "Lemming Defense",
-                "Lion Defense",
-                "London System",
-                "Mexican Defense",
-                "Mieses Opening",
-                "Mikenas Defense",
-                "Modern Defense",
-                "Neo-Grunfeld Defense",
-                "Nimzo-Indian Defense",
-                "Nimzo-Larsen Attack",
-                "Nimzowitsch Defense",
-            ],
-        ),
-        (
-            "O to R",
-            [
-                "Old Indian Defense",
-                "Owen Defense",
-                "Paleface Attack",
-                "Petrov's Defense",
-                "Philidor Defense",
-                "Pirc Defense",
-                "Polish Defense",
-                "Polish Opening",
-                "Ponziani Opening",
-                "Portuguese Defense",
-                "Pseudo-Queen's Indian Defense",
-                "Pterodactyl Defense",
-                "Queen's Gambit",
-                "Queen's Gambit Accepted",
-                "Queen's Gambit Declined",
-                "Queen's Indian Accelerated",
-                "Queen's Indian Defense",
-                "Queen's Pawn Game",
-                "Rapport-Jobava System",
-                "Rat Defense",
-                "Richter-Veresov Attack",
-                "Robatsch Defense",
-                "Rubinstein Opening",
-                "Ruy Lopez",
-                "Réti Opening",
-            ],
-        ),
-        (
-            "S to V",
-            [
-                "Saragossa Opening",
-                "Scandinavian Defense",
-                "Scotch Game",
-                "Semi-Slav Defense",
-                "Sicilian Defense",
-                "Slav Defense",
-                "Slav Indian",
-                "Sodium Attack",
-                "St. George Defense",
-                "Tarrasch Defense",
-                "Three Knights Game",
-                "Torre Attack",
-                "Trompowsky Attack",
-                "Van Geet Opening",
-                "Van't Kruijs Opening",
-                "Vienna Gambit",
-                "Vienna Game",
-            ],
-        ),
-        (
-            "W to Z",
-            [
-                "Wade Defense",
-                "Ware Defense",
-                "Ware Opening",
-                "Yusupov-Rubinstein System",
-                "Zukertort Opening",
-            ],
-        ),
-    ]
-    ALL_OPENINGS: "List[str]" = [
-        "Alekhine Defense",
-        "Amar Opening",
-        "Amazon Attack",
-        "Anderssen's Opening",
-        "Barnes Defense",
-        "Barnes Opening",
-        "Benko Gambit",
-        "Benko Gambit Accepted",
-        "Benko Gambit Declined",
-        "Benoni Defense",
-        "Bird Opening",
-        "Bishop's Opening",
-        "Blackmar Gambit",
-        "Blackmar Gambit Accepted",
-        "Blackmar Gambit Declined",
-        "Blumenfeld Countergambit",
-        "Bogo-Indian Defense",
-        "Borg Defense",
-        "Canard Opening",
-        "Caro-Kann Defense",
-        "Carr Defense",
-        "Catalan Opening",
-        "Center Game",
-        "Center Counter",
-        "Clemenz Opening",
-        "Czech Defense",
-        "Danish Gambit",
-        "Danish Gambit Accepted",
-        "Danish Gambit Declined",
-        "Dutch Defense",
-        "East Indian Defense",
-        "Elephant Gambit",
-        "English Defense",
-        "English Opening",
-        "Englund Gambit",
-        "Englund Gambit Declined",
-        "French Defense",
-        "Fried Fox Defense",
-        "Goldsmith Defense",
-        "Grob Opening",
-        "Grunfeld Defense",
-        "Gunderam Defense",
-        "Hippopotamus Defense",
-        "Horwitz Defense",
-        "Hungarian Opening",
-        "Indian Defense",
-        "Italian Game",
-        "Kangaroo Defense",
-        "King's Gambit",
-        "King's Gambit Accepted",
-        "King's Gambit Declined",
-        "King's Indian Attack",
-        "King's Indian Defense",
-        "King's Knight Opening",
-        "King's Pawn Game",
-        "King's Pawn Opening",
-        "Kadas Opening",
-        "Lasker Simul Special",
-        "Latvian Gambit",
-        "Latvian Gambit Accepted",
-        "Lemming Defense",
-        "Lion Defense",
-        "London System",
-        "Mexican Defense",
-        "Mieses Opening",
-        "Mikenas Defense",
-        "Modern Defense",
-        "Neo-Grunfeld Defense",
-        "Nimzo-Indian Defense",
-        "Nimzo-Larsen Attack",
-        "Nimzowitsch Defense",
-        "Old Indian Defense",
-        "Owen Defense",
-        "Paleface Attack",
-        "Petrov's Defense",
-        "Philidor Defense",
-        "Pirc Defense",
-        "Polish Defense",
-        "Polish Opening",
-        "Ponziani Opening",
-        "Portuguese Defense",
-        "Pseudo-Queen's Indian Defense",
-        "Pterodactyl Defense",
-        "Queen's Gambit",
-        "Queen's Gambit Accepted",
-        "Queen's Gambit Declined",
-        "Queen's Indian Accelerated",
-        "Queen's Indian Defense",
-        "Queen's Pawn Game",
-        "Rapport-Jobava System",
-        "Rat Defense",
-        "Richter-Veresov Attack",
-        "Robatsch Defense",
-        "Rubinstein Opening",
-        "Ruy Lopez",
-        "Réti Opening",
-        "Saragossa Opening",
-        "Scandinavian Defense",
-        "Scotch Game",
-        "Semi-Slav Defense",
-        "Sicilian Defense",
-        "Slav Defense",
-        "Slav Indian",
-        "Sodium Attack",
-        "St. George Defense",
-        "Tarrasch Defense",
-        "Three Knights Game",
-        "Torre Attack",
-        "Trompowsky Attack",
-        "Van Geet Opening",
-        "Van't Kruijs Opening",
-        "Vienna Gambit",
-        "Vienna Game",
-        "Wade Defense",
-        "Ware Defense",
-        "Ware Opening",
-        "Yusupov-Rubinstein System",
-        "Zukertort Opening",
-    ]
-
-    # -------------------- Top-level puzzle menu --------------------
-
-    # link.send_to_board("ChoosePuzzle")
-    top = _paged_menu("PUZZLES", ["Daily Puzzle", "Mix and match", "Themes"])
+    top = menu("PUZZLES", ["Daily Puzzle", "Mix and match", "Themes"])
     if top is None:
         raise ReturnToMenu()
 
@@ -1205,55 +973,35 @@ def _run_puzzle_game(link: BoardLink, display: Display) -> None:
         PuzzleController(client, mode="mix").run(link, display)
         return
 
-    # -------------------- Themes submenu --------------------
-
-    themes_top = _paged_menu("THEMES", ["Phases", "Openings"])
+    themes_top = menu("THEMES", ["Phases", "Openings"])
     if themes_top is None:
         raise ReturnToMenu()
 
     if themes_top.startswith("Phases"):
-        label = _paged_menu("PHASES", [t[1] for t in PHASE_THEMES])
+        label = menu("PHASES", [v for _, v in PHASE_THEMES])
         if label is None:
             raise ReturnToMenu()
-        tag = None
-        for k, v in PHASE_THEMES:
-            if v == label:
-                tag = k
-                break
+        # Find the lichess tag that matches the chosen display label.
+        # "Phases -> Opening" uses the PHASE tag 'opening' (lichess.org/training/themes),
+        # not an opening name (lichess.org/training/openings).
+        tag = next((k for k, v in PHASE_THEMES if v == label), None)
         if not tag:
             raise ReturnToMenu()
-
-        # IMPORTANT:
-        # "Phases -> Opening" must request the PHASE tag 'opening' (lichess training/themes),
-        # NOT a random opening name (lichess training/openings).
-        PuzzleController(
-            client,
-            mode="theme",
-            theme=tag,  # tag is e.g. 'opening', 'middlegame', 'endgame', ...
-            theme_label=label,  # label is "Opening", "Middlegame", ...
-        ).run(link, display)
+        PuzzleController(client, mode="theme", theme=tag, theme_label=label).run(link, display)
         return
 
     if themes_top.startswith("Openings"):
-        grp = _paged_menu("OPENINGS", [g[0] for g in OPENING_GROUPS])
+        grp = menu("OPENINGS", [g for g, _ in OPENING_GROUPS])
         if grp is None:
             raise ReturnToMenu()
-        opts: Optional[List[str]] = None
-        for gname, glist in OPENING_GROUPS:
-            if gname == grp:
-                opts = glist
-                break
+        opts = next((items for g, items in OPENING_GROUPS if g == grp), None)
         if not opts:
             raise ReturnToMenu()
-
-        label = _paged_menu(grp.upper(), opts)
+        label = menu(grp.upper(), opts)
         if label is None:
             raise ReturnToMenu()
-
-        # For openings, pass the opening label as the angle; lichess_client will slugify.
-        PuzzleController(client, mode="theme", theme=label, theme_label=label).run(
-            link, display
-        )
+        # Pass the opening name as the angle; lichess_client will slugify it.
+        PuzzleController(client, mode="theme", theme=label, theme_label=label).run(link, display)
         return
 
     raise ReturnToMenu()
@@ -1266,14 +1014,13 @@ def run_selected_mode(
     state: GameState,
     cfg: GameConfig,
 ) -> None:
+    """Dispatch to the correct game loop based on state.mode."""
     if state.mode in ("stockfish", "pc", "btn_mode_pc", "vs_computer", "vs"):
         _configure_vs_computer(link, display, cfg)
         link.send_to_board("SetupComplete")
-
         display.send("Engine loading...")
-        ctx.ensure()  # uses default STOCKFISH_PATH
+        ctx.ensure()
 
-        # Refactored: run through the explicit GameController state machine.
         from modes.vs_computer.game_controller import GameController, GameDeps
         from modes.vs_computer.stockfish_opponent import StockfishOpponent
 
@@ -1281,39 +1028,39 @@ def run_selected_mode(
             ctx,
             move_time_ms=cfg.move_time_ms,
             skill_level=cfg.skill_level,
-            use_elo=False,  # <-- turn on Elo limiting
+            use_elo=False,
         )
         controller = GameController(
             GameDeps(link=link, display=display, opponent=opponent),
             human_is_white=cfg.human_is_white,
         )
         controller.run_stockfish_game(move_time_ms=cfg.move_time_ms)
+
     elif state.mode in ("local", "btn_mode_local", "local_2p"):
         _configure_local_game(link, display, cfg)
         link.send_to_board("SetupComplete")
         _run_local_game(link, display, ctx, state, cfg)
+
     elif state.mode in ("puzzle", "puzzles", "btn_mode_puzzle", "btn_mode_puzzles"):
-        # No Pico setup screens for puzzle yet.
         link.send_to_board("SetupComplete")
         _run_puzzle_game(link, display)
         raise ReturnToMenu()
+
     elif state.mode == "online":
         _run_online_game(link, display, cfg)
+
     else:
-        # Don't silently fall back to online; it hides mode-token bugs.
         print(f"[MODE DISPATCH] unknown mode={state.mode!r}", flush=True)
         try:
             link.send_to_board("error_unknown_mode")
         except Exception:
             pass
         display.send("Unknown mode\n" + str(state.mode)[:18] + "\nOK=menu")
-        # Wait for OK or New (OK+HINT) then return to mode select
         while True:
             msg = link.read_from_board()
             if msg is None:
                 continue
-            m = msg.strip().lower()
-            if m in IGNORED_MSGS:
+            if msg.strip().lower() in IGNORED_MSGS:
                 raise ReturnToMenu()
 
 
