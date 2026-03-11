@@ -65,7 +65,9 @@ def _pgn_opening_info(pgn_text: str) -> Tuple[str, str]:
 
 # -------------------- Mix puzzle ids --------------------
 
-PUZZLE_IDS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "puzzle_ids.txt")
+PUZZLE_IDS_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "puzzle_ids.txt"
+)
 
 
 # -------------------- Seen-puzzle cache (avoid repeats) --------------------
@@ -267,7 +269,6 @@ def _compute_place_steps_from_fen(target_fen: str):
 
     steps.sort(key=key)
     return steps
-
 
 
 # -------------------- Puzzle label (themes + rating) --------------------
@@ -919,9 +920,13 @@ class PuzzleController:
                 st.themes,
                 st.rating,
                 fallback=(
-                    "Mix & Match" if self.mode == "mix"
-                    else (self.theme_label or THEME_MAP.get(self.theme or "", "Theme") if self.mode == "theme"
-                          else "Daily")
+                    "Mix & Match"
+                    if self.mode == "mix"
+                    else (
+                        self.theme_label or THEME_MAP.get(self.theme or "", "Theme")
+                        if self.mode == "theme"
+                        else "Daily"
+                    )
                 ),
             )
             display.send(f"{label}\nSetup position\nOK = next")
@@ -960,7 +965,9 @@ class PuzzleController:
             display.send(f"{side_prefix}\nEnter move:")
 
         def _rearm():
-            link.send_to_board(f"turn_{'white' if board.turn == chess.WHITE else 'black'}")
+            link.send_to_board(
+                f"turn_{'white' if board.turn == chess.WHITE else 'black'}"
+            )
             _prompt()
 
         link.send_to_board(f"turn_{'white' if board.turn == chess.WHITE else 'black'}")
@@ -970,10 +977,12 @@ class PuzzleController:
         while True:
             if st.idx >= len(st.solution):
                 try:
-                    self._mark_seen((self.theme or self.mode or "").strip(), st.puzzle_id)
+                    self._mark_seen(
+                        (self.theme or self.mode or "").strip(), st.puzzle_id
+                    )
                 except Exception:
                     pass
-                display.send(f"{side_prefix}\nPuzzle solved!\nOK = menu")
+                display.send(f"Puzzle solved!\nOK = menu")
                 link.send_to_board("GameOver:1-0")
                 wait_for_ok(link, display)
                 return
@@ -1002,7 +1011,13 @@ class PuzzleController:
                 continue
 
             if msg.startswith("typing_"):
-                handle_typing_message(link, display, msg[len("typing_"):], board, log_prefix="[PUZZLE ACK]")
+                handle_typing_message(
+                    link,
+                    display,
+                    msg[len("typing_") :],
+                    board,
+                    log_prefix="[PUZZLE ACK]",
+                )
                 continue
 
             if msg in OK_MSGS:
@@ -1023,12 +1038,16 @@ class PuzzleController:
             try:
                 user_mv = chess.Move.from_uci(uci)
             except Exception:
-                if not handle_illegal_move(link=link, display=display, board=board, uci=uci, label="Illegal"):
+                if not handle_illegal_move(
+                    link=link, display=display, board=board, uci=uci, label="Illegal"
+                ):
                     return
                 continue
 
             if user_mv not in board.legal_moves:
-                if not handle_illegal_move(link=link, display=display, board=board, uci=uci, label="Illegal"):
+                if not handle_illegal_move(
+                    link=link, display=display, board=board, uci=uci, label="Illegal"
+                ):
                     return
                 continue
 
@@ -1040,7 +1059,9 @@ class PuzzleController:
                 wrong = True
 
             if wrong:
-                if not handle_illegal_move(link=link, display=display, board=board, uci=uci, label="Incorrect"):
+                if not handle_illegal_move(
+                    link=link, display=display, board=board, uci=uci, label="Incorrect"
+                ):
                     return
                 continue
 
@@ -1053,7 +1074,7 @@ class PuzzleController:
                 _rearm()
                 continue
 
-            display.send(f"{side_prefix}\nCorrect")
+            display.send(f"Correct move!\n{mv[:2]}→{mv[2:4]}")
             __import__("time").sleep(2)
             board.push(mv)
             st.idx += 1
@@ -1075,12 +1096,16 @@ class PuzzleController:
                     try:
                         if len(reply) >= 5 and reply[4].lower() in ("q", "r", "b", "n"):
                             pl = reply[4].lower()
-                            promo_name = display.promo_name(pl) if hasattr(display, "promo_name") else pl.upper()
+                            promo_name = (
+                                display.promo_name(pl)
+                                if hasattr(display, "promo_name")
+                                else pl.upper()
+                            )
                             promo_line = f"Promoted to {promo_name}\n"
                     except Exception:
                         pass
                     display.send(
-                        f"{side_prefix}\n{opp} played {reply[:2]}→{reply[2:4]}\n{promo_line}OK = continue"
+                        f"{opp} played {reply[:2]}→{reply[2:4]}\n{promo_line}OK = continue"
                     )
                     link.send_to_board(f"m{reply}{'_cap' if cap else ''}")
                     board.push(rmv)
