@@ -199,7 +199,9 @@ class Screen:
         elif kind == "from":
             self.link.write_raw("heypityping_from_")
 
-    def wait_for_lcd_ack(self, expected_ack="heyArduinolcd_ack_confirm", timeout_ms=300):
+    def wait_for_lcd_ack(
+        self, expected_ack="heyArduinolcd_ack_confirm", timeout_ms=300
+    ):
         print("[PICO ACK] waiting for:", expected_ack, "timeout_ms=", timeout_ms)
         deadline = time.ticks_add(time.ticks_ms(), timeout_ms)
         ok_seen = False
@@ -989,6 +991,11 @@ def _handle_overlay_or_gameover(msg):
         res = msg.split(":", 1)[1].strip() if ":" in msg else ""
         _show_game_over_and_ack(res)
         return "gameover"
+    if msg.startswith("heyArduinocheck_"):
+        sq = msg.split("_", 1)[1].strip() if "_" in msg else ""
+        if sq:
+            board.blink_square_keep(sq, RED)
+        return "check"
     if msg.startswith("heyArduinohint_"):
         _show_overlay(msg[len("heyArduinohint_") :], YELLOW, "hint")
         return "hint"
