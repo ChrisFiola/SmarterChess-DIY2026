@@ -521,7 +521,7 @@ def _configure_vs_computer(link: BoardLink, display: Display, cfg: GameConfig) -
         if msg in OK_MSGS or msg.startswith("n"):
             raise ReturnToMenu()
         if msg.isdigit():
-            cfg.skill_level = max(0, min(int(msg), 20))
+            cfg.skill_level = max(1, min(int(msg), 8))
             break
 
     # Move time
@@ -556,7 +556,7 @@ def _configure_vs_computer(link: BoardLink, display: Display, cfg: GameConfig) -
 def _configure_local_game(link: BoardLink, display: Display, cfg: GameConfig) -> None:
     display.send("Local 2-Player\nHints enabled")
     time.sleep(2)
-    cfg.skill_level = 20  # max hint skill for local
+    cfg.skill_level = 8  # max hint skill for local
     cfg.move_time_ms = 1  # fastest think time for local
 
 
@@ -715,8 +715,14 @@ def apply_human_move(
         notify_game_over(link, display, board)
         return
 
-    dummy_cfg = GameConfig(skill_level=5, move_time_ms=2000, human_is_white=True)
-    prompt_next_turn(link, display, board, "local", dummy_cfg, chess.Move.uci(move))
+    prompt_next_turn(
+        link,
+        display,
+        board,
+        "local",
+        GameConfig(),  # unused for local mode
+        chess.Move.uci(move),
+    )
 
 
 # -------------------- Unified play loop --------------------
