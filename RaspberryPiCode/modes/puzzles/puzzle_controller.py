@@ -31,6 +31,7 @@ from modes.online.lichess_client import LichessClient
 from core.protocol import (
     send_lcd_ack_for_payload,
     parse_uci_move,
+    format_engine_move,
     piece_name,
     NEW_GAME_MSGS,
     OK_MSGS,
@@ -42,6 +43,7 @@ from core.game_flow import (
     handle_illegal_move,
     handle_typing_message,
     handle_capq_message,
+    check_move_captures,
     resolve_uci_promotion,
     ReturnToMenu,
 )
@@ -343,13 +345,6 @@ def _board_from_pgn_at_ply(pgn_text: str, initial_ply: int) -> chess.Board:
         ply += 1
     return board
 
-
-def _is_cap(board: chess.Board, uci: str) -> bool:
-    try:
-        mv = chess.Move.from_uci(uci)
-        return board.is_capture(mv)
-    except Exception:
-        return False
 
 
 def _play_solution_prefix_len(b: chess.Board, sol: List[str]) -> int:
@@ -1006,7 +1001,7 @@ class PuzzleController:
 
             if msg in HINT_MSGS:
                 link.send_to_board(
-                    f"hint_{expected}{'_cap' if _is_cap(board, expected) else ''}"
+                    f"hint_{expected}{'_cap' if check_move_captures(board, expected) else ''}"
                 )
                 display.send(f"Hint:\n{expected[:2]}→{expected[2:4]}")
                 continue
@@ -1108,7 +1103,7 @@ class PuzzleController:
                     display.send(
                         f"{opp} played\n{reply[:2]}→{reply[2:4]}\n{promo_line}OK = continue"
                     )
-                    link.send_to_board(f"m{reply}{'_cap' if cap else ''}")
+                    link.send_to_board(format_engine_move(reply, cap))
                     board.push(rmv)
                     st.idx += 1
                     if not wait_for_ok(link, display):

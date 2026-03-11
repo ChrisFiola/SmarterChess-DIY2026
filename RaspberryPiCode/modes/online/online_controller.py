@@ -23,6 +23,7 @@ from core.net_utils import is_ap_mode, wifi_config_url
 from core.protocol import (
     send_lcd_ack_for_payload,
     parse_uci_move,
+    format_engine_move,
     NEW_GAME_MSGS,
     OK_MSGS,
     HINT_MSGS,
@@ -190,10 +191,6 @@ class OnlineController:
         last_move_count = 0
         you_are_white: Optional[bool] = None
 
-        def uci_to_oled(uci: str) -> str:
-            u = (uci or "").strip()
-            return f"{u[0].upper()}{u[1]} -> {u[2].upper()}{u[3]}" if len(u) >= 4 else u.upper()
-
         def send_turn_if_human():
             if board.turn != your_color:
                 return
@@ -213,7 +210,7 @@ class OnlineController:
                 is_cap = board.is_capture(mv)
                 board.push(mv)
                 last_move_count += 1
-                link.send_to_board(f"m{uci}{'_cap' if is_cap else ''}")
+                link.send_to_board(format_engine_move(uci, is_cap))
                 time.sleep(0.3)
                 send_turn_if_human()
                 if announce_new:
@@ -223,10 +220,9 @@ class OnlineController:
                         pl = chess.piece_symbol(mv.promotion)
                         promo_name = display.promo_name(pl) if hasattr(display, "promo_name") else pl.upper()
                         promo_line = f"Promoted to {promo_name}"
-                    display.send(
-                        f"{uci_to_oled(uci)}\n{promo_line}\n{side_to_move} to move"
-                        if promo_line
-                        else f"{uci_to_oled(uci)}\n{side_to_move} to move"
+                    display.show_arrow(
+                        uci,
+                        suffix=f"{promo_line}\n{side_to_move} to move" if promo_line else f"{side_to_move} to move",
                     )
                     awaiting_ok_ack = True
                     in_move_entry = False
