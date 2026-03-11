@@ -177,9 +177,6 @@ class GameController:
             move_time_ms=int(self.deps.opponent.move_time_ms),
             human_is_white=self.human_is_white,
         )
-        prompt_next_turn(
-            self.deps.link, self.deps.display, self.board, "stockfish", dummy_cfg, uci
-        )
         # If the engine's move puts the human king in check, send the check signal
         # BEFORE the engine-overlay message.  blink_square_keep on the Pico blocks
         # for ~1440 ms (4 × 360 ms); delaying the overlay by 1.6 s ensures the
@@ -190,3 +187,7 @@ class GameController:
             if ksq is not None:
                 self.deps.link.send_to_board(f"check_{chess.square_name(ksq)}")
                 time.sleep(1.6)
+
+        prompt_next_turn(
+            self.deps.link, self.deps.display, self.board, "stockfish", dummy_cfg, uci
+        )
