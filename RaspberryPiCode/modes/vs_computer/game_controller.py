@@ -44,8 +44,9 @@ class GameDeps:
 
 
 class GameController:
-    def __init__(self, deps: GameDeps, *, human_is_white: bool = True):
+    def __init__(self, deps: GameDeps, *, human_is_white: bool = True, cfg: GameConfig):
         self.deps = deps
+        self.cfg = cfg
         self.board = chess.Board()
         self.human_is_white = human_is_white
         self._pending_check_sq: Optional[str] = None
@@ -163,17 +164,12 @@ class GameController:
                 return
             # Show the same LCD feedback as other modes:
             # "<your move>" + "ENGINE thinking"
-            dummy_cfg = GameConfig(
-                skill_level=5,
-                move_time_ms=int(self.deps.opponent.move_time_ms),
-                human_is_white=self.human_is_white,
-            )
             prompt_next_turn(
                 self.deps.link,
                 self.deps.display,
                 self.board,
                 "stockfish",
-                dummy_cfg,
+                self.cfg,
                 payload,
             )
             return
@@ -208,12 +204,11 @@ class GameController:
                 self._pending_check_sq = chess.square_name(ksq)
 
         # Preserve OLED arrow/status behavior
-        dummy_cfg = GameConfig(
-            skill_level=5,
-            move_time_ms=int(self.deps.opponent.move_time_ms),
-            human_is_white=self.human_is_white,
-        )
-
         prompt_next_turn(
-            self.deps.link, self.deps.display, self.board, "stockfish", dummy_cfg, uci
+            self.deps.link,
+            self.deps.display,
+            self.board,
+            "stockfish",
+            self.cfg,
+            uci,
         )
