@@ -6,6 +6,7 @@ remain the same, but the core play loop becomes easier to follow.
 """
 
 from dataclasses import dataclass
+from typing import Optional
 import time
 
 import chess
@@ -47,6 +48,7 @@ class GameController:
         self.deps = deps
         self.board = chess.Board()
         self.human_is_white = human_is_white
+        self.__pending_check_sq: Optional[str] = None
 
     def _is_human_turn(self) -> bool:
         if self.board.turn == chess.WHITE:
@@ -109,16 +111,13 @@ class GameController:
             return
 
         if typ == EventType.OK:
-            # If the engine's move puts the human king in check, send the check signal
-            # BEFORE the engine-overlay message.  blink_square_keep on the Pico blocks
-            # for ~1440 ms (4 × 360 ms); delaying the overlay by 1.6 s ensures the
-            # blink finishes before _handle_engine_move sets engine_ack_pending, so the
-            # check_ message is not silently discarded in the ack-pending loop.
-            if self.board.is_check():
-                ksq = self.board.king(self.board.turn)
-                if ksq is not None:
-                    self.deps.link.send_to_board(f"check_{chess.square_name(ksq)}")
-                    time.sleep(1.6)
+            # If the previous engine move left the side-to-move in check,
+            # show that check now, after the player has acknowledged the move.
+            if self._pending_check_sq is not None:
+                sq = self._pending_check_sq
+                self._pending_check_sq = None
+                self.deps.link.send_to_board(f"check_{sq}")
+                time.sleep(1.6)
             print("[PICO OK] prompt_move()", flush=True)
             # OK is used as an acknowledgement / "enter move" trigger from the Pico UI.
             # It should NEVER be treated as a move payload.
@@ -174,12 +173,23 @@ class GameController:
             return
         mv = chess.Move.from_uci(uci)
         is_cap = self.board.is_capture(mv)
+
+        # Send the engine move first so the board trail / overlay appears immediately.
         self.deps.link.send_to_board(format_engine_move(uci, is_cap))
+
+        # Now update the logical board state.
         self.board.push(mv)
 
         if self.board.is_game_over():
             notify_game_over(self.deps.link, self.deps.display, self.board)
             return
+
+        # Defer check indication until the user presses OK after moving the piece.
+        self._pending_check_sq = None
+        if self.board.is_check():
+            ksq = self.board.king(self.board.turn)
+            if ksq is not None:
+                self._pending_check_sq = chess.square_name(ksq)
 
         # Preserve OLED arrow/status behavior
         dummy_cfg = GameConfig(
