@@ -1007,7 +1007,7 @@ class PuzzleController:
                 link.send_to_board(
                     f"hint_{expected}{'_cap' if _is_cap(board, expected) else ''}"
                 )
-                display.send(f"{side_prefix}\nHint: {expected[:2]}→{expected[2:4]}")
+                display.send(f"Hint:\n{expected[:2]}→{expected[2:4]}")
                 continue
 
             if msg.startswith("typing_"):
@@ -1105,7 +1105,7 @@ class PuzzleController:
                     except Exception:
                         pass
                     display.send(
-                        f"{opp} played {reply[:2]}→{reply[2:4]}\n{promo_line}OK = continue"
+                        f"{opp} played\n{reply[:2]}→{reply[2:4]}\n{promo_line}OK = continue"
                     )
                     link.send_to_board(f"m{reply}{'_cap' if cap else ''}")
                     board.push(rmv)
