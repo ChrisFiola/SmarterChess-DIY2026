@@ -103,7 +103,9 @@ class GameController:
             raise ReturnToMenu()
 
         if typ == EventType.TYPING:
-            handle_typing_message(self.deps.link, self.deps.display, payload, self.board)
+            handle_typing_message(
+                self.deps.link, self.deps.display, payload, self.board
+            )
             return
 
         if typ == EventType.OK:
@@ -164,17 +166,6 @@ class GameController:
         is_cap = self.board.is_capture(mv)
         self.board.push(mv)
 
-        # If the engine's move puts the human king in check, send the check signal
-        # BEFORE the engine-overlay message.  blink_square_keep on the Pico blocks
-        # for ~1440 ms (4 × 360 ms); delaying the overlay by 1.6 s ensures the
-        # blink finishes before _handle_engine_move sets engine_ack_pending, so the
-        # check_ message is not silently discarded in the ack-pending loop.
-        if self.board.is_check():
-            ksq = self.board.king(self.board.turn)
-            if ksq is not None:
-                self.deps.link.send_to_board(f"check_{chess.square_name(ksq)}")
-                time.sleep(1.6)
-
         self.deps.link.send_to_board(format_engine_move(uci, is_cap))
 
         if self.board.is_game_over():
@@ -190,3 +181,14 @@ class GameController:
         prompt_next_turn(
             self.deps.link, self.deps.display, self.board, "stockfish", dummy_cfg, uci
         )
+
+        # If the engine's move puts the human king in check, send the check signal
+        # BEFORE the engine-overlay message.  blink_square_keep on the Pico blocks
+        # for ~1440 ms (4 × 360 ms); delaying the overlay by 1.6 s ensures the
+        # blink finishes before _handle_engine_move sets engine_ack_pending, so the
+        # check_ message is not silently discarded in the ack-pending loop.
+        if self.board.is_check():
+            ksq = self.board.king(self.board.turn)
+            if ksq is not None:
+                self.deps.link.send_to_board(f"check_{chess.square_name(ksq)}")
+                time.sleep(1.6)
