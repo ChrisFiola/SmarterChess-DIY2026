@@ -109,6 +109,16 @@ class GameController:
             return
 
         if typ == EventType.OK:
+            # If the engine's move puts the human king in check, send the check signal
+            # BEFORE the engine-overlay message.  blink_square_keep on the Pico blocks
+            # for ~1440 ms (4 × 360 ms); delaying the overlay by 1.6 s ensures the
+            # blink finishes before _handle_engine_move sets engine_ack_pending, so the
+            # check_ message is not silently discarded in the ack-pending loop.
+            if self.board.is_check():
+                ksq = self.board.king(self.board.turn)
+                if ksq is not None:
+                    self.deps.link.send_to_board(f"check_{chess.square_name(ksq)}")
+                    time.sleep(1.6)
             print("[PICO OK] prompt_move()", flush=True)
             # OK is used as an acknowledgement / "enter move" trigger from the Pico UI.
             # It should NEVER be treated as a move payload.
@@ -177,16 +187,6 @@ class GameController:
             move_time_ms=int(self.deps.opponent.move_time_ms),
             human_is_white=self.human_is_white,
         )
-        # If the engine's move puts the human king in check, send the check signal
-        # BEFORE the engine-overlay message.  blink_square_keep on the Pico blocks
-        # for ~1440 ms (4 × 360 ms); delaying the overlay by 1.6 s ensures the
-        # blink finishes before _handle_engine_move sets engine_ack_pending, so the
-        # check_ message is not silently discarded in the ack-pending loop.
-        if self.board.is_check():
-            ksq = self.board.king(self.board.turn)
-            if ksq is not None:
-                self.deps.link.send_to_board(f"check_{chess.square_name(ksq)}")
-                time.sleep(1.6)
 
         prompt_next_turn(
             self.deps.link, self.deps.display, self.board, "stockfish", dummy_cfg, uci
