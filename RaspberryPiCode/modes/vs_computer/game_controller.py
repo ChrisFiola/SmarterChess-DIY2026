@@ -15,7 +15,6 @@ from core.game_flow import (
     GameConfig,
     GameState,
     ReturnToMenu,
-    apply_human_move,
     check_move_captures,
     handle_typing_message,
     notify_game_over,
@@ -23,6 +22,7 @@ from core.game_flow import (
     send_move_hint,
     send_turn_notification,
     shutdown_raspberry_pi,
+    validate_and_push_move,
 )
 from core.protocol import (
     EventType,
@@ -135,12 +135,20 @@ class GameController:
             return
 
         if typ == EventType.MOVE:
-            apply_human_move(
+            # Use validate_and_push_move directly (not apply_human_move) to avoid
+            # sending a spurious turn_{engine_color} notification.  That message
+            # would trigger _handle_turn on the Pico, whose 80-ms window then
+            # accidentally eats the subsequent m{engine_uci} from the UART buffer.
+            # The correct turn_{human_color} is sent by _play_one_engine_move via
+            # prompt_next_turn once Stockfish has responded.
+            move = validate_and_push_move(
                 link=self.deps.link,
                 display=self.deps.display,
                 board=self.board,
                 uci=payload,
             )
+            if move is not None and self.board.is_game_over():
+                notify_game_over(self.deps.link, self.deps.display, self.board)
             return
 
         # Unknown messages: ignore in nonblocking mode, else show as invalid
@@ -154,8 +162,20 @@ class GameController:
             return
         mv = chess.Move.from_uci(uci)
         is_cap = self.board.is_capture(mv)
-        self.deps.link.send_to_board(format_engine_move(uci, is_cap))
         self.board.push(mv)
+
+        # If the engine's move puts the human king in check, send the check signal
+        # BEFORE the engine-overlay message.  blink_square_keep on the Pico blocks
+        # for ~1440 ms (4 × 360 ms); delaying the overlay by 1.6 s ensures the
+        # blink finishes before _handle_engine_move sets engine_ack_pending, so the
+        # check_ message is not silently discarded in the ack-pending loop.
+        if self.board.is_check():
+            ksq = self.board.king(self.board.turn)
+            if ksq is not None:
+                self.deps.link.send_to_board(f"check_{chess.square_name(ksq)}")
+                time.sleep(1.6)
+
+        self.deps.link.send_to_board(format_engine_move(uci, is_cap))
 
         if self.board.is_game_over():
             notify_game_over(self.deps.link, self.deps.display, self.board)
