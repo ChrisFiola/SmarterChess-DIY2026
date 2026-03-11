@@ -71,17 +71,14 @@ def wait_for_ok(link: BoardLink, display: Display) -> bool:
             return True
 
         # ignore chatter
-        if (
-            m.startswith("typing_")
-            or m.startswith("capq_")
-            or m in HINT_MSGS
-        ):
+        if m.startswith("typing_") or m.startswith("capq_") or m in HINT_MSGS:
             continue
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Shared single-call helpers used by every game mode
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def handle_typing_message(
     link: BoardLink,
@@ -178,7 +175,9 @@ def validate_and_push_move(
 
     # 3) Legality
     if move not in board.legal_moves:
-        handle_illegal_move(link=link, display=display, board=board, uci=uci, label="ILLEGAL")
+        handle_illegal_move(
+            link=link, display=display, board=board, uci=uci, label="ILLEGAL"
+        )
         return None
 
     # 4) Push
@@ -473,11 +472,7 @@ def wait_for_mode_selection(link: BoardLink, display: Display, state: GameState)
         # screen even though we're already *in* the main menu.
         #
         # In mode-select, simply ignore non-selection tokens.
-        if (
-            not m
-            or m in IGNORED_MSGS
-            or m.startswith("typing_")
-        ):
+        if not m or m in IGNORED_MSGS or m.startswith("typing_"):
             continue
 
         if m in ("1", "stockfish", "pc", "btn_mode_pc"):
@@ -561,30 +556,6 @@ def _configure_local_game(link: BoardLink, display: Display, cfg: GameConfig) ->
     cfg.skill_level = 20  # max hint skill for local
     cfg.move_time_ms = 1  # fastest think time for local
 
-    """
-    display.send("Choose computer\ndifficulty level:\n(0 -> 8)")
-    link.send_to_board("EngineStrength")
-    link.send_to_board(f"default_strength_{cfg.skill_level}")
-    while True:
-        msg = link.read_from_board()
-        if msg is None:
-            continue
-        if msg.isdigit():
-            cfg.skill_level = max(0, min(int(msg), 20))
-            break
-
-    display.send("Choose computer\nmove time:\n(0 -> 8)")
-    link.send_to_board("TimeControl")
-    link.send_to_board(f"default_time_{cfg.move_time_ms}")
-    while True:
-        msg = link.read_from_board()
-        if msg is None:
-            continue
-        if msg.isdigit():
-            cfg.move_time_ms = max(10, int(msg))
-            break
-    """
-
 
 def prompt_next_turn(
     link: BoardLink,
@@ -666,8 +637,6 @@ def _get_piece_label(board: Optional["chess.Board"], sq: str) -> Optional[str]:
         return _format_piece_name(piece)
     except Exception:
         return None
-
-
 
 
 def _update_typing_display(
@@ -785,7 +754,7 @@ def _run_local_game(
             continue
 
         if msg.startswith("typing_"):
-            handle_typing_message(link, display, msg[len("typing_"):], state.board)
+            handle_typing_message(link, display, msg[len("typing_") :], state.board)
             continue
 
         if msg in NEW_GAME_MSGS:
@@ -836,6 +805,7 @@ def _run_local_game(
 
 def _run_online_game(link: BoardLink, display: Display, cfg: GameConfig) -> None:
     from modes.online.online_controller import OnlineController
+
     OnlineController(link, display, cfg).run()
 
 
