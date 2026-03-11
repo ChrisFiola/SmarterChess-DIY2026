@@ -48,7 +48,7 @@ class GameController:
         self.deps = deps
         self.cfg = cfg
         self.board = chess.Board()
-        self.human_is_white = human_is_white
+        self.human_is_white = cfg.human_is_white
         self._pending_check_sq: Optional[str] = None
 
     def _is_human_turn(self) -> bool:

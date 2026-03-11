@@ -825,57 +825,154 @@ PHASE_THEMES: List[Tuple[str, str]] = [
 # Opening names from lichess.org/training/openings, grouped alphabetically.
 # Used by /api/puzzle/next?angle=<opening_name>.
 OPENING_GROUPS: List[Tuple[str, List[str]]] = [
-    ("A to E", [
-        "Alekhine Defense", "Amar Opening", "Amazon Attack", "Anderssen's Opening",
-        "Barnes Defense", "Barnes Opening",
-        "Benko Gambit", "Benko Gambit Accepted", "Benko Gambit Declined",
-        "Benoni Defense", "Bird Opening", "Bishop's Opening",
-        "Blackmar Gambit", "Blackmar Gambit Accepted", "Blackmar Gambit Declined",
-        "Blumenfeld Countergambit", "Bogo-Indian Defense", "Borg Defense",
-        "Canard Opening", "Caro-Kann Defense", "Carr Defense", "Catalan Opening",
-        "Center Game", "Center Counter", "Clemenz Opening", "Czech Defense",
-        "Danish Gambit", "Danish Gambit Accepted", "Danish Gambit Declined",
-        "Dutch Defense", "East Indian Defense", "Elephant Gambit",
-        "English Defense", "English Opening", "Englund Gambit", "Englund Gambit Declined",
-    ]),
-    ("F to I", [
-        "French Defense", "Fried Fox Defense", "Goldsmith Defense", "Grob Opening",
-        "Grunfeld Defense", "Gunderam Defense", "Hippopotamus Defense",
-        "Horwitz Defense", "Hungarian Opening", "Indian Defense", "Italian Game",
-    ]),
-    ("K to N", [
-        "Kangaroo Defense",
-        "King's Gambit", "King's Gambit Accepted", "King's Gambit Declined",
-        "King's Indian Attack", "King's Indian Defense",
-        "King's Knight Opening", "King's Pawn Game", "King's Pawn Opening",
-        "Kadas Opening", "Lasker Simul Special",
-        "Latvian Gambit", "Latvian Gambit Accepted",
-        "Lemming Defense", "Lion Defense", "London System",
-        "Mexican Defense", "Mieses Opening", "Mikenas Defense", "Modern Defense",
-        "Neo-Grunfeld Defense", "Nimzo-Indian Defense",
-        "Nimzo-Larsen Attack", "Nimzowitsch Defense",
-    ]),
-    ("O to R", [
-        "Old Indian Defense", "Owen Defense", "Paleface Attack",
-        "Petrov's Defense", "Philidor Defense", "Pirc Defense",
-        "Polish Defense", "Polish Opening", "Ponziani Opening", "Portuguese Defense",
-        "Pseudo-Queen's Indian Defense", "Pterodactyl Defense",
-        "Queen's Gambit", "Queen's Gambit Accepted", "Queen's Gambit Declined",
-        "Queen's Indian Accelerated", "Queen's Indian Defense", "Queen's Pawn Game",
-        "Rapport-Jobava System", "Rat Defense", "Richter-Veresov Attack",
-        "Robatsch Defense", "Rubinstein Opening", "Ruy Lopez", "Réti Opening",
-    ]),
-    ("S to V", [
-        "Saragossa Opening", "Scandinavian Defense", "Scotch Game",
-        "Semi-Slav Defense", "Sicilian Defense", "Slav Defense", "Slav Indian",
-        "Sodium Attack", "St. George Defense", "Tarrasch Defense",
-        "Three Knights Game", "Torre Attack", "Trompowsky Attack",
-        "Van Geet Opening", "Van't Kruijs Opening", "Vienna Gambit", "Vienna Game",
-    ]),
-    ("W to Z", [
-        "Wade Defense", "Ware Defense", "Ware Opening",
-        "Yusupov-Rubinstein System", "Zukertort Opening",
-    ]),
+    (
+        "A to E",
+        [
+            "Alekhine Defense",
+            "Amar Opening",
+            "Amazon Attack",
+            "Anderssen's Opening",
+            "Barnes Defense",
+            "Barnes Opening",
+            "Benko Gambit",
+            "Benko Gambit Accepted",
+            "Benko Gambit Declined",
+            "Benoni Defense",
+            "Bird Opening",
+            "Bishop's Opening",
+            "Blackmar Gambit",
+            "Blackmar Gambit Accepted",
+            "Blackmar Gambit Declined",
+            "Blumenfeld Countergambit",
+            "Bogo-Indian Defense",
+            "Borg Defense",
+            "Canard Opening",
+            "Caro-Kann Defense",
+            "Carr Defense",
+            "Catalan Opening",
+            "Center Game",
+            "Center Counter",
+            "Clemenz Opening",
+            "Czech Defense",
+            "Danish Gambit",
+            "Danish Gambit Accepted",
+            "Danish Gambit Declined",
+            "Dutch Defense",
+            "East Indian Defense",
+            "Elephant Gambit",
+            "English Defense",
+            "English Opening",
+            "Englund Gambit",
+            "Englund Gambit Declined",
+        ],
+    ),
+    (
+        "F to I",
+        [
+            "French Defense",
+            "Fried Fox Defense",
+            "Goldsmith Defense",
+            "Grob Opening",
+            "Grunfeld Defense",
+            "Gunderam Defense",
+            "Hippopotamus Defense",
+            "Horwitz Defense",
+            "Hungarian Opening",
+            "Indian Defense",
+            "Italian Game",
+        ],
+    ),
+    (
+        "K to N",
+        [
+            "Kangaroo Defense",
+            "King's Gambit",
+            "King's Gambit Accepted",
+            "King's Gambit Declined",
+            "King's Indian Attack",
+            "King's Indian Defense",
+            "King's Knight Opening",
+            "King's Pawn Game",
+            "King's Pawn Opening",
+            "Kadas Opening",
+            "Lasker Simul Special",
+            "Latvian Gambit",
+            "Latvian Gambit Accepted",
+            "Lemming Defense",
+            "Lion Defense",
+            "London System",
+            "Mexican Defense",
+            "Mieses Opening",
+            "Mikenas Defense",
+            "Modern Defense",
+            "Neo-Grunfeld Defense",
+            "Nimzo-Indian Defense",
+            "Nimzo-Larsen Attack",
+            "Nimzowitsch Defense",
+        ],
+    ),
+    (
+        "O to R",
+        [
+            "Old Indian Defense",
+            "Owen Defense",
+            "Paleface Attack",
+            "Petrov's Defense",
+            "Philidor Defense",
+            "Pirc Defense",
+            "Polish Defense",
+            "Polish Opening",
+            "Ponziani Opening",
+            "Portuguese Defense",
+            "Pseudo-Queen's Indian Defense",
+            "Pterodactyl Defense",
+            "Queen's Gambit",
+            "Queen's Gambit Accepted",
+            "Queen's Gambit Declined",
+            "Queen's Indian Accelerated",
+            "Queen's Indian Defense",
+            "Queen's Pawn Game",
+            "Rapport-Jobava System",
+            "Rat Defense",
+            "Richter-Veresov Attack",
+            "Robatsch Defense",
+            "Rubinstein Opening",
+            "Ruy Lopez",
+            "Réti Opening",
+        ],
+    ),
+    (
+        "S to V",
+        [
+            "Saragossa Opening",
+            "Scandinavian Defense",
+            "Scotch Game",
+            "Semi-Slav Defense",
+            "Sicilian Defense",
+            "Slav Defense",
+            "Slav Indian",
+            "Sodium Attack",
+            "St. George Defense",
+            "Tarrasch Defense",
+            "Three Knights Game",
+            "Torre Attack",
+            "Trompowsky Attack",
+            "Van Geet Opening",
+            "Van't Kruijs Opening",
+            "Vienna Gambit",
+            "Vienna Game",
+        ],
+    ),
+    (
+        "W to Z",
+        [
+            "Wade Defense",
+            "Ware Defense",
+            "Ware Opening",
+            "Yusupov-Rubinstein System",
+            "Zukertort Opening",
+        ],
+    ),
 ]
 
 
@@ -891,6 +988,7 @@ def _render_paged_menu(title: str, page: int, pages: int, items: List[str]) -> s
     When all 4 slots are filled, the page number is shown in the first item.
     When fewer items are shown, a header line and navigation hint are added.
     """
+
     def _fmt(i: int, s: str) -> str:
         return f"{i}) {_menu_truncate(s or '', 18)}"[:20].rstrip()
 
@@ -992,7 +1090,9 @@ def _run_puzzle_game(link: BoardLink, display: Display) -> None:
         tag = next((k for k, v in PHASE_THEMES if v == label), None)
         if not tag:
             raise ReturnToMenu()
-        PuzzleController(client, mode="theme", theme=tag, theme_label=label).run(link, display)
+        PuzzleController(client, mode="theme", theme=tag, theme_label=label).run(
+            link, display
+        )
         return
 
     if themes_top.startswith("Openings"):
@@ -1006,7 +1106,9 @@ def _run_puzzle_game(link: BoardLink, display: Display) -> None:
         if label is None:
             raise ReturnToMenu()
         # Pass the opening name as the angle; lichess_client will slugify it.
-        PuzzleController(client, mode="theme", theme=label, theme_label=label).run(link, display)
+        PuzzleController(client, mode="theme", theme=label, theme_label=label).run(
+            link, display
+        )
         return
 
     raise ReturnToMenu()
@@ -1037,7 +1139,7 @@ def run_selected_mode(
         )
         controller = GameController(
             GameDeps(link=link, display=display, opponent=opponent),
-            human_is_white=cfg.human_is_white,
+            cfg=cfg,
         )
         controller.run_stockfish_game(move_time_ms=cfg.move_time_ms)
 
