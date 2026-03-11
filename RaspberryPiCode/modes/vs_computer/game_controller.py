@@ -164,6 +164,8 @@ class GameController:
             return
         mv = chess.Move.from_uci(uci)
         is_cap = self.board.is_capture(mv)
+        self.board.push(mv)
+
         # If the engine's move puts the human king in check, send the check signal
         # BEFORE the engine-overlay message.  blink_square_keep on the Pico blocks
         # for ~1440 ms (4 × 360 ms); delaying the overlay by 1.6 s ensures the
@@ -174,8 +176,6 @@ class GameController:
             if ksq is not None:
                 self.deps.link.send_to_board(f"check_{chess.square_name(ksq)}")
                 time.sleep(1.6)
-
-        self.board.push(mv)
 
         self.deps.link.send_to_board(format_engine_move(uci, is_cap))
 
