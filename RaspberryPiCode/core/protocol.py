@@ -94,6 +94,10 @@ def format_engine_move(uci: str, is_capture: bool) -> str:
     return f"m{uci}{'_cap' if is_capture else ''}"
 
 
+def format_hint_move(uci: str, is_capture: bool) -> str:
+    return f"hint_{uci}{'_cap' if is_capture else ''}"
+
+
 def format_capture_reply(is_capture: bool) -> str:
     return f"capr_{1 if is_capture else 0}"
 
