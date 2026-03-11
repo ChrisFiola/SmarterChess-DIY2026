@@ -160,6 +160,9 @@ class GameController:
             )
             if move is not None and self.board.is_game_over():
                 notify_game_over(self.deps.link, self.deps.display, self.board)
+                return
+            # Show whose turn it is immediately (same behaviour as other modes)
+            send_turn_notification(self.deps.link, self.board)
             return
 
         # Unknown messages: ignore in nonblocking mode, else show as invalid
