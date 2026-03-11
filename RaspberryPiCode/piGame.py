@@ -1,1 +1,1 @@
-from smartchess.core.game_flow import *  # noqa
+from game_flow import *  # noqa

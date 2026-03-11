@@ -9,11 +9,9 @@ import sys
 import time
 import subprocess
 
-from screen.lcd_pipe import LCDPipeClient, PIPE_PATH, READY_FLAG_PATH
+from lcd_pipe import LCDPipeClient, PIPE_PATH, READY_FLAG_PATH
 
-DISPLAY_SERVER_SCRIPT: str = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..", "screen", "display_server.py")
-)
+DISPLAY_SERVER_SCRIPT: str = os.path.join(os.path.dirname(os.path.abspath(__file__)), "display_server.py")
 
 
 class Display:

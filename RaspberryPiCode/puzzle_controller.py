@@ -24,11 +24,11 @@ import random
 import chess
 import chess.pgn
 
-from main.piDisplay import Display
-from main.piSerial import BoardLink
-from smartchess.core.game_flow import _piece_name
-from smartchess.modes.online.lichess_client import LichessClient
-from smartchess.core.protocol import (
+from display import Display
+from boardlink import BoardLink
+from game_flow import _piece_name
+from lichess_client import LichessClient
+from protocol import (
     send_lcd_ack_for_payload,
     parse_uci_move,
     NEW_GAME_MSGS,
@@ -56,7 +56,7 @@ def _pgn_opening_info(pgn_text: str) -> Tuple[str, str]:
 
 # -------------------- Mix puzzle ids --------------------
 
-PUZZLE_IDS_PATH = os.path.join(os.path.dirname(__file__), "puzzle_ids.txt")
+PUZZLE_IDS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "puzzle_ids.txt")
 
 
 # -------------------- Seen-puzzle cache (avoid repeats) --------------------
@@ -896,7 +896,7 @@ class PuzzleController:
             # Keep the error visible until the user acknowledges with OK.
             # This also makes the underlying error easier to read.
             try:
-                from smartchess.core.protocol import parse_payload, EventType
+                from protocol import parse_payload, EventType
                 import time
 
                 while True:
@@ -952,7 +952,7 @@ class PuzzleController:
                     continue
 
                 if msg == "shutdown":
-                    from piGame import shutdown_raspberry_pi
+                    from game_flow import shutdown_raspberry_pi
 
                     shutdown_raspberry_pi(link, display)
                     return
@@ -975,7 +975,7 @@ class PuzzleController:
                         continue
 
                     if msg == "shutdown":
-                        from piGame import shutdown_raspberry_pi
+                        from game_flow import shutdown_raspberry_pi
 
                         shutdown_raspberry_pi(link, display)
                         return
@@ -1027,7 +1027,7 @@ class PuzzleController:
                     continue
 
                 if m == "shutdown":
-                    from piGame import shutdown_raspberry_pi
+                    from game_flow import shutdown_raspberry_pi
 
                     shutdown_raspberry_pi(link, display)
                     return False
@@ -1053,7 +1053,7 @@ class PuzzleController:
                     continue
 
                 if m == "shutdown":
-                    from piGame import shutdown_raspberry_pi
+                    from game_flow import shutdown_raspberry_pi
 
                     shutdown_raspberry_pi(link, display)
                     return None
@@ -1150,7 +1150,7 @@ class PuzzleController:
                 continue
 
             if msg == "shutdown":
-                from piGame import shutdown_raspberry_pi
+                from game_flow import shutdown_raspberry_pi
 
                 shutdown_raspberry_pi(link, display)
                 return
@@ -1182,7 +1182,7 @@ class PuzzleController:
             # Typing previews
             if msg.startswith("typing_"):
                 try:
-                    from piGame import update_typing_display
+                    from game_flow import update_typing_display
 
                     payload = msg[len("typing_") :]
 

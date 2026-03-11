@@ -13,15 +13,15 @@ from typing import Callable, Optional
 import time
 import chess
 
-from smartchess.modes.online.lichess_client import LichessClient
-from smartchess.modes.online.lichess_game import (
+from lichess_client import LichessClient
+from lichess_game import (
     extract_moves,
     extract_players,
     extract_status,
     extract_winner,
 )
-from smartchess.core.net_utils import is_ap_mode, wifi_config_url
-from smartchess.core.protocol import (
+from net_utils import is_ap_mode, wifi_config_url
+from protocol import (
     send_lcd_ack_for_payload,
     NEW_GAME_MSGS,
     OK_MSGS,

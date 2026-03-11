@@ -13,22 +13,16 @@ import traceback
 import subprocess
 import sys
 
-# Allow importing sibling packages (RaspberryPiCode/app) when running from
-# RaspberryPiCode/main under systemd.
-import os
-
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
 import chess
 
-from main.piDisplay import Display
-from main.piSerial import BoardLink
-from main.piEngine import EngineContext, engine_bestmove, engine_hint
+from display import Display
+from boardlink import BoardLink
+from engine import EngineContext, engine_bestmove, engine_hint
 
 # Phase 1: daily puzzle controller
-from smartchess.modes.online.lichess_client import LichessClient
-from smartchess.modes.puzzle.controller import PuzzleController
-from smartchess.core.protocol import (
+from lichess_client import LichessClient
+from puzzle_controller import PuzzleController
+from protocol import (
     send_lcd_ack_for_payload,
     parse_uci_move,
     NEW_GAME_MSGS,
@@ -986,7 +980,7 @@ def run_online_game(link: BoardLink, display: Display, cfg: GameConfig) -> None:
 
     Phase 1: implementation moved to app.online_controller.OnlineController.
     """
-    from smartchess.modes.online.controller import OnlineController, OnlineDeps
+    from online_controller import OnlineController, OnlineDeps
 
     deps = OnlineDeps(
         link=link,
@@ -1471,8 +1465,8 @@ def run_selected_mode(
         ctx.ensure()  # uses default STOCKFISH_PATH
 
         # Refactored: run through the explicit GameController state machine.
-        from smartchess.core.game_controller import GameController, GameDeps
-        from smartchess.modes.vs_computer.stockfish_opponent import StockfishOpponent
+        from game_controller import GameController, GameDeps
+        from stockfish_opponent import StockfishOpponent
 
         opponent = StockfishOpponent(
             ctx,

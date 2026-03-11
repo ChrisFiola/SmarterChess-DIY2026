@@ -31,13 +31,13 @@ class Event:
     payload: str = ""
 
 
-NEW_GAME_TOKENS: frozenset = frozenset({"n", "new", "in", "newgame", "btn_new"}
-HINT_TOKENS: frozenset = frozenset({"hint", "btn_hint"}
-OK_TOKENS: frozenset = frozenset({"ok", "btnok", "btn_ok"}
+NEW_GAME_TOKENS: frozenset = frozenset({"n", "new", "in", "newgame", "btn_new"})
+HINT_TOKENS: frozenset = frozenset({"hint", "btn_hint"})
+OK_TOKENS: frozenset = frozenset({"ok", "btnok", "btn_ok"})
 
 
 # ── Shared message token sets ──────────────────────────────────────────────────
-# Centralised here so every module can `from smartchess.core.protocol import ...`
+# Centralised here so every module can `from protocol import ...`
 # instead of repeating inline tuples.
 
 #: Tokens the Pico sends when the user wants to start a new game / go back

@@ -6,7 +6,7 @@ Single-responsibility modules:
   - mc_display: Display abstraction
   - mc_serial:  BoardLink (UART)
   - mc_engine:  EngineContext + bestmove/hint helpers
-  - mc_game:    GameConfig/RuntimeState + setup + unified play loop
+  - mc_game:    GameConfig/GameState + setup + unified play loop
 
 Behavior parity with single-file version:
   - UART protocol preserved
@@ -17,16 +17,17 @@ Behavior parity with single-file version:
 import time
 import traceback
 
-# Allow importing sibling packages (RaspberryPiCode/app) when running from
-# RaspberryPiCode/main under systemd.
-import os
-import sys
-
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
-from main.piDisplay import Display
-from main.piSerial import BoardLink
-from main.piEngine import EngineContext
+from display import Display
+from boardlink import BoardLink
+from engine import EngineContext
+from protocol import IGNORED_MSGS
+from game_flow import (
+    GameConfig,
+    GameState,
+    wait_for_mode_selection,
+    run_selected_mode,
+    ReturnToMenu,
+)
 
 
 def main():
@@ -38,18 +39,11 @@ def main():
     ctx = EngineContext()
     # ctx.ensure("/usr/games/stockfish")
 
-    from piGame import (
-        GameConfig,
-        RuntimeState,
-        select_mode,
-        mode_dispatch,
-        GoToModeSelect,
-    )
     import chess
 
     link = BoardLink()
     cfg = GameConfig()
-    state = RuntimeState(board=chess.Board(), mode="stockfish")
+    state = GameState(board=chess.Board(), mode="stockfish")
 
     try:
         while True:
@@ -60,13 +54,13 @@ def main():
                     display.send(f"Mode forced:\n{forced}")
                     time.sleep(1.0)
                 else:
-                    selected = select_mode(link, display, state)
+                    selected = wait_for_mode_selection(link, display, state)
                     state.mode = selected
                     print(f"[MODE SELECT] selected={selected!r}", flush=True)
 
-                mode_dispatch(link, display, ctx, state, cfg)
+                run_selected_mode(link, display, ctx, state, cfg)
 
-            except GoToModeSelect:
+            except ReturnToMenu:
                 state.board = chess.Board()
                 display.send("SMARTCHESS")
                 time.sleep(0.4)
@@ -80,7 +74,7 @@ def main():
 
                 # Force Pico back to mode select UI (best-effort).
                 try:
-                    link.sendtoboard("ChooseMode")
+                    link.send_to_board("ChooseMode")
                 except Exception:
                     pass
 
@@ -92,7 +86,7 @@ def main():
                     timeout_s = 2.0
                     t0 = time.monotonic()
                     while time.monotonic() - t0 < timeout_s:
-                        msg = link.getboard()
+                        msg = link.read_from_board()
                         if not msg:
                             continue
                         m = msg.strip().lower()

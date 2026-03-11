@@ -9,18 +9,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import time
-from main.piDisplay import Display
-from main.piSerial import BoardLink
+from display import Display
+from boardlink import BoardLink
 import chess
 
-from smartchess.core.protocol import (
+from protocol import (
     EventType,
     parse_payload,
     format_capture_reply,
     format_engine_move,
     send_lcd_ack_for_payload,
 )
-from smartchess.modes.vs_computer.stockfish_opponent import StockfishOpponent
+from stockfish_opponent import StockfishOpponent
 
 
 @dataclass
@@ -84,10 +84,10 @@ class GameController:
     def _handle_event(
         self, typ: EventType, payload: str, nonblocking: bool = False
     ) -> None:
-        from piGame import ReturnToMenu  # keep exception class stable
+        from game_flow import ReturnToMenu  # keep exception class stable
 
         if typ == EventType.SHUTDOWN:
-            from piGame import shutdown_raspberry_pi
+            from game_flow import shutdown_raspberry_pi
 
             shutdown_raspberry_pi(self.deps.link, self.deps.display)
             raise ReturnToMenu()
@@ -96,7 +96,7 @@ class GameController:
             raise ReturnToMenu()
 
         if typ == EventType.TYPING:
-            from piGame import update_typing_display
+            from game_flow import update_typing_display
 
             update_typing_display(self.deps.display, payload, self.board)
 
@@ -115,7 +115,7 @@ class GameController:
             return
 
         if typ == EventType.CAPTURE_QUERY:
-            from piGame import check_move_captures
+            from game_flow import check_move_captures
 
             try:
                 cap = check_move_captures(self.board, payload)
@@ -125,7 +125,7 @@ class GameController:
             return
 
         if typ == EventType.HINT:
-            from piGame import send_move_hint, GameState, GameConfig
+            from game_flow import send_move_hint, GameState, GameConfig
 
             state = GameState(board=self.board, mode="stockfish")
             cfg = GameConfig(
@@ -139,7 +139,7 @@ class GameController:
             return
 
         if typ == EventType.MOVE:
-            from piGame import apply_human_move
+            from game_flow import apply_human_move
 
             apply_human_move(
                 link=self.deps.link,
@@ -151,7 +151,7 @@ class GameController:
 
         # Unknown messages: ignore in nonblocking mode, else show as invalid
         if not nonblocking:
-            from piGame import parse_uci_move
+            from game_flow import parse_uci_move
 
             if not parse_uci_move(payload):
                 self.deps.link.send_to_board(f"error_invalid_{payload}")
@@ -166,7 +166,7 @@ class GameController:
         self.deps.link.send_to_board(format_engine_move(uci, is_cap))
         self.board.push(mv)
 
-        from piGame import notify_game_over, prompt_next_turn, GameConfig
+        from game_flow import notify_game_over, prompt_next_turn, GameConfig
 
         if self.board.is_game_over():
             notify_game_over(self.deps.link, self.deps.display, self.board)

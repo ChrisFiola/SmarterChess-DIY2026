@@ -1,7 +1,0 @@
-python-chess
-Pillow
-requests
-pyserial
-gpiozero
-numpy
-spidev

@@ -2,8 +2,8 @@
 import os, sys, time, select
 from PIL import Image, ImageDraw, ImageFont
 
-# Ensure local imports (e.g. qrgen.py) work regardless of CWD
-sys.path.insert(0, os.path.dirname(__file__))
+# Ensure qrgen.py and other co-located modules load correctly when run via systemd
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Optional QR rendering (pure python, bundled)
 try:
