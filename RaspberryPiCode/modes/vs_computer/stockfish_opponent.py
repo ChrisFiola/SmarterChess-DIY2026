@@ -7,7 +7,7 @@ from typing import Optional
 import chess
 
 from core.opponent import Opponent
-from core.engine import EngineContext, engine_bestmove
+from core.engine import EngineContext
 
 print("LOADED StockfishOpponent from:", __file__, flush=True)
 
@@ -126,4 +126,4 @@ class StockfishOpponent(Opponent):
 
         print("[DEBUG] StockfishOpponent.get_move called", file=sys.stderr, flush=True)
         self._ensure_configured()
-        return engine_bestmove(self.ctx, board, self.move_time_ms)
+        return self.ctx.bestmove(board, self.move_time_ms)

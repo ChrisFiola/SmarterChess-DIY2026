@@ -5,19 +5,19 @@ Preserves Pico<->Pi UART protocol strings and display behavior.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Optional
 import random
-import time
-import traceback
 import subprocess
 import sys
+import time
+import traceback
+from dataclasses import dataclass
+from typing import Optional
 
 import chess
 
 from screen.display import Display
 from core.boardlink import BoardLink
-from core.engine import EngineContext, engine_bestmove, engine_hint
+from core.engine import EngineContext
 
 # Phase 1: daily puzzle controller
 from modes.online.lichess_client import LichessClient
@@ -325,6 +325,17 @@ def _prompt_promotion_choice(link: BoardLink, display: Display) -> str:
         display.send("Promotion!\n1=Queen\n2=Rook\n3=Bishop\n4=Knight")
 
 
+# -------------------- UI helpers & engine handoff --------------------
+
+
+def _show_new_game_banner(display: Display):
+    display.banner("NEW GAME", delay_s=1.0)
+
+
+def _show_engine_thinking(display: Display):
+    display.send("Engine Thinking...")
+
+
 # -------------------- Hints & game-over --------------------
 
 
@@ -341,7 +352,7 @@ def send_move_hint(
         return
 
     _show_engine_thinking(display)
-    best = engine_hint(ctx, state.board, cfg.move_time_ms)
+    best = ctx.hint(state.board, cfg.move_time_ms)
     if not best:
         link.send_to_board("hint_none")
         return
@@ -359,8 +370,13 @@ def send_move_hint(
     print(f"[Hint] {best}")
 
 
-def _current_side_name(brd: chess.Board) -> str:
-    return "WHITE" if brd.turn == chess.WHITE else "BLACK"
+def _result_to_winner_text(res: str) -> str:
+    res = (res or "").strip()
+    if res == "1-0":
+        return "White wins"
+    if res == "0-1":
+        return "Black wins"
+    return "Draw"
 
 
 def notify_game_over(link: BoardLink, display: Display, brd: chess.Board) -> str:
@@ -570,17 +586,6 @@ def _configure_local_game(link: BoardLink, display: Display, cfg: GameConfig) ->
     """
 
 
-# -------------------- UI helpers & engine handoff --------------------
-
-
-def _show_new_game_banner(display: Display):
-    display.banner("NEW GAME", delay_s=1.0)
-
-
-def _show_engine_thinking(display: Display):
-    display.send("Engine Thinking...")
-
-
 def prompt_next_turn(
     link: BoardLink,
     display: Display,
@@ -621,52 +626,6 @@ def prompt_next_turn(
         )
     else:
         display.show_arrow(last_uci, suffix="ENGINE thinking", force=True)
-
-
-def _play_engine_move(
-    link: BoardLink,
-    display: Display,
-    ctx: EngineContext,
-    state: GameState,
-    cfg: GameConfig,
-):
-    reply = engine_bestmove(ctx, state.board, cfg.move_time_ms)
-    if reply is None:
-        return
-
-    # Compute capture BEFORE pushing
-    mv = chess.Move.from_uci(reply)
-    is_cap = state.board.is_capture(mv)
-
-    # Send with _cap if capture, then push
-    link.send_to_board(f"m{reply}{'_cap' if is_cap else ''}")
-    state.board.push(mv)
-    # Auto-draw after engine move
-    if _check_and_handle_draw(link, display, state.board):
-        raise ReturnToMenu()
-
-    if state.board.is_game_over():
-        _res = notify_game_over(link, display, state.board)
-        while True:
-            msg2 = link.read_from_board()
-            if msg2 is None:
-                continue
-            if msg2 in NEW_GAME_MSGS:
-                raise ReturnToMenu()
-            if msg2.startswith("typing_") or msg2 in HINT_MSGS:
-                continue
-        # no handoff needed because game ended
-    else:
-        prompt_next_turn(link, display, state.board, state.mode, cfg, reply)
-
-
-def _result_to_winner_text(res: str) -> str:
-    res = (res or "").strip()
-    if res == "1-0":
-        return "White wins"
-    if res == "0-1":
-        return "Black wins"
-    return "Draw"
 
 
 # -------------------- Typing preview --------------------
