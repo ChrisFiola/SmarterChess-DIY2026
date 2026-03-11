@@ -90,20 +90,8 @@ def parse_payload(payload: str) -> Event:
     return Event(EventType.UNKNOWN, p)
 
 
-def format_engine_move(
-    uci: str, is_capture: bool, is_check: bool, ksq, square_name
-) -> str:
-    if is_capture:
-        return f"m{uci}_cap"
-    elif is_check():
-        if ksq is not None:
-            return f"check_{square_name}"
-    else:
-        return ""
-
-
-def format_hint_move(uci: str, is_capture: bool) -> str:
-    return f"hint_{uci}{'_cap' if is_capture else ''}"
+def format_engine_move(uci: str, is_capture: bool) -> str:
+    return f"m{uci}{'_cap' if is_capture else ''}"
 
 
 def format_capture_reply(is_capture: bool) -> str:
