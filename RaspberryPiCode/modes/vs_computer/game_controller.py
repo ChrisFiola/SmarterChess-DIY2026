@@ -48,7 +48,7 @@ class GameController:
         self.deps = deps
         self.board = chess.Board()
         self.human_is_white = human_is_white
-        self.__pending_check_sq: Optional[str] = None
+        self._pending_check_sq: Optional[str] = None
 
     def _is_human_turn(self) -> bool:
         if self.board.turn == chess.WHITE:
@@ -161,8 +161,21 @@ class GameController:
             if move is not None and self.board.is_game_over():
                 notify_game_over(self.deps.link, self.deps.display, self.board)
                 return
-            # Show whose turn it is immediately (same behaviour as other modes)
-            send_turn_notification(self.deps.link, self.board)
+            # Show the same LCD feedback as other modes:
+            # "<your move>" + "ENGINE thinking"
+            dummy_cfg = GameConfig(
+                skill_level=5,
+                move_time_ms=int(self.deps.opponent.move_time_ms),
+                human_is_white=self.human_is_white,
+            )
+            prompt_next_turn(
+                self.deps.link,
+                self.deps.display,
+                self.board,
+                "stockfish",
+                dummy_cfg,
+                payload,
+            )
             return
 
         # Unknown messages: ignore in nonblocking mode, else show as invalid
