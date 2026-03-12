@@ -162,7 +162,7 @@ class GameController:
             return
 
         if typ == EventType.MOVE:
-            # Use validate_and_push_move directly (not apply_human_move) to avoid
+            # Use validate_and_push_move directly here to avoid
             # sending a spurious turn_{engine_color} notification.  That message
             # would trigger _handle_turn on the Pico, whose 80-ms window then
             # accidentally eats the subsequent m{engine_uci} from the UART buffer.

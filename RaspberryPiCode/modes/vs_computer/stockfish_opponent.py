@@ -30,7 +30,6 @@ from typing import Optional
 import chess
 
 from core.engine import EngineContext
-from core.opponent import Opponent
 
 
 def _clamp(n: int, lo: int, hi: int) -> int:
@@ -45,7 +44,7 @@ _SKILL_LEVEL_MAP = {1: 0, 2: 1}
 _ELO_MAP = {3: 1000, 4: 1300, 5: 1600, 6: 1800, 7: 2000, 8: 2300}
 
 
-class StockfishOpponent(Opponent):
+class StockfishOpponent:
     def __init__(
         self,
         ctx: EngineContext,
@@ -68,12 +67,6 @@ class StockfishOpponent(Opponent):
 
     def set_time_ms(self, ms: int) -> None:
         self.move_time_ms = ms
-
-    def _set_skill(self, skill_level: int) -> None:
-        skill_level = _clamp(int(skill_level), 1, 8)
-        if skill_level != self.skill_level:
-            self.skill_level = skill_level
-            self._configured = False  # force reconfigure on next move
 
     def _ensure_configured(self) -> None:
         """Send strength configuration to the engine if it has changed."""

@@ -10,7 +10,6 @@ import random
 import subprocess
 import sys
 import time
-import traceback
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -476,68 +475,33 @@ _MODE_MENU_OPTIONS: List[Tuple[str, Optional[str]]] = [
 ]
 
 
-def _legacy_wait_for_mode_selection(
-    link: BoardLink, display: Display, state: GameState, cfg: GameConfig
-) -> str:
-    link.send_to_board("ChooseMode")
-    display.send(_MODE_MENU_DISPLAY)
-    _last_choosmode = time.time()
-    while True:
-        msg = link.read_from_board()
-        if msg is None:
-            # Periodically re-send ChooseMode so a rebooted Pico can sync up.
-            if time.time() - _last_choosmode >= 3:
-                link.send_to_board("ChooseMode")
-                _last_choosmode = time.time()
-            continue
-        _last_choosmode = time.time()
-        # Debug for mode-select mismatches (view in journalctl)
-        # Helps diagnose when the Pico sends an unexpected token.
-        print(f"[MODE SELECT] raw={msg!r}", flush=True)
-        m = msg.strip().lower()
-
-        # HINT during mode selection → open Settings submenu.
-        if m in HINT_MSGS:
-            _run_settings_menu(link, display, cfg)
-            link.send_to_board("ChooseMode")
-            display.send(_MODE_MENU_DISPLAY)
-            continue
-
-        # Robustness: the Pico can emit control / navigation tokens (e.g. OK+HINT
-        # sends 'n' to request a return to the main menu). If we treat those as
-        # "unknown mode" we end up replacing the menu on the LCD with an error
-        # screen even though we're already *in* the main menu.
-        #
-        # In mode-select, simply ignore non-selection tokens.
-        if not m or m in IGNORED_MSGS or m.startswith("typing_"):
-            continue
-
-        if m in ("1", "stockfish", "pc", "btn_mode_pc"):
-            return "stockfish"
-        if m in ("2", "onlinehuman", "remote", "online", "btn_mode_online"):
-            return "online"
-        if m in ("3", "local", "human", "btn_mode_local"):
-            return "local"
-        # Puzzles: accept both historical token variants (singular/plural)
-        # because the Pico menu firmware has used both.
-        if m in (
-            "4",
-            "puzzle",
-            "puzzles",
-            "daily",
-            "btn_mode_puzzle",
-            "btn_mode_puzzles",
-        ):
-            return "puzzle"
-        link.send_to_board("error_unknown_mode")
-        display.send("Unknown mode\n" + m + "\nSend again")
-
-
 # -------------------- Settings menu --------------------
 
 
-def _configure_brightness(link: BoardLink, display: Display, cfg: GameConfig) -> None:
-    """Show the 1-8 brightness picker and apply the chosen level."""
+def _configure_brightness(link: BoardLink, display: Display, cfg: GameConfig) -> bool:
+    """Show the 1-8 brightness picker and apply the chosen level.
+
+    Returns to the settings menu on cancel. After a confirmed brightness change,
+    the Pico reboots and the caller should return to the main menu flow.
+    """
+    def _request_current_brightness() -> int:
+        link.send_to_board("GetBrightness")
+        deadline = time.monotonic() + 2.5
+        while time.monotonic() < deadline:
+            msg = link.read_from_board()
+            if msg is None:
+                continue
+            m = msg.strip().lower()
+            if m.startswith("brightness_"):
+                try:
+                    return max(1, min(int(m.split("_")[-1]), 8))
+                except Exception:
+                    break
+            if m in OK_MSGS | NEW_GAME_MSGS | HINT_MSGS:
+                continue
+        return max(1, min(cfg.brightness, 8))
+
+    cfg.brightness = _request_current_brightness()
     display.send(
         f"LED Brightness\n1=dim  8=bright\nCurrent: {cfg.brightness}\nOK = cancel"
     )
@@ -547,94 +511,53 @@ def _configure_brightness(link: BoardLink, display: Display, cfg: GameConfig) ->
         if msg is None:
             continue
         if msg in OK_MSGS or msg.startswith("n"):
-            return
+            return False
         if msg.isdigit():
             val = max(1, min(int(msg), 8))
-            cfg.brightness = val
             link.send_to_board(f"SetBrightness_{val}")
-            display.send(f"Brightness: {val}\nRestarting...")
-            time.sleep(0.5)
-            return
+            deadline = time.monotonic() + 2.5
+            while time.monotonic() < deadline:
+                ack = link.read_from_board()
+                if ack is None:
+                    continue
+                m = ack.strip().lower()
+                if m.startswith("brightness_set_"):
+                    try:
+                        applied = max(1, min(int(m.split("_")[-1]), 8))
+                    except Exception:
+                        applied = val
+                    cfg.brightness = applied
+                    display.send(f"Brightness: {applied}\nRestarting...")
+                    time.sleep(0.5)
+                    return True
+                if m in OK_MSGS | NEW_GAME_MSGS | HINT_MSGS:
+                    continue
 
-
-def _legacy_run_update(link: BoardLink, display: Display) -> None:
-    """git pull on the Pi, upload new main.py to the Pico, then restart the service."""
-    import subprocess
-    import base64
-    from pathlib import Path
-
-    repo = Path(__file__).resolve().parent.parent.parent
-    pico_main = repo / "PicoCode" / "main" / "main.py"
-
-    display.send("Checking for\nupdates...")
-    try:
-        result = subprocess.run(
-            ["git", "-C", str(repo), "pull"],
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-    except Exception as exc:
-        display.send(f"Git error:\n{exc}")
-        time.sleep(3)
-        return
-
-    if "Already up to date." in result.stdout:
-        display.send("Already up\nto date!")
-        time.sleep(2)
-        return
-
-    display.send("Uploading to\nPico...")
-    link.send_to_board("UpdateMode")
-
-    # Wait for Pico to signal it is ready to receive
-    deadline = time.time() + 15
-    while True:
-        msg = link.read_from_board()
-        if msg == "updateready":
-            break
-        if time.time() > deadline:
-            display.send("Pico timeout\nAbort.")
-            link.send_to_board("UpdateAbort")
-            time.sleep(2)
-            return
-
-    # Stream the file as 128-char base64 chunks (~96 decoded bytes each)
-    encoded = base64.b64encode(pico_main.read_bytes()).decode()
-    chunk_size = 128
-    for i in range(0, len(encoded), chunk_size):
-        link.send_to_board(f"UpdateChunk_{encoded[i:i + chunk_size]}")
-        time.sleep(0.02)
-
-    link.send_to_board("UpdateDone")
-    display.send("Waiting for\nPico...")
-
-    deadline = time.time() + 30
-    while True:
-        msg = link.read_from_board()
-        if msg == "updatecomplete":
-            break
-        if msg == "updateerror":
-            display.send("Pico update\nfailed!")
-            time.sleep(3)
-            return
-        if time.time() > deadline:
-            display.send("Pico timeout!")
-            time.sleep(2)
-            break
-
-    display.send("Update done!\nRestarting...")
-    time.sleep(1)
-    subprocess.Popen(["sudo", "systemctl", "restart", "smartChess.service"])
+            display.send("Brightness set?\nNo Pico ack")
+            time.sleep(1.5)
+            return False
 
 
 def _run_settings_menu(link: BoardLink, display: Display, cfg: GameConfig) -> None:
     """Paged settings submenu."""
-    choice = _paged_menu(link, display, "Settings", ["Brightness", "Update"])
-    if choice == "Brightness":
-        _configure_brightness(link, display, cfg)
-    elif choice == "Update":
-        _run_update(link, display)
+    while True:
+        choice = _paged_menu(
+            link,
+            display,
+            "Settings",
+            ["Brightness", "Update"],
+            wake_command="ChooseMode",
+            resend_timeout=3.0,
+        )
+        if choice is None:
+            return
+        if choice == "Brightness":
+            if _configure_brightness(link, display, cfg):
+                return
+            continue
+        if choice == "Update":
+            _run_update(link, display)
+            return
 
 
 def _configure_vs_computer(link: BoardLink, display: Display, cfg: GameConfig) -> None:
@@ -846,28 +769,6 @@ def _update_typing_display(
 
 
 # -------------------- Human move processing (extracted) --------------------
-
-
-def apply_human_move(
-    *, link: BoardLink, display: Display, board: chess.Board, uci: str
-) -> None:
-    """Validate, handle promotion, push, and report/handoff."""
-    move = validate_and_push_move(link=link, display=display, board=board, uci=uci)
-    if move is None:
-        return
-
-    if board.is_game_over():
-        notify_game_over(link, display, board)
-        return
-
-    prompt_next_turn(
-        link,
-        display,
-        board,
-        "local",
-        GameConfig(),  # unused for local mode
-        chess.Move.uci(move),
-    )
 
 
 # -------------------- Unified play loop --------------------
@@ -1165,44 +1066,6 @@ def _render_paged_menu(title: str, page: int, pages: int, items: List[str]) -> s
     while len(lines) < 4:
         lines.append("OK=back Hint=next"[:20] if len(lines) == 3 else "")
     return "\n".join(x[:20] for x in lines)
-
-
-def _legacy_paged_menu(
-    link: BoardLink, display: Display, title: str, options: List[str]
-) -> Optional[str]:
-    """Show a scrollable 4-item menu and return the user's selection.
-
-    Navigation: buttons 1-4 select, HINT scrolls to next page, OK/back cancels.
-    Returns the selected option string, or None if the user pressed OK/back.
-    """
-    opts = list(options or [])
-    if not opts:
-        return None
-
-    per_page = 4
-    pages = (len(opts) + per_page - 1) // per_page
-    page = 0
-
-    link.send_to_board("MenuPaged")
-
-    while True:
-        chunk = opts[page * per_page : page * per_page + per_page]
-        display.send(_render_paged_menu(title, page, pages, chunk))
-        msg = link.read_from_board()
-        if msg is None:
-            continue
-        m = msg.strip().lower()
-        if m in OK_MSGS | NEW_GAME_MSGS:
-            return None
-        if m in HINT_MSGS:
-            page = (page + 1) % pages
-            continue
-        if m in ("1", "2", "3", "4"):
-            idx = int(m) - 1
-            if idx < len(chunk) and chunk[idx]:
-                return chunk[idx]
-            # Out-of-range: Pico has exited its menu loop — put it back.
-            link.send_to_board("MenuPaged")
 
 
 def _paged_menu(

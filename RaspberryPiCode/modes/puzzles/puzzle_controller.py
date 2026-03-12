@@ -19,7 +19,6 @@ import random
 import re
 import threading
 import time
-from collections import defaultdict
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
@@ -253,27 +252,6 @@ def _pick_random_line_seek(path: str, max_tries: int = 25) -> str:
     except Exception:
         return ""
     return ""
-
-
-# -------------------- Setup helpers --------------------
-
-
-def _dist(a: str, b: str) -> int:
-    af, ar = ord(a[0]) - 97, int(a[1]) - 1
-    bf, br = ord(b[0]) - 97, int(b[1]) - 1
-    return abs(af - bf) + abs(ar - br)
-
-
-def _pieces_by_type_and_color(brd: chess.Board):
-    buckets = defaultdict(list)  # (color, piece_type) -> [sq,...]
-    for sq in chess.SQUARES:
-        p = brd.piece_at(sq)
-        if not p:
-            continue
-        buckets[(p.color, p.piece_type)].append(chess.square_name(sq))
-    for k in buckets:
-        buckets[k].sort()
-    return buckets
 
 
 def _compute_place_steps_from_fen(target_fen: str):

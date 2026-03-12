@@ -96,6 +96,11 @@ def _save_and_reset_brightness(val):
             _f.write(str(val))
     except Exception:
         pass
+    try:
+        link.send("brightness_set_" + str(val))
+        time.sleep_ms(50)
+    except Exception:
+        pass
     reset()
 
 
@@ -131,21 +136,6 @@ class Game:
     RUNNING = 2
 
 
-class Mode:
-    PC = "pc"
-    ONLINE = "online"
-    LOCAL = "local"
-    PUZZLE = "puzzle"
-
-
-# Button index → (game mode, command string) for the mode-selection menu.
-_MODE_MAP = {
-    1: (Mode.PC, "btn_mode_pc"),
-    2: (Mode.ONLINE, "btn_mode_online"),
-    3: (Mode.LOCAL, "btn_mode_local"),
-    4: (Mode.PUZZLE, "btn_mode_puzzles"),
-}
-
 # Button index → UCI promotion piece token for the promotion picker.
 _PROMO = {1: "btn_q", 2: "btn_r", 3: "btn_b", 4: "btn_n"}
 
@@ -153,7 +143,6 @@ _PROMO = {1: "btn_q", 2: "btn_r", 3: "btn_b", 4: "btn_n"}
 class State:
     def __init__(self):
         self.game_state = Game.IDLE
-        self.game_mode = Mode.PC
         self.current_turn = "W"
 
         self.default_strength = 5
@@ -307,10 +296,12 @@ class Profiles:
         self.cp.apply()
         self.cp.set_allowed(allowed)
 
-    def main_menu(self):
-        self._apply(False, True, False, False, True, [1, 2, 3, 4, 10], hint_color=BLUE)
-
     def vs_strength_time(self):
+        self._apply(
+            False, True, True, True, False, [1, 2, 3, 4, 5, 6, 7, 8, 9], ok_color=RED
+        )
+
+    def brightness(self):
         self._apply(
             False, True, True, True, False, [1, 2, 3, 4, 5, 6, 7, 8, 9], ok_color=RED
         )
@@ -441,8 +432,7 @@ class ControlPanel:
         self._panel[Config.LEDs.CP_HINT_PIX] = hint_color if hint else BLACK
 
     def only_ok(self, on=True):
-        col = RED if self.st.game_mode == Mode.ONLINE else GREEN
-        self._set_cp_buttons(False, False, ok=on, hint=False, ok_color=col)
+        self._set_cp_buttons(False, False, ok=on, hint=False, ok_color=GREEN)
         self.apply()
 
     def only_input(self):
@@ -679,6 +669,13 @@ class ChessBoard:
         self.clear(BLACK)
         for x, y in [(2, 6), (2, 5), (2, 4), (2, 3), (2, 2), (3, 2), (4, 2), (5, 2)]:
             self.set_square(x, y, MAGENTA)
+        self.write()
+
+    def prompt_brightness(self):
+        self.clear(BLACK)
+        for i, x in enumerate(range(8)):
+            color = CYAN if i < 4 else YELLOW
+            self.set_square(x, i, color)
         self.write()
 
     def scene_gameover(self):
@@ -1526,27 +1523,6 @@ def _run_startup_sequence():
             return
 
 
-def _select_game_mode():
-    cp.profile.main_menu()
-    cp.reset_edges()
-    while True:
-        if cp.shutdown_held():
-            _shutdown_pico()
-        b = cp.detect_press_allowed()
-        if not b:
-            time.sleep_ms(Config.Timing.FAST_POLL_MS)
-            continue
-        if b in _MODE_MAP:
-            st.game_mode, cmd = _MODE_MAP[b]
-            link.send(cmd)
-            return
-        if b == (Config.Buttons.HINT_INDEX + 1):
-            while link.read():  # drain stale ChooseModes buffered during button-poll
-                pass
-            link.send("btn_hint")
-            return
-
-
 def _enter_setup_mode():
     cp.disable_hint_irq()
     cp.reset_edges()
@@ -1663,6 +1639,10 @@ def _run_game_setup_loop():
                 _handle_menu_paged(msg)
                 continue
 
+            if msg.startswith("heyArduinoGetBrightness"):
+                link.send("brightness_" + str(_brightness))
+                continue
+
             if msg.startswith("heyArduinoSetBrightness_"):
                 try:
                     _save_and_reset_brightness(int(msg.split("_")[-1]))
@@ -1671,8 +1651,8 @@ def _run_game_setup_loop():
                 continue
 
             if msg.startswith("heyArduinoBrightnessControl"):
-                cp.profile.vs_strength_time()
-                board.prompt_strength()
+                cp.profile.brightness()
+                board.prompt_brightness()
                 v = _select_mapped_value(1, 8)
                 if v is None:
                     return
