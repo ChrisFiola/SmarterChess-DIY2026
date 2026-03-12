@@ -1157,7 +1157,6 @@ def run_selected_mode(
             ctx,
             move_time_ms=cfg.move_time_ms,
             skill_level=cfg.skill_level,
-            use_elo=False,
         )
         controller = GameController(
             GameDeps(link=link, display=display, opponent=opponent),
