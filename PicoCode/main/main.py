@@ -4,7 +4,7 @@ import neopixel
 import ubinascii
 import os as _uos
 
-
+# triggering update
 class Config:
     class UART:
         BAUD = 115200
