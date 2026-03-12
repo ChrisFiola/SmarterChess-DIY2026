@@ -1546,7 +1546,7 @@ def _reset_to_idle():
     cp.reset_edges()
 
 
-def _select_mapped_value(out_min, out_max):
+def _select_mapped_value(out_min, out_max, *, cancel_to_idle=False):
     cp.reset_edges()
     while True:
         if cp.shutdown_held():
@@ -1554,7 +1554,8 @@ def _select_mapped_value(out_min, out_max):
         b = cp.detect_press_allowed()
         if b == (Config.Buttons.OK_INDEX + 1):
             link.send("btn_ok")
-            _reset_to_idle()
+            if cancel_to_idle:
+                _reset_to_idle()
             return None
         if b and 1 <= b <= 8:
             return _map_range(b, 1, 8, out_min, out_max)
@@ -1624,7 +1625,6 @@ def _run_game_setup_loop():
                     b2 = cp.detect_press_allowed()
                     if b2 == (Config.Buttons.OK_INDEX + 1):
                         link.send("btn_ok")
-                        _reset_to_idle()
                         return
                     if b2 in (1, 2, 3):
                         link.send("s" + str(b2))
@@ -2090,6 +2090,7 @@ def _main_loop():
             if not (
                 msg.startswith("heyArduinoChooseMode")
                 or msg.startswith("heyArduinoResetBoard")
+                or msg.startswith("heyArduinoUpdateMode")
             ):
                 continue
 

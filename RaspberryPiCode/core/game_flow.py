@@ -1242,15 +1242,24 @@ def _run_update(link: BoardLink, display: Display) -> None:
         _restart_smartchess_service(display, "Pi updated\nRestarting...")
         return
 
-    display.send("Uploading to\nPico...")
-    link.send_to_board("UpdateMode")
+    def _sync_update_mode() -> None:
+        link.send_to_board("ChooseMode")
+        link.send_to_board("UpdateMode")
 
-    deadline = time.time() + 15
+    display.send("Uploading to\nPico...")
+    link.clear_input()
+    _sync_update_mode()
+
+    deadline = time.monotonic() + 15
+    last_sync = time.monotonic()
     while True:
         msg = link.read_from_board()
         if msg == "updateready":
             break
-        if time.time() > deadline:
+        if time.monotonic() - last_sync >= 3.0:
+            _sync_update_mode()
+            last_sync = time.monotonic()
+        if time.monotonic() > deadline:
             display.send("Pico timeout\nAbort.")
             link.send_to_board("UpdateAbort")
             time.sleep(2)
