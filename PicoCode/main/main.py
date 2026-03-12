@@ -1514,15 +1514,15 @@ def _run_startup_sequence():
         msg = link.read()
         if not msg:
             continue
-        if msg.startswith("heyArduinoChooseMode"):
+        if msg.startswith("heyArduinoChooseMode") or msg.startswith("heyArduinoMenuPaged"):
             while lit < (board.w * board.h):
                 if cp.shutdown_held():
                     _shutdown_pico()
                 lit = board.loading_step(lit)
                 time.sleep_ms(Config.Timing.LOADING_FILL_MS)
-            board.markings()
-            cp.show_coords_top(WHITE)
-            st.game_state = Game.SETUP
+            _enter_setup_mode()
+            if msg.startswith("heyArduinoMenuPaged"):
+                _handle_menu_paged(msg)
             return
 
 
@@ -1545,6 +1545,15 @@ def _select_game_mode():
                 pass
             link.send("btn_hint")
             return
+
+
+def _enter_setup_mode():
+    cp.disable_hint_irq()
+    cp.reset_edges()
+    board.markings()
+    cp.show_coords_top(WHITE)
+    st.game_state = Game.SETUP
+    st.suspend_until_new_game = False
 
 
 def _reset_to_idle():
@@ -1650,6 +1659,7 @@ def _run_game_setup_loop():
                 return
 
             if msg.startswith("heyArduinoMenuPaged"):
+                _enter_setup_mode()
                 _handle_menu_paged(msg)
                 continue
 
@@ -1675,10 +1685,8 @@ def _run_game_setup_loop():
                 return
 
             if msg.startswith("heyArduinoChooseMode"):
-                board.markings()
-                cp.show_coords_top(WHITE)
-                _select_game_mode()
-                return
+                _enter_setup_mode()
+                continue
     finally:
         cp.enable_hint_irq()
 
@@ -1811,12 +1819,7 @@ def _handle_reset_board(_msg):
 
 
 def _handle_choose_mode(_msg):
-    cp.disable_hint_irq()
-    cp.reset_edges()
-    board.markings()
-    cp.show_coords_top(WHITE)
-    st.game_state = Game.SETUP
-    _select_game_mode()
+    _enter_setup_mode()
     while st.game_state == Game.SETUP:
         _run_game_setup_loop()
 
@@ -1835,7 +1838,6 @@ def _handle_menu_paged(_msg):
             continue
         if b == (Config.Buttons.OK_INDEX + 1):
             link.send("btn_ok")
-            _reset_to_idle()
             break
         if b == (Config.Buttons.HINT_INDEX + 1):
             link.send("btn_hint")
@@ -2116,8 +2118,6 @@ def run():
 
     cp.disable_hint_irq()
     _run_startup_sequence()
-    board.markings()
-    _select_game_mode()
 
     while st.game_state == Game.SETUP:
         _run_game_setup_loop()

@@ -5,12 +5,14 @@ Preserves Pico<->Pi UART protocol strings and display behavior.
 """
 from __future__ import annotations
 
+import hashlib
 import random
 import subprocess
 import sys
 import time
 import traceback
 from dataclasses import dataclass
+from pathlib import Path
 from typing import List, Optional, Tuple
 
 import chess
@@ -465,12 +467,16 @@ class ReturnToMenu(Exception):
 # -------------------- Setup & mode selection --------------------
 
 
-_MODE_MENU_DISPLAY = (
-    "1) Against PC\n2) Lichess Online\n3) Local 2-player\n4) Puzzles\\tHint=Settings"
-)
+_MODE_MENU_OPTIONS: List[Tuple[str, Optional[str]]] = [
+    ("Against PC", "stockfish"),
+    ("Lichess Online", "online"),
+    ("Local 2-player", "local"),
+    ("Puzzles", "puzzle"),
+    ("Settings", None),
+]
 
 
-def wait_for_mode_selection(
+def _legacy_wait_for_mode_selection(
     link: BoardLink, display: Display, state: GameState, cfg: GameConfig
 ) -> str:
     link.send_to_board("ChooseMode")
@@ -551,7 +557,7 @@ def _configure_brightness(link: BoardLink, display: Display, cfg: GameConfig) ->
             return
 
 
-def _run_update(link: BoardLink, display: Display) -> None:
+def _legacy_run_update(link: BoardLink, display: Display) -> None:
     """git pull on the Pi, upload new main.py to the Pico, then restart the service."""
     import subprocess
     import base64
@@ -1161,7 +1167,7 @@ def _render_paged_menu(title: str, page: int, pages: int, items: List[str]) -> s
     return "\n".join(x[:20] for x in lines)
 
 
-def _paged_menu(
+def _legacy_paged_menu(
     link: BoardLink, display: Display, title: str, options: List[str]
 ) -> Optional[str]:
     """Show a scrollable 4-item menu and return the user's selection.
@@ -1197,6 +1203,217 @@ def _paged_menu(
                 return chunk[idx]
             # Out-of-range: Pico has exited its menu loop — put it back.
             link.send_to_board("MenuPaged")
+
+
+def _paged_menu(
+    link: BoardLink,
+    display: Display,
+    title: str,
+    options: List[str],
+    *,
+    wake_command: Optional[str] = None,
+    resend_timeout: Optional[float] = None,
+) -> Optional[str]:
+    """Show a scrollable 4-item menu and return the user's selection.
+
+    ``wake_command`` is used by startup/setup menus that need to recover from a
+    Pico reboot before reopening the paged menu UI.
+    """
+    opts = list(options or [])
+    if not opts:
+        return None
+
+    per_page = 4
+    pages = (len(opts) + per_page - 1) // per_page
+    page = 0
+    last_sync = 0.0
+
+    def _sync_menu() -> None:
+        nonlocal last_sync
+        if wake_command:
+            link.send_to_board(wake_command)
+        link.send_to_board("MenuPaged")
+        last_sync = time.monotonic()
+
+    _sync_menu()
+
+    while True:
+        chunk = opts[page * per_page : page * per_page + per_page]
+        display.send(_render_paged_menu(title, page, pages, chunk))
+        msg = link.read_from_board()
+        if msg is None:
+            if resend_timeout and time.monotonic() - last_sync >= resend_timeout:
+                _sync_menu()
+            continue
+
+        last_sync = time.monotonic()
+        m = msg.strip().lower()
+        if m in OK_MSGS | NEW_GAME_MSGS:
+            return None
+        if m in HINT_MSGS:
+            page = (page + 1) % pages
+            continue
+        if m in ("1", "2", "3", "4"):
+            idx = int(m) - 1
+            if idx < len(chunk) and chunk[idx]:
+                return chunk[idx]
+            _sync_menu()
+
+
+def wait_for_mode_selection(
+    link: BoardLink, display: Display, state: GameState, cfg: GameConfig
+) -> str:
+    del state
+    while True:
+        choice = _paged_menu(
+            link,
+            display,
+            "Game Mode",
+            [label for label, _ in _MODE_MENU_OPTIONS],
+            wake_command="ChooseMode",
+            resend_timeout=3.0,
+        )
+        if choice is None:
+            continue
+        if choice == "Settings":
+            _run_settings_menu(link, display, cfg)
+            continue
+
+        selected_mode = next(
+            (mode for label, mode in _MODE_MENU_OPTIONS if label == choice),
+            None,
+        )
+        if selected_mode:
+            return selected_mode
+
+
+def _git_head(repo: Path) -> Optional[str]:
+    result = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+
+def _file_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _restart_smartchess_service(display: Display, message: str) -> None:
+    display.send(message)
+    time.sleep(1)
+    subprocess.Popen(["sudo", "systemctl", "restart", "smartChess.service"])
+
+
+def _run_update(link: BoardLink, display: Display) -> None:
+    """git pull on the Pi, upload new Pico firmware only if needed, then restart."""
+    import base64
+
+    repo = Path(__file__).resolve().parent.parent.parent
+    pico_main = repo / "PicoCode" / "main" / "main.py"
+
+    try:
+        before_head = _git_head(repo)
+        before_pico_hash = _file_sha256(pico_main)
+    except Exception as exc:
+        display.send(f"Update error\n{exc.__class__.__name__}")
+        time.sleep(3)
+        return
+
+    display.send("Checking for\nupdates...")
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo), "pull"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except Exception as exc:
+        display.send(f"Git error:\n{exc}")
+        time.sleep(3)
+        return
+
+    if result.returncode != 0:
+        print(
+            f"[UPDATE] git pull failed:\nstdout={result.stdout}\nstderr={result.stderr}",
+            flush=True,
+        )
+        display.send("Git pull failed\nSee logs")
+        time.sleep(3)
+        return
+
+    try:
+        after_head = _git_head(repo)
+        after_pico_hash = _file_sha256(pico_main)
+    except Exception as exc:
+        display.send(f"Update error\n{exc.__class__.__name__}")
+        time.sleep(3)
+        return
+
+    combined_output = f"{result.stdout}\n{result.stderr}"
+    repo_changed = (
+        before_head is not None
+        and after_head is not None
+        and before_head != after_head
+    )
+    already_up_to_date = (
+        "Already up to date." in combined_output
+        or "Already up-to-date." in combined_output
+    )
+    if not repo_changed and not already_up_to_date:
+        repo_changed = bool(result.stdout.strip() or result.stderr.strip())
+
+    if not repo_changed:
+        display.send("Already up\nto date!")
+        time.sleep(2)
+        return
+
+    if before_pico_hash == after_pico_hash:
+        _restart_smartchess_service(display, "Pi updated\nRestarting...")
+        return
+
+    display.send("Uploading to\nPico...")
+    link.send_to_board("UpdateMode")
+
+    deadline = time.time() + 15
+    while True:
+        msg = link.read_from_board()
+        if msg == "updateready":
+            break
+        if time.time() > deadline:
+            display.send("Pico timeout\nAbort.")
+            link.send_to_board("UpdateAbort")
+            time.sleep(2)
+            return
+
+    encoded = base64.b64encode(pico_main.read_bytes()).decode()
+    chunk_size = 128
+    for i in range(0, len(encoded), chunk_size):
+        link.send_to_board(f"UpdateChunk_{encoded[i:i + chunk_size]}")
+        time.sleep(0.02)
+
+    link.send_to_board("UpdateDone")
+    display.send("Waiting for\nPico...")
+
+    deadline = time.time() + 30
+    while True:
+        msg = link.read_from_board()
+        if msg == "updatecomplete":
+            break
+        if msg == "updateerror":
+            display.send("Pico update\nfailed!")
+            time.sleep(3)
+            return
+        if time.time() > deadline:
+            display.send("Pico timeout!")
+            time.sleep(2)
+            break
+
+    _restart_smartchess_service(display, "Update done!\nRestarting...")
 
 
 def _run_puzzle_game(link: BoardLink, display: Display) -> None:
