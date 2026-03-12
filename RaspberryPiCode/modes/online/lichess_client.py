@@ -118,7 +118,7 @@ class LichessClient:
         """Offer a draw in a running board game."""
         try:
             r = requests.post(
-                f"{LICHESS_BASE}/api/board/game/{game_id}/draw/offer",
+                f"{LICHESS_BASE}/api/board/game/{game_id}/draw/yes",
                 headers=self.headers,
                 timeout=15,
             )

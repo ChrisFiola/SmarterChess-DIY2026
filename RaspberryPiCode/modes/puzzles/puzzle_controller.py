@@ -47,6 +47,7 @@ from core.game_flow import (
     check_move_captures,
     resolve_uci_promotion,
     send_turn_notification,
+    send_check_signal,
     ReturnToMenu,
 )
 
@@ -1031,10 +1032,11 @@ class PuzzleController:
                 _rearm()
                 continue
 
+            board.push(mv)
+            send_check_signal(link, board)
+            st.idx += 1
             display.send(f"Correct move!\n{expected[:2]}→{expected[2:4]}")
             time.sleep(2)
-            board.push(mv)
-            st.idx += 1
 
             # Auto-play opponent reply
             if st.idx < len(st.solution):
@@ -1061,6 +1063,7 @@ class PuzzleController:
                     )
                     link.send_to_board(format_engine_move(reply, cap))
                     board.push(rmv)
+                    send_check_signal(link, board)
                     st.idx += 1
                     if not wait_for_ok(link, display):
                         return
