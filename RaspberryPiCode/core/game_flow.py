@@ -484,53 +484,57 @@ def _configure_brightness(link: BoardLink, display: Display, cfg: GameConfig) ->
     Returns to the settings menu on cancel. After a confirmed brightness change,
     the Pico reboots and the caller should return to the main menu flow.
     """
-    def _request_current_brightness() -> int:
-        link.send_to_board("GetBrightness")
-        deadline = time.monotonic() + 2.5
-        while time.monotonic() < deadline:
-            msg = link.read_from_board()
-            if msg is None:
-                continue
-            m = msg.strip().lower()
-            if m.startswith("brightness_"):
-                try:
-                    return max(1, min(int(m.split("_")[-1]), 8))
-                except Exception:
-                    break
-            if m in OK_MSGS | NEW_GAME_MSGS | HINT_MSGS:
-                continue
-        return max(1, min(cfg.brightness, 8))
+    display.send("Loading...")
 
-    cfg.brightness = _request_current_brightness()
-    display.send(
-        f"LED Brightness\n1=dim  8=bright\nCurrent: {cfg.brightness}\nOK = cancel"
-    )
+    def _parse_brightness_msg(msg: str) -> Optional[int]:
+        if not msg.startswith("brightness_"):
+            return None
+        try:
+            return max(1, min(int(msg.split("_")[-1]), 8))
+        except Exception:
+            return None
+
+    current = max(1, min(cfg.brightness, 8))
+    display.send(f"LED Brightness\n1=dim  8=bright\nCurrent: {current}\nOK = cancel")
+    link.clear_input()
     link.send_to_board("BrightnessControl")
     while True:
         msg = link.read_from_board()
         if msg is None:
             continue
-        if msg in OK_MSGS or msg.startswith("n"):
+        m = msg.strip().lower()
+        level = _parse_brightness_msg(m)
+        if level is not None:
+            cfg.brightness = level
+            display.send(
+                f"LED Brightness\n1=dim  8=bright\nCurrent: {cfg.brightness}\nOK = cancel"
+            )
+            continue
+        if m in OK_MSGS or m.startswith("n"):
             return False
-        if msg.isdigit():
-            val = max(1, min(int(msg), 8))
+        if m.isdigit():
+            val = max(1, min(int(m), 8))
             link.send_to_board(f"SetBrightness_{val}")
             deadline = time.monotonic() + 2.5
             while time.monotonic() < deadline:
                 ack = link.read_from_board()
                 if ack is None:
                     continue
-                m = ack.strip().lower()
-                if m.startswith("brightness_set_"):
+                ack_msg = ack.strip().lower()
+                level = _parse_brightness_msg(ack_msg)
+                if level is not None:
+                    cfg.brightness = level
+                    continue
+                if ack_msg.startswith("brightness_set_"):
                     try:
-                        applied = max(1, min(int(m.split("_")[-1]), 8))
+                        applied = max(1, min(int(ack_msg.split("_")[-1]), 8))
                     except Exception:
                         applied = val
                     cfg.brightness = applied
                     display.send(f"Brightness: {applied}\nRestarting...")
                     time.sleep(0.5)
                     return True
-                if m in OK_MSGS | NEW_GAME_MSGS | HINT_MSGS:
+                if ack_msg in OK_MSGS | NEW_GAME_MSGS | HINT_MSGS:
                     continue
 
             display.send("Brightness set?\nNo Pico ack")
@@ -1098,6 +1102,7 @@ def _paged_menu(
         link.send_to_board("MenuPaged")
         last_sync = time.monotonic()
 
+    link.clear_input()
     _sync_menu()
 
     while True:
@@ -1219,9 +1224,7 @@ def _run_update(link: BoardLink, display: Display) -> None:
 
     combined_output = f"{result.stdout}\n{result.stderr}"
     repo_changed = (
-        before_head is not None
-        and after_head is not None
-        and before_head != after_head
+        before_head is not None and after_head is not None and before_head != after_head
     )
     already_up_to_date = (
         "Already up to date." in combined_output

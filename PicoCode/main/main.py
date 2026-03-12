@@ -1653,6 +1653,7 @@ def _run_game_setup_loop():
             if msg.startswith("heyArduinoBrightnessControl"):
                 cp.profile.brightness()
                 board.prompt_brightness()
+                link.send("brightness_" + str(_brightness))
                 v = _select_mapped_value(1, 8)
                 if v is None:
                     return
@@ -1826,6 +1827,7 @@ def _handle_menu_paged(_msg):
             link.send(str(b))
             break
     board.markings()
+    cp.off()
     cp.enable_hint_irq()
 
 
