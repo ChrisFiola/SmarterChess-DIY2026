@@ -570,9 +570,9 @@ def _configure_brightness(link: BoardLink, display: Display, cfg: GameConfig) ->
                 if ack_msg in OK_MSGS | NEW_GAME_MSGS | HINT_MSGS:
                     continue
 
-            display.send("Brightness set?\nNo Pico ack")
-            time.sleep(1.5)
-            return False
+            cfg.brightness = val
+            time.sleep(0.5)
+            return True
 
 
 def _run_settings_menu(link: BoardLink, display: Display, cfg: GameConfig) -> None:
@@ -1347,54 +1347,53 @@ def _run_puzzle_game(link: BoardLink, display: Display) -> None:
     def menu(title: str, options: List[str]) -> Optional[str]:
         return _paged_menu(link, display, title, options)
 
-    top = menu("PUZZLES", ["Daily Puzzle", "Mix and match", "Themes"])
-    if top is None:
-        raise ReturnToMenu()
-
-    if top.startswith("Daily"):
-        PuzzleController(client, mode="daily").run(link, display)
-        return
-
-    if top.startswith("Mix"):
-        PuzzleController(client, mode="mix").run(link, display)
-        return
-
-    themes_top = menu("THEMES", ["Phases", "Openings"])
-    if themes_top is None:
-        raise ReturnToMenu()
-
-    if themes_top.startswith("Phases"):
-        label = menu("PHASES", [v for _, v in PHASE_THEMES])
-        if label is None:
+    while True:
+        top = menu("PUZZLES", ["Daily Puzzle", "Mix and match", "Themes"])
+        if top is None:
             raise ReturnToMenu()
-        # Find the lichess tag that matches the chosen display label.
-        # "Phases -> Opening" uses the PHASE tag 'opening' (lichess.org/training/themes),
-        # not an opening name (lichess.org/training/openings).
-        tag = next((k for k, v in PHASE_THEMES if v == label), None)
-        if not tag:
-            raise ReturnToMenu()
-        PuzzleController(client, mode="theme", theme=tag, theme_label=label).run(
-            link, display
-        )
-        return
 
-    if themes_top.startswith("Openings"):
-        grp = menu("OPENINGS", [g for g, _ in OPENING_GROUPS])
-        if grp is None:
-            raise ReturnToMenu()
-        opts = next((items for g, items in OPENING_GROUPS if g == grp), None)
-        if not opts:
-            raise ReturnToMenu()
-        label = menu(grp.upper(), opts)
-        if label is None:
-            raise ReturnToMenu()
-        # Pass the opening name as the angle; lichess_client will slugify it.
-        PuzzleController(client, mode="theme", theme=label, theme_label=label).run(
-            link, display
-        )
-        return
+        if top.startswith("Daily"):
+            PuzzleController(client, mode="daily").run(link, display)
+            return
 
-    raise ReturnToMenu()
+        if top.startswith("Mix"):
+            PuzzleController(client, mode="mix").run(link, display)
+            return
+
+        if not top.startswith("Themes"):
+            continue
+
+        while True:
+            themes_top = menu("THEMES", ["Phases", "Openings"])
+            if themes_top is None:
+                break
+
+            if themes_top.startswith("Phases"):
+                label = menu("PHASES", [v for _, v in PHASE_THEMES])
+                if label is None:
+                    continue
+                tag = next((k for k, v in PHASE_THEMES if v == label), None)
+                if not tag:
+                    continue
+                PuzzleController(client, mode="theme", theme=tag, theme_label=label).run(
+                    link, display
+                )
+                return
+
+            if themes_top.startswith("Openings"):
+                grp = menu("OPENINGS", [g for g, _ in OPENING_GROUPS])
+                if grp is None:
+                    continue
+                opts = next((items for g, items in OPENING_GROUPS if g == grp), None)
+                if not opts:
+                    continue
+                label = menu(grp.upper(), opts)
+                if label is None:
+                    continue
+                PuzzleController(
+                    client, mode="theme", theme=label, theme_label=label
+                ).run(link, display)
+                return
 
 
 def run_selected_mode(
