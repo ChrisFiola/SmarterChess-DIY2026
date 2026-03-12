@@ -514,6 +514,7 @@ def _configure_brightness(link: BoardLink, display: Display, cfg: GameConfig) ->
             return False
         if m.isdigit():
             val = max(1, min(int(m), 8))
+            display.send(f"New brightness: {val}\nReloading...")
             link.send_to_board(f"SetBrightness_{val}")
             deadline = time.monotonic() + 2.5
             while time.monotonic() < deadline:
@@ -531,7 +532,6 @@ def _configure_brightness(link: BoardLink, display: Display, cfg: GameConfig) ->
                     except Exception:
                         applied = val
                     cfg.brightness = applied
-                    display.send(f"Brightness: {applied}\nRestarting...")
                     time.sleep(0.5)
                     return True
                 if ack_msg in OK_MSGS | NEW_GAME_MSGS | HINT_MSGS:
