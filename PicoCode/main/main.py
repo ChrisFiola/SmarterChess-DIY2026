@@ -1511,7 +1511,9 @@ def _run_startup_sequence():
         msg = link.read()
         if not msg:
             continue
-        if msg.startswith("heyArduinoChooseMode") or msg.startswith("heyArduinoMenuPaged"):
+        if msg.startswith("heyArduinoChooseMode") or msg.startswith(
+            "heyArduinoMenuPaged"
+        ):
             while lit < (board.w * board.h):
                 if cp.shutdown_held():
                     _shutdown_pico()
@@ -1920,7 +1922,7 @@ def _handle_update_mode(_msg):
                 if msg is None:
                     continue
                 if msg.startswith("heyArduinoUpdateChunk_"):
-                    _f.write(ubinascii.a2b_base64(msg[len("heyArduinoUpdateChunk_"):]))
+                    _f.write(ubinascii.a2b_base64(msg[len("heyArduinoUpdateChunk_") :]))
                 elif msg.startswith("heyArduinoUpdateDone"):
                     break
                 elif msg.startswith("heyArduinoUpdateAbort"):
