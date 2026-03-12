@@ -466,7 +466,7 @@ class ReturnToMenu(Exception):
 
 
 _MODE_MENU_DISPLAY = (
-    "1) Against PC\n2) Lichess Online\n3) Local 2-player\n4) Puzzles\nHint=Settings"
+    "1) Against PC\n2) Lichess Online\n3) Local 2-player\n4) Puzzles\tHint=Settings"
 )
 
 
@@ -564,7 +564,9 @@ def _run_update(link: BoardLink, display: Display) -> None:
     try:
         result = subprocess.run(
             ["git", "-C", str(repo), "pull"],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True,
+            text=True,
+            timeout=60,
         )
     except Exception as exc:
         display.send(f"Git error:\n{exc}")
