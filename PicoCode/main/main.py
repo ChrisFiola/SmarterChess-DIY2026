@@ -283,7 +283,7 @@ class Profiles:
         ok,
         hint,
         allowed,
-        ok_color=RED,
+        ok_color=GREEN,
         hint_color=YELLOW,
     ):
         self.cp.border(border_on)
