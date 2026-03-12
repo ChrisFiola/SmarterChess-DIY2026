@@ -88,6 +88,7 @@ class OnlineController:
         """
         self.display.send("Cancelling...")
         self.link.send_to_board("ok_back_disable")
+        time.sleep(1.0)
         raise ReturnToMenu()
 
     # ── Common Pico message handling ─────────────────────────────────────────
