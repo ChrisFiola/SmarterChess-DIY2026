@@ -1539,6 +1539,8 @@ def _select_game_mode():
             link.send(cmd)
             return
         if b == (Config.Buttons.HINT_INDEX + 1):
+            while link.read():  # drain stale ChooseModes buffered during button-poll
+                pass
             link.send("btn_hint")
             return
 
@@ -1647,7 +1649,7 @@ def _run_game_setup_loop():
 
             if msg.startswith("heyArduinoMenuPaged"):
                 _handle_menu_paged(msg)
-                return
+                continue
 
             if msg.startswith("heyArduinoSetBrightness_"):
                 try:
