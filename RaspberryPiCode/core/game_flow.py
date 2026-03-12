@@ -1067,7 +1067,7 @@ def _paged_menu(
             page = (page + 1) % pages
             continue
         if m in ("1", "2", "3", "4"):
-            idx = int(m)
+            idx = int(m) - 1
             if idx < len(chunk) and chunk[idx]:
                 return chunk[idx]
             # Out-of-range: Pico has exited its menu loop — put it back.
@@ -1085,7 +1085,7 @@ def _run_puzzle_game(link: BoardLink, display: Display) -> None:
     def menu(title: str, options: List[str]) -> Optional[str]:
         return _paged_menu(link, display, title, options)
 
-    top = menu("PUZZLES", ["", "Daily Puzzle", "Mix and match", "Themes"])
+    top = menu("PUZZLES", ["\nDaily Puzzle", "Mix and match", "Themes"])
     if top is None:
         raise ReturnToMenu()
 
@@ -1097,7 +1097,7 @@ def _run_puzzle_game(link: BoardLink, display: Display) -> None:
         PuzzleController(client, mode="mix").run(link, display)
         return
 
-    themes_top = menu("THEMES", ["", "Phases", "Openings"])
+    themes_top = menu("THEMES", ["\nPhases", "Openings"])
     if themes_top is None:
         raise ReturnToMenu()
 
