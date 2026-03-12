@@ -1,4 +1,4 @@
-from machine import Pin, UART
+from machine import Pin, UART, reset
 import time
 import neopixel
 
@@ -75,27 +75,52 @@ class Config:
         ENGINE = BLUE
 
 
-# ── Color aliases ─────────────────────────────────────────────────────────────
-_C = Config.Colors
-BLACK = _C.BLACK
-WHITE = _C.WHITE
-RED = _C.RED
-GREEN = _C.GREEN
-BLUE = _C.BLUE
-CYAN = _C.CYAN
-MAGENTA = _C.MAGENTA
-YELLOW = _C.YELLOW
-ENGINE_COLOR = _C.ENGINE
-
-# ── Global LED brightness (1 = dim, 8 = full) ─────────────────────────────────
-_brightness = 5
+# ── Boot-time brightness (persisted to flash, applied once at startup) ────────
 
 
-def _dim(color):
-    """Scale an RGB colour tuple by the global brightness level."""
+def _load_brightness():
+    try:
+        with open("/brightness.txt", "r") as _f:
+            return max(1, min(8, int(_f.read().strip())))
+    except Exception:
+        return 5
+
+
+def _save_and_reset_brightness(val):
+    """Persist brightness to flash then reboot so scaling takes effect."""
+    val = max(1, min(8, int(val)))
+    try:
+        with open("/brightness.txt", "w") as _f:
+            _f.write(str(val))
+    except Exception:
+        pass
+    reset()
+
+
+def _scale(color, brightness):
     r, g, b = color
-    f = _brightness / 8.0
+    f = brightness / 8.0
     return (int(r * f), int(g * f), int(b * f))
+
+
+_brightness = _load_brightness()
+
+# Scale BORDER_COLOR in-place so the ControlPanel.border() default parameter
+# (evaluated at class-parse time, which is after this block) picks up the
+# already-dimmed value.
+Config.LEDs.BORDER_COLOR = _scale(Config.LEDs.BORDER_COLOR, _brightness)
+
+# ── Color aliases (scaled once at boot) ───────────────────────────────────────
+_C = Config.Colors
+BLACK = _C.BLACK  # black is always (0,0,0), no scaling needed
+WHITE = _scale(_C.WHITE, _brightness)
+RED = _scale(_C.RED, _brightness)
+GREEN = _scale(_C.GREEN, _brightness)
+BLUE = _scale(_C.BLUE, _brightness)
+CYAN = _scale(_C.CYAN, _brightness)
+MAGENTA = _scale(_C.MAGENTA, _brightness)
+YELLOW = _scale(_C.YELLOW, _brightness)
+ENGINE_COLOR = _scale(_C.ENGINE, _brightness)
 
 
 class Game:
@@ -387,11 +412,7 @@ class ControlPanel:
     def apply(self, force=False):
         cur = self._snapshot()
         if force or self._panel_last is None or cur != self._panel_last:
-            for i, c in enumerate(cur):
-                self._panel[i] = _dim(c)
             self._panel.write()
-            for i, c in enumerate(cur):
-                self._panel[i] = c
             self._panel_last = cur
 
     def off(self, force=False):
@@ -569,13 +590,7 @@ class ChessBoard:
             self._marking_cache[idx] = color
 
     def write(self):
-        n = self.w * self.h
-        buf = [self.np[i] for i in range(n)]
-        for i, c in enumerate(buf):
-            self.np[i] = _dim(c)
         self.np.write()
-        for i, c in enumerate(buf):
-            self.np[i] = c
 
     def off(self):
         for i in range(self.w * self.h):
@@ -1635,11 +1650,8 @@ def _run_game_setup_loop():
                 return
 
             if msg.startswith("heyArduinoSetBrightness_"):
-                global _brightness
                 try:
-                    _brightness = max(1, min(8, int(msg.split("_")[-1])))
-                    cp.apply(force=True)
-                    board.write()
+                    _save_and_reset_brightness(int(msg.split("_")[-1]))
                 except Exception:
                     pass
                 continue
@@ -1895,13 +1907,10 @@ def _set_ok_back_enabled(enabled):
 
 
 def _handle_set_brightness(msg):
-    global _brightness
     try:
-        _brightness = max(1, min(8, int(msg.split("_")[-1])))
+        _save_and_reset_brightness(int(msg.split("_")[-1]))
     except Exception:
         pass
-    cp.apply(force=True)
-    board.write()
 
 
 ROUTES = [

@@ -475,10 +475,16 @@ def wait_for_mode_selection(
 ) -> str:
     link.send_to_board("ChooseMode")
     display.send(_MODE_MENU_DISPLAY)
+    _last_choosmode = time.time()
     while True:
         msg = link.read_from_board()
         if msg is None:
+            # Periodically re-send ChooseMode so a rebooted Pico can sync up.
+            if time.time() - _last_choosmode >= 3:
+                link.send_to_board("ChooseMode")
+                _last_choosmode = time.time()
             continue
+        _last_choosmode = time.time()
         # Debug for mode-select mismatches (view in journalctl)
         # Helps diagnose when the Pico sends an unexpected token.
         print(f"[MODE SELECT] raw={msg!r}", flush=True)
@@ -540,7 +546,7 @@ def _configure_brightness(link: BoardLink, display: Display, cfg: GameConfig) ->
             val = max(1, min(int(msg), 8))
             cfg.brightness = val
             link.send_to_board(f"SetBrightness_{val}")
-            display.send(f"Brightness: {val}\nApplied!")
+            display.send(f"Brightness: {val}\nRestarting...")
             time.sleep(0.5)
             return
 
