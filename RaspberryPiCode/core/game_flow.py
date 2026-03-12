@@ -1032,7 +1032,7 @@ def _render_paged_menu(title: str, page: int, pages: int, items: List[str]) -> s
     )
     lines = [header[:20].rstrip()] + [_fmt(i + 1, opt) for i, opt in enumerate(items)]
     while len(lines) < 4:
-        lines.append("H=next OK=back"[:20] if len(lines) == 3 else "")
+        lines.append("OK=back Hint=next"[:20] if len(lines) == 3 else "")
     return "\n".join(x[:20] for x in lines)
 
 
@@ -1085,7 +1085,7 @@ def _run_puzzle_game(link: BoardLink, display: Display) -> None:
     def menu(title: str, options: List[str]) -> Optional[str]:
         return _paged_menu(link, display, title, options)
 
-    top = menu("PUZZLES", ["Daily Puzzle", "Mix and match", "Themes"])
+    top = menu(["Daily Puzzle", "Mix and match", "Themes"])
     if top is None:
         raise ReturnToMenu()
 
