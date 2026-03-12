@@ -661,56 +661,72 @@ class OnlineController:
                 notify_game_over(link, display, board)
                 raise ReturnToMenu()
 
-            # ── Opponent's turn — poll stream ─────────────────────────────────
+            # ── Opponent's turn — poll stream in background ───────────────────
             if board.turn != your_color:
                 now = int(time.time() * 1000)
                 if now - last_wait_banner_ms > 1500:
                     display.send("Waiting for\nopponent...")
                     last_wait_banner_ms = now
-                try:
-                    while True:
-                        payload = next(stream)
 
-                        # Check serial on every keepalive so resign/draw work
-                        # even during the opponent's turn (~1 s resolution)
-                        msg = link.try_read_from_board()
-                        if msg:
-                            if msg == "shutdown":
-                                shutdown_raspberry_pi(link, display)
-                                raise ReturnToMenu()
-                            if msg in NEW_GAME_MSGS:
-                                self._confirm_resign_or_exit(game_id)
-                            if msg in ("draw", "btn_draw"):
-                                self._offer_draw(game_id)
-                            self._handle_common(msg, board)
+                # Read ONE stream event in a background thread so the main
+                # thread can poll serial every 50 ms for resign/draw/etc.
+                payload_box: list = [None]
+                error_box: list = [None]
+                ready = threading.Event()
 
-                        move_list = extract_moves(payload)
-                        if len(move_list) > last_move_count:
-                            apply_new_moves(move_list, announce_new=True)
-                            break
-                        status = extract_status(payload)
-                        if status and status != "started":
-                            winner = extract_winner(payload)
-                            result = "1/2-1/2"
-                            if winner == "white":
-                                result = "1-0"
-                            elif winner == "black":
-                                result = "0-1"
-                            link.send_to_board(f"GameOver:{result}")
-                            display.send(f"GAME OVER\n{result}\nOK = Menu")
+                def _fetch_one():
+                    try:
+                        payload_box[0] = next(stream)
+                    except StopIteration:
+                        error_box[0] = "stop"
+                    except Exception as exc:
+                        error_box[0] = str(exc) or "error"
+                    finally:
+                        ready.set()
+
+                threading.Thread(target=_fetch_one, daemon=True).start()
+
+                while not ready.wait(timeout=0.05):
+                    smsg = link.try_read_from_board()
+                    if smsg:
+                        if smsg == "shutdown":
+                            shutdown_raspberry_pi(link, display)
                             raise ReturnToMenu()
-                except StopIteration:
+                        if smsg in NEW_GAME_MSGS:
+                            self._confirm_resign_or_exit(game_id)
+                        if smsg in ("draw", "btn_draw"):
+                            self._offer_draw(game_id)
+                        self._handle_common(smsg, board)
+
+                if error_box[0] == "stop":
                     display.send("Lichess ended\nOK = menu")
                     wait_for_ok(link, display)
                     raise ReturnToMenu()
-                except ReturnToMenu:
-                    raise
-                except Exception:
+                if error_box[0]:
                     display.send("Lichess error\nStream lost\nOK = menu")
                     wait_for_ok(link, display)
                     raise ReturnToMenu()
-                prompted_for_this_turn = False
-                continue
+
+                payload = payload_box[0]
+                move_list = extract_moves(payload)
+                if len(move_list) > last_move_count:
+                    apply_new_moves(move_list, announce_new=True)
+                    prompted_for_this_turn = False
+                    continue
+
+                status = extract_status(payload)
+                if status and status != "started":
+                    winner = extract_winner(payload)
+                    result = "1/2-1/2"
+                    if winner == "white":
+                        result = "1-0"
+                    elif winner == "black":
+                        result = "0-1"
+                    link.send_to_board(f"GameOver:{result}")
+                    display.send(f"GAME OVER\n{result}\nOK = Menu")
+                    raise ReturnToMenu()
+
+                continue  # keepalive or unrecognised event — loop back
 
             # ── Your turn ─────────────────────────────────────────────────────
             send_turn_if_human()
