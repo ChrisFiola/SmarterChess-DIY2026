@@ -47,7 +47,7 @@ def main():
                 if forced:
                     state.mode = forced
                     display.send(f"Mode forced:\n{forced}")
-                    time.sleep(1.0)
+                    time.sleep(0.5)
                 else:
                     state.mode = wait_for_mode_selection(link, display, state)
                     print(f"[MODE SELECT] selected={state.mode!r}", flush=True)
@@ -57,7 +57,6 @@ def main():
             except ReturnToMenu:
                 state.board = chess.Board()
                 display.send("SMARTCHESS")
-                time.sleep(0.4)
                 continue
 
             except KeyboardInterrupt:
@@ -78,11 +77,10 @@ def main():
                         if msg and msg.strip().lower() in IGNORED_MSGS:
                             break
                 except Exception:
-                    time.sleep(2.0)
+                    time.sleep(1.0)
 
                 state.board = chess.Board()
                 display.send("SMARTCHESS")
-                time.sleep(0.4)
 
     finally:
         try:

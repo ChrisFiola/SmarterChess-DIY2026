@@ -17,6 +17,7 @@ import json
 import os
 import random
 import re
+import threading
 import time
 from collections import defaultdict
 from dataclasses import dataclass
@@ -50,6 +51,39 @@ from core.game_flow import (
     send_check_signal,
     ReturnToMenu,
 )
+
+
+def _run_in_bg(fn, link: BoardLink, display):
+    """Run fn() in a background daemon thread, polling serial every 50 ms.
+
+    If the user presses OK/back during the wait, raises ReturnToMenu immediately
+    so the UI stays responsive during slow HTTP fetches.
+    """
+    result_box = [None]
+    exc_box = [None]
+    done = threading.Event()
+
+    def _worker():
+        try:
+            result_box[0] = fn()
+        except Exception as e:
+            exc_box[0] = e
+        finally:
+            done.set()
+
+    threading.Thread(target=_worker, daemon=True).start()
+
+    while not done.wait(timeout=0.05):
+        msg = link.try_read_from_board()
+        if msg == "shutdown":
+            shutdown_raspberry_pi(link, display)
+            return None
+        if msg and msg in OK_MSGS | NEW_GAME_MSGS:
+            raise ReturnToMenu()
+
+    if exc_box[0] is not None:
+        raise exc_box[0]
+    return result_box[0]
 
 
 def _pgn_opening_info(pgn_text: str) -> Tuple[str, str]:
@@ -850,14 +884,15 @@ class PuzzleController:
         return None, last_err
 
     def run(self, link: BoardLink, display: Display) -> None:
-        # 1) Fetch puzzle
+        # 1) Fetch puzzle — runs in background so serial stays live during HTTP wait.
         display.send("Puzzle\nLoading…")
         if self.mode == "mix":
-            st, err = self._fetch_mix()
+            result = _run_in_bg(self._fetch_mix, link, display)
         elif self.mode == "theme":
-            st, err = self._fetch_theme(self.theme or "")
+            result = _run_in_bg(lambda: self._fetch_theme(self.theme or ""), link, display)
         else:
-            st, err = self._fetch_daily()
+            result = _run_in_bg(self._fetch_daily, link, display)
+        st, err = result if result is not None else (None, "cancelled")
 
         if err or st is None:
             display.send("Puzzle error\n" + (err or "unknown"))
@@ -890,7 +925,7 @@ class PuzzleController:
                 ),
             )
             display.send(f"{label}\nSetup position\nOK = next")
-            time.sleep(0.8)
+            time.sleep(0.3)
             link.send_to_board("setup_clear")
 
             if not wait_for_ok(link, display):
@@ -905,7 +940,7 @@ class PuzzleController:
                     return
 
             display.send(f"{label}\nSetup done\nPuzzle begins")
-            time.sleep(0.8)
+            time.sleep(0.3)
         finally:
             link.send_to_board("hint_enable")
             link.send_to_board("puzzle_setup_done")
@@ -913,7 +948,6 @@ class PuzzleController:
                 link.clear_input()
             except Exception:
                 pass
-            time.sleep(0.05)
             link.send_to_board("hint_enable")
 
         # 3) Load board state
@@ -1028,7 +1062,7 @@ class PuzzleController:
             if mv not in board.legal_moves:
                 link.send_to_board("error_puzzle_internal")
                 display.send("Puzzle error\nTry again")
-                time.sleep(1.0)
+                time.sleep(0.5)
                 _rearm()
                 continue
 
@@ -1036,7 +1070,7 @@ class PuzzleController:
             send_check_signal(link, board)
             st.idx += 1
             display.send(f"Correct move!\n{expected[:2]}→{expected[2:4]}")
-            time.sleep(2)
+            time.sleep(1.5)
 
             # Auto-play opponent reply
             if st.idx < len(st.solution):

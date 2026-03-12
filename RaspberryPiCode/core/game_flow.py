@@ -517,7 +517,7 @@ def _configure_vs_computer(link: BoardLink, display: Display, cfg: GameConfig) -
     All values sent back to Pico unchanged (protocol preserved).
     """
     display.send("VS Computer\nHints enabled")
-    time.sleep(2)
+    time.sleep(0.5)
 
     # Difficulty
     display.send("Difficulty level:\n1 to 8\nOK = cancel")
@@ -564,7 +564,7 @@ def _configure_vs_computer(link: BoardLink, display: Display, cfg: GameConfig) -
 
 def _configure_local_game(link: BoardLink, display: Display, cfg: GameConfig) -> None:
     display.send("Local 2-Player\nHints enabled")
-    time.sleep(2)
+    time.sleep(0.5)
     cfg.skill_level = 8  # max hint skill for local
     cfg.move_time_ms = 1  # fastest think time for local
 

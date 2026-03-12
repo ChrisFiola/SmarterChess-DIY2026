@@ -33,6 +33,7 @@ from core.protocol import (
 from core.game_flow import (
     GameConfig,
     ReturnToMenu,
+    wait_for_ok,
     handle_typing_message,
     handle_capq_message,
     validate_and_push_move,
@@ -327,8 +328,8 @@ class OnlineController:
         try:
             first = next(stream)
         except Exception:
-            display.send("Lichess error\nGame stream")
-            time.sleep(3)
+            display.send("Lichess error\nGame stream\nOK = menu")
+            wait_for_ok(link, display)
             raise ReturnToMenu()
 
         white_name, black_name = extract_players(first)
@@ -391,14 +392,14 @@ class OnlineController:
                             display.send(f"GAME OVER\nResult {result}\nOK = Menu")
                             raise ReturnToMenu()
                 except StopIteration:
-                    display.send("Lichess ended")
-                    time.sleep(2)
+                    display.send("Lichess ended\nOK = menu")
+                    wait_for_ok(link, display)
                     raise ReturnToMenu()
                 except ReturnToMenu:
                     raise
                 except Exception:
-                    display.send("Lichess error\nStream lost")
-                    time.sleep(3)
+                    display.send("Lichess error\nStream lost\nOK = menu")
+                    wait_for_ok(link, display)
                     raise ReturnToMenu()
                 prompted_for_this_turn = False
                 continue
@@ -467,8 +468,9 @@ class OnlineController:
             # Submit to Lichess
             resp = self.client.make_move(game_id, uci)
             if not resp.get("ok"):
-                display.send("Move rejected")
-                time.sleep(2)
+                display.send("Move rejected\nOK = retry")
+                if not wait_for_ok(link, display):
+                    self._resign_and_exit(game_id)
                 continue
 
             board.push(move)
