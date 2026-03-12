@@ -123,7 +123,7 @@ dmypy.json
 .pyre/
 
 # Fonts
-*.ttf
+WorkSans-Medium.ttf
 
 # Some text
 Copying.txt

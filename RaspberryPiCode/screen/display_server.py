@@ -30,7 +30,8 @@ disp.clear()
 
 # Screen constants
 W, H = disp.width, disp.height
-FONT_PATH = "/home/king/LCD_Module_RPI_code/RaspberryPi/python/Font/Font00.ttf"
+FONT_PATH = "/home/king/SmarterChess-DIY2026/RaspberryPiCode/ChessSans.ttf"
+# FONT_PATH = "/home/king/LCD_Module_RPI_code/RaspberryPi/python/Font/Font00.ttf"
 
 FRAME = Image.new("RGB", (W, H), "BLACK")
 DRAW = ImageDraw.Draw(FRAME)
