@@ -460,20 +460,15 @@ def offer_analysis_qr(link: BoardLink, display: Display, board: "chess.Board") -
 
     if not pgn:
         display.send("No moves yet\nNo PGN available\nOK = back")
+        link.send_to_board("MenuPaged")
         wait_for_ok(link, display)
         return
 
+    print(f"[QR PGN] length={len(pgn)} pgn={pgn!r}", flush=True)
     display.show_qr(pgn, "Paste PGN to", "analyse  OK=back")
-    while True:
-        msg = link.read_from_board()
-        if msg is None:
-            continue
-        if msg == "shutdown":
-            shutdown_raspberry_pi(link, display)
-            return
-        if msg.strip().lower() in OK_MSGS:
-            return  # OK pressed — caller raises ReturnToMenu
-        # ignore everything else (menu_ready, hints, typing, etc.)
+    # Re-enter MenuPaged so the Pico stays responsive after the menu selection.
+    link.send_to_board("MenuPaged")
+    wait_for_ok(link, display)
 
 
 def post_game_menu(
