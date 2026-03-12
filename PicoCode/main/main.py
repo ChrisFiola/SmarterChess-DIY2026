@@ -5,6 +5,7 @@ import ubinascii
 import os as _uos
 
 
+# triggering an update
 class Config:
     class UART:
         BAUD = 115200
