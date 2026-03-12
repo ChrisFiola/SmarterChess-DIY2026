@@ -484,8 +484,6 @@ def _configure_brightness(link: BoardLink, display: Display, cfg: GameConfig) ->
     Returns to the settings menu on cancel. After a confirmed brightness change,
     the Pico reboots and the caller should return to the main menu flow.
     """
-    display.send("Loading...")
-
     def _parse_brightness_msg(msg: str) -> Optional[int]:
         if not msg.startswith("brightness_"):
             return None
@@ -494,10 +492,45 @@ def _configure_brightness(link: BoardLink, display: Display, cfg: GameConfig) ->
         except Exception:
             return None
 
-    current = max(1, min(cfg.brightness, 8))
-    display.send(f"LED Brightness\n1=dim  8=bright\nCurrent: {current}\nOK = cancel")
+    def _sync_brightness_control(*, wake: bool) -> None:
+        if wake:
+            link.send_to_board("ChooseMode")
+        link.send_to_board("BrightnessControl")
+
+    display.send("Loading...")
     link.clear_input()
-    link.send_to_board("BrightnessControl")
+    _sync_brightness_control(wake=False)
+
+    current: Optional[int] = None
+    started = time.monotonic()
+    last_sync = started
+    wake_after = started + 3.0
+    deadline = started + 10.0
+    while current is None:
+        msg = link.read_from_board()
+        if msg is not None:
+            m = msg.strip().lower()
+            level = _parse_brightness_msg(m)
+            if level is not None:
+                current = level
+                cfg.brightness = level
+                break
+            if m in OK_MSGS | NEW_GAME_MSGS | HINT_MSGS:
+                continue
+
+        now = time.monotonic()
+        if now >= deadline:
+            display.send("Brightness menu\nnot responding")
+            time.sleep(1.5)
+            return False
+        if now - last_sync >= 2.5:
+            _sync_brightness_control(wake=now >= wake_after)
+            last_sync = now
+
+    display.send(
+        f"LED Brightness\n1=dim  8=bright\nCurrent: {current}\nOK = cancel"
+    )
+
     while True:
         msg = link.read_from_board()
         if msg is None:
@@ -516,7 +549,7 @@ def _configure_brightness(link: BoardLink, display: Display, cfg: GameConfig) ->
             val = max(1, min(int(m), 8))
             display.send(f"New brightness: {val}\nReloading...")
             link.send_to_board(f"SetBrightness_{val}")
-            deadline = time.monotonic() + 2.5
+            deadline = time.monotonic() + 4.0
             while time.monotonic() < deadline:
                 ack = link.read_from_board()
                 if ack is None:

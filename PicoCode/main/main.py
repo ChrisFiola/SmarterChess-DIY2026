@@ -97,8 +97,10 @@ def _save_and_reset_brightness(val):
     except Exception:
         pass
     try:
-        link.send("brightness_set_" + str(val))
-        time.sleep_ms(50)
+        ack = "brightness_set_" + str(val)
+        for _ in range(3):
+            link.send(ack)
+            time.sleep_ms(120)
     except Exception:
         pass
     reset()
