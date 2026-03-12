@@ -4,6 +4,7 @@ import neopixel
 import ubinascii
 import os as _uos
 
+
 # triggering update
 class Config:
     class UART:
@@ -161,6 +162,7 @@ class State:
 
         self.suspend_until_new_game = False
         self.ok_back_enabled = False
+        self.ok_cancel_enabled = False
         self.hint_enabled = True
         self.puzzle_setup_active = False
 
@@ -437,7 +439,7 @@ class ControlPanel:
         self._set_cp_buttons(False, False, ok=on, hint=False, ok_color=GREEN)
         self.apply()
 
-    def only_ok_cancel(self, on=True)
+    def only_ok_cancel(self, on=True):
         self._set_cp_buttons(False, False, ok=on, hint=False, ok_color=RED)
         self.apply()
 
@@ -1899,9 +1901,11 @@ def _set_ok_back_enabled(enabled):
     st.ok_back_enabled = enabled
     cp.only_ok(enabled)
 
+
 def _set_ok_cancel_enabled(enabled):
-    st.ok_back_enabled = enabled
-    cp.only_cancel(enabled)
+    st.ok_cancel_enabled = enabled
+    cp.only_ok_cancel(enabled)
+
 
 def _handle_set_brightness(msg):
     try:
