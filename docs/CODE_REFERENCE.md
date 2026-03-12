@@ -17,7 +17,6 @@ RaspberryPiCode/
 │   ├── engine.py                    Stockfish process wrapper.
 │   ├── game_flow.py                 All shared game logic (move validation, menus, hints…).
 │   ├── net_utils.py                 WiFi / AP-mode detection.
-│   ├── opponent.py                  Abstract base class for move sources.
 │   └── protocol.py                  Message token sets, parsers, and formatters.
 │
 ├── screen/
@@ -33,7 +32,6 @@ RaspberryPiCode/
     ├── online/
     │   ├── lichess_client.py        HTTP client for the Lichess Board API.
     │   ├── lichess_game.py          Helpers to extract fields from Board API payloads.
-    │   ├── lichess_opponent.py      Background stream reader (legacy adapter, unused in main flow).
     │   └── online_controller.py     Full Lichess session lifecycle.
     └── puzzles/
         ├── puzzle_controller.py     Fetch, setup, and solve loop for all puzzle modes.
@@ -66,8 +64,7 @@ modes/vs_computer/game_controller.py ◄──────── game_flow (shar
   └─► screen/display.py
 
 modes/vs_computer/stockfish_opponent.py
-  ├─► core/engine.py
-  └─► core/opponent.py
+  └─► core/engine.py
 
 modes/online/online_controller.py
   ├─► core/boardlink.py
@@ -404,19 +401,6 @@ appropriate config URL.
 
 ---
 
-### `core/opponent.py`
-
-**Purpose:** Abstract base class for all move sources. Defines the interface
-that `StockfishOpponent` (and the legacy `LichessOpponent`) must implement.
-
-| Method | What it does |
-|---|---|
-| `start_game(board, human_is_white)` | Called when a new game begins |
-| `get_move(board) → str` | Returns a UCI move string (abstract) |
-| `stop()` | Clean shutdown |
-
----
-
 ### `screen/display.py`
 
 **Purpose:** High-level LCD API. Sends formatted messages to `display_server.py`
@@ -502,16 +486,18 @@ and retrieves moves via the shared `EngineContext`.
 
 **Skill mapping:**
 
-| UI Level | Stockfish Skill Level | Approximate Elo |
+Levels 1–2 use Stockfish's `Skill Level` parameter (UCI_Elo has a ~1320 floor and cannot produce true beginner play). Levels 3–8 use `UCI_Elo` for a realistic human-like curve.
+
+| UI Level | Parameter | Value |
 |---|---|---|
-| 1 | 0 | 650 |
-| 2 | 1 | 850 |
-| 3 | 2 | 1050 |
-| 4 | 4 | 1250 |
-| 5 | 6 | 1450 |
-| 6 | 9 | 1650 |
-| 7 | 13 | 1850 |
-| 8 | 18 | 2050 |
+| 1 | Skill Level | 0 (~500 Elo) |
+| 2 | Skill Level | 1 (~800 Elo) |
+| 3 | UCI_Elo | 1000 |
+| 4 | UCI_Elo | 1300 |
+| 5 | UCI_Elo | 1600 |
+| 6 | UCI_Elo | 1800 |
+| 7 | UCI_Elo | 2000 |
+| 8 | UCI_Elo | 2300 |
 
 | Function / Method | What it does | Called from |
 |---|---|---|
@@ -520,7 +506,6 @@ and retrieves moves via the shared `EngineContext`.
 | `_map_skill_to_stockfish_level(ui_skill)` | Returns Stockfish Skill Level 0–18 | `_ensure_configured` when `use_elo=False` |
 | `StockfishOpponent.__init__` | Stores ctx, time, skill; marks unconfigured | `run_selected_mode` |
 | `set_time_ms(ms)` | Updates think time for the next move | `game_controller.run_stockfish_game` |
-| `_set_skill(skill_level)` | Updates skill; clears configured flag to force reconfigure | Not currently called externally |
 | `_ensure_configured()` | Pushes `UCI_Elo` or `Skill Level` to engine if settings changed | `get_move` |
 | `get_move(board) → str\|None` | Ensures engine is configured, calls `ctx.bestmove()` | `game_controller._play_one_engine_move` |
 
@@ -599,9 +584,11 @@ account auth, lobby polling, and the active game loop.
 | `__init__` | Stores link/display/cfg; creates `LichessClient` | `game_flow._run_online_game` |
 | `_resign_and_exit(game_id)` | Shows "Resigning…", calls `resign_game()`, raises `ReturnToMenu` | `_play_game` (×2) |
 | `_offer_draw(game_id)` | Shows "Offering draw…", calls `offer_draw()` | `_play_game` (×2) |
+| `_cancel_to_menu()` | Shows "Cancelling…", sends `ok_back_disable`, raises `ReturnToMenu` | `run` (on OK/back press during lobby) |
+| `_run_in_bg(fn)` | Runs `fn()` in a daemon thread; polls serial every 50 ms so OK/back cancel shows instantly even during blocking HTTP calls | `run` (account fetch + sleep retries + gameStart stream) |
 | `_handle_common(msg, board) → bool` | Handles shutdown / typing / capq / hint — same in every state | `run`, `_play_game` |
-| `run()` | AP mode check → account fetch → gameStart polling → `_play_game` | `game_flow._run_online_game` |
-| `_play_game(game_id, username)` | Active game loop: stream opponent moves, send own moves | `run` |
+| `run()` | AP mode check → account fetch (with retry) → gameStart polling → `_play_game` | `game_flow._run_online_game` |
+| `_play_game(game_id, username)` | Active game loop: stream opponent moves, send own moves to Lichess before pushing locally | `run` |
 
 **Key internal closure in `_play_game`:**
 
@@ -766,8 +753,9 @@ Instantiated by:
 | `lcd_ack_to` | ACK for `typing_to_*` |
 | `lcd_ack_confirm` | ACK for `typing_confirm_*` |
 | `MenuPaged` | Tell Pico a paged menu is active |
-| `ok_back_enable` | Enable OK-as-back during online lobby |
-| `ok_back_disable` | Disable OK-as-back when game starts |
+| `ok_back_enable` | Enable OK button (green) as a back/cancel button |
+| `ok_cancel_enable` | Enable OK button (red) as a cancel button — used during online lobby |
+| `ok_back_disable` | Disable the OK-as-back/cancel button when active play begins |
 | `error_invalid_<token>` | Unrecognised input |
 | `error_unknown_mode` | Unknown mode token |
 | `error_puzzle_fetch` | Puzzle could not be fetched |
