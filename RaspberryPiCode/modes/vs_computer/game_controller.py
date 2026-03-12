@@ -19,7 +19,7 @@ from core.game_flow import (
     handle_capq_message,
     handle_typing_message,
     notify_game_over,
-    offer_analysis_qr,
+    post_game_menu,
     prompt_next_turn,
     send_move_hint,
     send_turn_notification,
@@ -146,10 +146,6 @@ class GameController:
             return
 
         if typ == EventType.HINT:
-            if self.board.is_game_over():
-                offer_analysis_qr(self.deps.link, self.deps.display, self.board)
-                self.deps.display.send("GAME OVER\nHint=Analysis\nOK=new game")
-                return
             state = GameState(board=self.board, mode="stockfish")
             cfg = GameConfig(
                 skill_level=5,
@@ -176,7 +172,8 @@ class GameController:
             )
             if move is not None and self.board.is_game_over():
                 notify_game_over(self.deps.link, self.deps.display, self.board)
-                return
+                post_game_menu(self.deps.link, self.deps.display, self.board)
+                return  # unreachable
             # Show the same LCD feedback as other modes:
             # "<your move>" + "ENGINE thinking"
             prompt_next_turn(
@@ -209,7 +206,8 @@ class GameController:
 
         if self.board.is_game_over():
             notify_game_over(self.deps.link, self.deps.display, self.board)
-            return
+            post_game_menu(self.deps.link, self.deps.display, self.board)
+            return  # unreachable
 
         # Defer check indication until the user presses OK after moving the piece.
         self._pending_check_sq = None

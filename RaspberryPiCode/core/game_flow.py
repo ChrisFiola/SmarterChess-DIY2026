@@ -436,7 +436,7 @@ def notify_game_over(link: BoardLink, display: Display, brd: chess.Board) -> str
     result = brd.result(claim_draw=True)
     winner = _result_to_winner_text(result)
     link.send_to_board(f"GameOver:{result}")
-    display.send(f"GAME OVER\n{winner}\nHint=Analysis\nOK=new game")
+    display.send(f"GAME OVER\n{winner}")
     return result
 
 
@@ -472,6 +472,31 @@ def offer_analysis_qr(link: BoardLink, display: Display, board: "chess.Board") -
             shutdown_raspberry_pi(link, display)
             return
         break  # any button dismisses
+
+
+def post_game_menu(
+    link: BoardLink, display: Display, board: "chess.Board"
+) -> None:
+    """Show a post-game paged menu: New game or View PGN QR.
+
+    Uses ChooseMode to wake the Pico from game-over state, then shows
+    a MenuPaged menu so all buttons work. Always raises ReturnToMenu.
+    Call this after notify_game_over().
+    """
+    time.sleep(1.5)  # let the game-over display settle
+    while True:
+        choice = _paged_menu(
+            link,
+            display,
+            "Game over",
+            ["New game", "View PGN QR"],
+            wake_command="ChooseMode",
+            resend_timeout=3.0,
+        )
+        if choice == "View PGN QR":
+            offer_analysis_qr(link, display, board)
+            continue
+        raise ReturnToMenu()
 
 
 def _get_draw_reason(brd: chess.Board) -> Optional[str]:
@@ -1048,18 +1073,8 @@ def _run_local_game(
 
         if state.board.is_game_over():
             notify_game_over(link, display, state.board)
-            while True:
-                msg2 = link.read_from_board()
-                if msg2 is None:
-                    continue
-                if msg2 in NEW_GAME_MSGS:
-                    raise ReturnToMenu()
-                if msg2 in HINT_MSGS:
-                    offer_analysis_qr(link, display, state.board)
-                    display.send("GAME OVER\nHint=Analysis\nOK=new game")
-                    continue
-                if msg2.startswith("typing_"):
-                    continue
+            post_game_menu(link, display, state.board)
+            # unreachable — post_game_menu always raises ReturnToMenu
         else:
             prompt_next_turn(
                 link, display, state.board, state.mode, cfg, chess.Move.uci(move)
