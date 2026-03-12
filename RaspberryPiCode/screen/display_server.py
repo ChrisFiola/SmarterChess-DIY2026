@@ -93,7 +93,7 @@ def _find_best_font_size(lines, min_size=14, max_size=28, vpad=4, spacing=6):
 # ------------------------------------------------------
 # Draw centered text with explicit size/spacing
 # ------------------------------------------------------
-def _draw_centered_text_with_size(lines, size: int, spacing: int = 6, vpad: int = 4):
+def _draw_centered_text_with_size(lines, size: int, spacing: int = 6, vpad: int = 10):
     # Clear framebuffer (no new allocations)
     DRAW.rectangle((0, 0, W, H), fill="BLACK")
 
