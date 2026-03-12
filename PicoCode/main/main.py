@@ -1569,12 +1569,6 @@ def _run_game_setup_loop():
             if cp.shutdown_held():
                 _shutdown_pico()
 
-            b = cp.detect_press_raw()
-            if b == (Config.Buttons.OK_INDEX + 1):
-                link.send("btn_ok")
-                _reset_to_idle()
-                return
-
             msg = link.read()
             if not msg:
                 time.sleep_ms(Config.Timing.POLL_MS)
@@ -1813,6 +1807,7 @@ def _handle_menu_paged(_msg):
     cp.disable_hint_irq()
     cp.reset_edges()
     board.markings()
+    link.send("menu_ready")
     while True:
         if cp.shutdown_held():
             _shutdown_pico()
@@ -1830,7 +1825,6 @@ def _handle_menu_paged(_msg):
             link.send(str(b))
             break
     board.markings()
-    cp.off()
     cp.enable_hint_irq()
 
 

@@ -550,7 +550,6 @@ def _run_settings_menu(link: BoardLink, display: Display, cfg: GameConfig) -> No
             display,
             "Settings",
             ["Brightness", "Update"],
-            wake_command="ChooseMode",
             resend_timeout=3.0,
         )
         if choice is None:
@@ -1094,13 +1093,15 @@ def _paged_menu(
     pages = (len(opts) + per_page - 1) // per_page
     page = 0
     last_sync = 0.0
+    menu_ready = False
 
     def _sync_menu() -> None:
-        nonlocal last_sync
+        nonlocal last_sync, menu_ready
         if wake_command:
             link.send_to_board(wake_command)
         link.send_to_board("MenuPaged")
         last_sync = time.monotonic()
+        menu_ready = False
 
     link.clear_input()
     _sync_menu()
@@ -1110,12 +1111,23 @@ def _paged_menu(
         display.send(_render_paged_menu(title, page, pages, chunk))
         msg = link.read_from_board()
         if msg is None:
-            if resend_timeout and time.monotonic() - last_sync >= resend_timeout:
+            if (
+                not menu_ready
+                and resend_timeout
+                and time.monotonic() - last_sync >= resend_timeout
+            ):
                 _sync_menu()
             continue
 
-        last_sync = time.monotonic()
         m = msg.strip().lower()
+        if m == "menu_ready":
+            menu_ready = True
+            last_sync = time.monotonic()
+            continue
+        if not menu_ready:
+            continue
+
+        last_sync = time.monotonic()
         if m in OK_MSGS | NEW_GAME_MSGS:
             return None
         if m in HINT_MSGS:
