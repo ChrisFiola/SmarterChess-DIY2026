@@ -1893,7 +1893,7 @@ def _handle_turn(msg):
 # ── Dispatch table ────────────────────────────────────────────────────────────
 
 
-def _set_ok_back_enabled(enabled, color):
+def _set_ok_back_enabled(enabled, color=GREEN):
     st.ok_back_enabled = enabled
     cp.only_ok(enabled, color)
 
