@@ -435,12 +435,8 @@ class ControlPanel:
         self._panel[Config.LEDs.CP_OK_PIX] = ok_color if ok else BLACK
         self._panel[Config.LEDs.CP_HINT_PIX] = hint_color if hint else BLACK
 
-    def only_ok(self, on=True):
-        self._set_cp_buttons(False, False, ok=on, hint=False, ok_color=GREEN)
-        self.apply()
-
-    def only_ok_cancel(self, on=True):
-        self._set_cp_buttons(False, False, ok=on, hint=False, ok_color=RED)
+    def only_ok(self, on=True, color=GREEN):
+        self._set_cp_buttons(False, False, ok=on, hint=False, ok_color=color)
         self.apply()
 
     def only_input(self):
@@ -1897,14 +1893,9 @@ def _handle_turn(msg):
 # ── Dispatch table ────────────────────────────────────────────────────────────
 
 
-def _set_ok_back_enabled(enabled):
+def _set_ok_back_enabled(enabled, color):
     st.ok_back_enabled = enabled
-    cp.only_ok(enabled)
-
-
-def _set_ok_cancel_enabled(enabled):
-    st.ok_cancel_enabled = enabled
-    cp.only_ok_cancel(enabled)
+    cp.only_ok(enabled, color)
 
 
 def _handle_set_brightness(msg):
@@ -1953,11 +1944,10 @@ def _handle_update_mode(_msg):
 
 ROUTES = [
     ("heyArduinook_back_enable", lambda _: (_set_ok_back_enabled(True))),
+    ("heyArduinook_cancel_enable", lambda _: (_set_ok_back_enabled(True, RED))),
     ("heyArduinook_back_disable", lambda _: (_set_ok_back_enabled(False))),
     ("heyArduinohint_disable", lambda _: setattr(st, "hint_enabled", False)),
     ("heyArduinohint_enable", lambda _: setattr(st, "hint_enabled", True)),
-    ("heyArduinook_cancel_enable", lambda _: (_set_ok_cancel_enabled(True))),
-    ("heyArduinook_cancel_disable", lambda _: (_set_ok_cancel_enabled(False))),
     (
         "heyArduinocheck_",
         lambda m: board.blink_square_keep(

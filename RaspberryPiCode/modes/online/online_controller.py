@@ -89,7 +89,7 @@ class OnlineController:
         Always raises ReturnToMenu — callers should not have code after this call.
         """
         self.display.send("Cancelling...")
-        self.link.send_to_board("ok_cancel_disable")
+        self.link.send_to_board("ok_back_disable")
         time.sleep(1.0)
         raise ReturnToMenu()
 
@@ -141,7 +141,11 @@ class OnlineController:
 
         if msg.startswith("typing_"):
             handle_typing_message(
-                self.link, self.display, msg[len("typing_"):], board, log_prefix="[ONLINE ACK]"
+                self.link,
+                self.display,
+                msg[len("typing_") :],
+                board,
+                log_prefix="[ONLINE ACK]",
             )
             return True
 
@@ -206,7 +210,7 @@ class OnlineController:
                     shutdown_raspberry_pi(link, display)
                     return
                 if m in OK_MSGS | NEW_GAME_MSGS:
-                    link.send_to_board("ok_cancel_disable")
+                    link.send_to_board("ok_back_disable")
                     raise ReturnToMenu()
 
         username = (acct.get("username") or acct.get("id") or "").strip().lower()
@@ -254,11 +258,11 @@ class OnlineController:
         if not game_id:
             display.send("No game found\nTry again")
             time.sleep(2)
-            link.send_to_board("ok_cancel_disable")
+            link.send_to_board("ok_back_disable")
             raise ReturnToMenu()
 
         display.send("Lichess connecting...\nLoading game")
-        link.send_to_board("ok_cancel_disable")
+        link.send_to_board("ok_back_disable")
         self._play_game(game_id, username)
 
     # ── Active game ──────────────────────────────────────────────────────────
@@ -320,7 +324,11 @@ class OnlineController:
                         promo_line = display.format_promo_line(pl)
                     display.show_arrow(
                         uci,
-                        suffix=f"{promo_line}\n{side_to_move} to move" if promo_line else f"{side_to_move} to move",
+                        suffix=(
+                            f"{promo_line}\n{side_to_move} to move"
+                            if promo_line
+                            else f"{side_to_move} to move"
+                        ),
                     )
                     awaiting_ok_ack = True
                     in_move_entry = False
@@ -462,7 +470,9 @@ class OnlineController:
                 continue
 
             if move not in board.legal_moves:
-                handle_illegal_move(link=link, display=display, board=board, uci=uci, label="ILLEGAL")
+                handle_illegal_move(
+                    link=link, display=display, board=board, uci=uci, label="ILLEGAL"
+                )
                 continue
 
             # Submit to Lichess
