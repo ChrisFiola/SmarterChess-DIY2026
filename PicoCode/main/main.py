@@ -283,7 +283,7 @@ class Profiles:
         ok,
         hint,
         allowed,
-        ok_color=GREEN,
+        ok_color=RED,
         hint_color=YELLOW,
     ):
         self.cp.border(border_on)
@@ -425,7 +425,7 @@ class ControlPanel:
             self._panel[idx] = col
         self.apply(force=force)
 
-    def _set_cp_buttons(self, top, bottom, ok, hint, ok_color=RED, hint_color=YELLOW):
+    def _set_cp_buttons(self, top, bottom, ok, hint, ok_color=GREEN, hint_color=YELLOW):
         self._panel[0] = WHITE if top else BLACK
         self._panel[1] = WHITE if top else BLACK
         self._panel[2] = WHITE if bottom else BLACK
