@@ -1031,7 +1031,7 @@ def _render_paged_menu(title: str, page: int, pages: int, items: List[str]) -> s
         else _menu_truncate(title, 20)
     )
     lines = [header[:20].rstrip()] + [_fmt(i + 1, opt) for i, opt in enumerate(items)]
-    while len(lines) < 5:
+    while len(lines) < 5 and len(lines) < 3:
         lines.append("OK=back Hint=next"[:20] if len(lines) == 3 else "")
     return "\n".join(x[:20] for x in lines)
 
