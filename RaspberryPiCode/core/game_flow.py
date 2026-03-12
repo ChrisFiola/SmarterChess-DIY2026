@@ -471,7 +471,9 @@ def offer_analysis_qr(link: BoardLink, display: Display, board: "chess.Board") -
         if msg == "shutdown":
             shutdown_raspberry_pi(link, display)
             return
-        break  # any button dismisses
+        if msg.strip().lower() in OK_MSGS:
+            return  # OK pressed — caller raises ReturnToMenu
+        # ignore everything else (menu_ready, hints, typing, etc.)
 
 
 def post_game_menu(
@@ -495,7 +497,7 @@ def post_game_menu(
         )
         if choice == "View PGN QR":
             offer_analysis_qr(link, display, board)
-            continue
+            raise ReturnToMenu()
         raise ReturnToMenu()
 
 
