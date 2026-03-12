@@ -17,7 +17,6 @@ import json
 import os
 import random
 import re
-import threading
 import time
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
@@ -40,6 +39,7 @@ from core.protocol import (
 )
 from core.game_flow import (
     shutdown_raspberry_pi,
+    run_in_bg,
     wait_for_ok,
     handle_illegal_move,
     handle_typing_message,
@@ -50,39 +50,6 @@ from core.game_flow import (
     send_check_signal,
     ReturnToMenu,
 )
-
-
-def _run_in_bg(fn, link: BoardLink, display):
-    """Run fn() in a background daemon thread, polling serial every 50 ms.
-
-    If the user presses OK/back during the wait, raises ReturnToMenu immediately
-    so the UI stays responsive during slow HTTP fetches.
-    """
-    result_box = [None]
-    exc_box = [None]
-    done = threading.Event()
-
-    def _worker():
-        try:
-            result_box[0] = fn()
-        except Exception as e:
-            exc_box[0] = e
-        finally:
-            done.set()
-
-    threading.Thread(target=_worker, daemon=True).start()
-
-    while not done.wait(timeout=0.05):
-        msg = link.try_read_from_board()
-        if msg == "shutdown":
-            shutdown_raspberry_pi(link, display)
-            return None
-        if msg and msg in OK_MSGS | NEW_GAME_MSGS:
-            raise ReturnToMenu()
-
-    if exc_box[0] is not None:
-        raise exc_box[0]
-    return result_box[0]
 
 
 def _pgn_opening_info(pgn_text: str) -> Tuple[str, str]:

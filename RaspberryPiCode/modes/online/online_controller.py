@@ -33,6 +33,7 @@ from core.protocol import (
 from core.game_flow import (
     GameConfig,
     ReturnToMenu,
+    run_in_bg,
     wait_for_ok,
     handle_typing_message,
     handle_capq_message,
@@ -92,40 +93,6 @@ class OnlineController:
         self.link.send_to_board("ok_back_disable")
         time.sleep(1.0)
         raise ReturnToMenu()
-
-    def _run_in_bg(self, fn):
-        """Run fn() in a background daemon thread while polling serial every 50 ms.
-
-        If the user presses OK (or new-game) while fn is running, 'Cancelling...'
-        is shown immediately and ReturnToMenu is raised — making cancel feel instant
-        even during blocking HTTP calls.  Returns fn()'s return value on normal
-        completion.
-        """
-        result_box = [None]
-        exc_box = [None]
-        done = threading.Event()
-
-        def _worker():
-            try:
-                result_box[0] = fn()
-            except Exception as e:
-                exc_box[0] = e
-            finally:
-                done.set()
-
-        threading.Thread(target=_worker, daemon=True).start()
-
-        while not done.wait(timeout=0.05):  # wake up every 50 ms to check serial
-            msg = self.link.try_read_from_board()
-            if msg == "shutdown":
-                shutdown_raspberry_pi(self.link, self.display)
-                return None
-            if msg and msg in OK_MSGS | NEW_GAME_MSGS:
-                self._cancel_to_menu()  # raises ReturnToMenu
-
-        if exc_box[0] is not None:
-            raise exc_box[0]
-        return result_box[0]
 
     # ── Common Pico message handling ─────────────────────────────────────────
 
@@ -195,10 +162,10 @@ class OnlineController:
         # so serial is polled every 50 ms — cancel shows instantly if OK is pressed.
         acct = None
         for _ in range(3):
-            acct = self._run_in_bg(self.client.get_account)
+            acct = run_in_bg(self.client.get_account, link, display, on_cancel=self._cancel_to_menu)
             if acct and not acct.get("_error"):
                 break
-            self._run_in_bg(lambda: time.sleep(1.0))
+            run_in_bg(lambda: time.sleep(1.0), link, display, on_cancel=self._cancel_to_menu)
 
         if not acct or acct.get("_error"):
             display.send("Lichess offline\nWiFi/DNS error\nOK = Menu")

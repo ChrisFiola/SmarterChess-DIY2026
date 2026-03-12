@@ -9,10 +9,11 @@ import hashlib
 import random
 import subprocess
 import sys
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
 import chess
 
@@ -68,12 +69,55 @@ def wait_for_ok(link: BoardLink, display: Display) -> bool:
         if m in NEW_GAME_MSGS:
             return False
 
-        if m in ("btn_ok", "ok"):
+        if m in OK_MSGS:
             return True
 
         # ignore chatter
         if m.startswith("typing_") or m.startswith("capq_") or m in HINT_MSGS:
             continue
+
+
+def run_in_bg(
+    fn: Callable,
+    link: BoardLink,
+    display: Display,
+    *,
+    on_cancel: Optional[Callable] = None,
+):
+    """Run *fn()* in a daemon thread while polling serial every 50 ms.
+
+    This keeps the UI responsive during slow blocking calls (HTTP, sleep).
+    If the user presses OK or back while *fn* is running, *on_cancel()* is
+    called if provided (it must raise ReturnToMenu), otherwise ReturnToMenu
+    is raised directly.  Returns *fn()*'s return value on normal completion.
+    """
+    result_box = [None]
+    exc_box: list = [None]
+    done = threading.Event()
+
+    def _worker():
+        try:
+            result_box[0] = fn()
+        except Exception as e:
+            exc_box[0] = e
+        finally:
+            done.set()
+
+    threading.Thread(target=_worker, daemon=True).start()
+
+    while not done.wait(timeout=0.05):
+        msg = link.try_read_from_board()
+        if msg == "shutdown":
+            shutdown_raspberry_pi(link, display)
+            return None
+        if msg and msg in OK_MSGS | NEW_GAME_MSGS:
+            if on_cancel is not None:
+                on_cancel()  # expected to raise ReturnToMenu
+            raise ReturnToMenu()
+
+    if exc_box[0] is not None:
+        raise exc_box[0]
+    return result_box[0]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -345,10 +389,6 @@ def _show_new_game_banner(display: Display):
     display.banner("NEW GAME", delay_s=1.0)
 
 
-def _show_engine_thinking(display: Display):
-    display.send("Engine Thinking...")
-
-
 # -------------------- Hints & game-over --------------------
 
 
@@ -364,7 +404,7 @@ def send_move_hint(
         display.send("Game Over\nNo hints\nPress n to start over")
         return
 
-    _show_engine_thinking(display)
+    display.send("Engine Thinking...")
     best = ctx.hint(state.board, cfg.move_time_ms)
     if not best:
         link.send_to_board("hint_none")
@@ -452,7 +492,7 @@ def _check_and_handle_draw(link: BoardLink, display: Display, brd: chess.Board) 
         if msg2 in NEW_GAME_MSGS:
             # caller typically raises ReturnToMenu
             return True
-        if msg2.startswith("typing_") or msg2 in ("hint", "btn_hint", "btn_ok", "ok"):
+        if msg2.startswith("typing_") or msg2 in HINT_MSGS | OK_MSGS:
             continue
 
 

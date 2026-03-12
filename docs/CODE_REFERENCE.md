@@ -333,6 +333,7 @@ move handling, menu helpers, promotion flow, draw detection, and game-over logic
 | Function | Signature | What it does | Called from |
 |---|---|---|---|
 | `wait_for_ok` | `(link, display) → bool` | Blocks until `btn_ok`; returns False on back/shutdown | `puzzle_controller`, `game_flow._check_and_handle_draw` |
+| `run_in_bg` | `(fn, link, display, *, on_cancel=None)` | Runs `fn()` in a daemon thread while polling serial every 50 ms; calls `on_cancel()` (or raises `ReturnToMenu`) if the user presses OK/back mid-call | `online_controller.run`, `puzzle_controller.run` |
 | `handle_typing_message` | `(link, display, payload, board)` | Updates typing-preview LCD + sends matching ACK | All three game modes |
 | `handle_capq_message` | `(link, board, msg) → bool` | Answers `capq_` queries using `format_capture_reply`; returns True if handled | All three game modes |
 | `send_turn_notification` | `(link, board)` | Sends `turn_white` or `turn_black` | All three game modes, `puzzle_controller` |
@@ -584,8 +585,7 @@ account auth, lobby polling, and the active game loop.
 | `__init__` | Stores link/display/cfg; creates `LichessClient` | `game_flow._run_online_game` |
 | `_resign_and_exit(game_id)` | Shows "Resigning…", calls `resign_game()`, raises `ReturnToMenu` | `_play_game` (×2) |
 | `_offer_draw(game_id)` | Shows "Offering draw…", calls `offer_draw()` | `_play_game` (×2) |
-| `_cancel_to_menu()` | Shows "Cancelling…", sends `ok_back_disable`, raises `ReturnToMenu` | `run` (on OK/back press during lobby) |
-| `_run_in_bg(fn)` | Runs `fn()` in a daemon thread; polls serial every 50 ms so OK/back cancel shows instantly even during blocking HTTP calls | `run` (account fetch + sleep retries + gameStart stream) |
+| `_cancel_to_menu()` | Shows "Cancelling…", sends `ok_back_disable`, raises `ReturnToMenu` | `run` (on OK/back press during lobby) — passed as `on_cancel` to `run_in_bg` |
 | `_handle_common(msg, board) → bool` | Handles shutdown / typing / capq / hint — same in every state | `run`, `_play_game` |
 | `run()` | AP mode check → account fetch (with retry) → gameStart polling → `_play_game` | `game_flow._run_online_game` |
 | `_play_game(game_id, username)` | Active game loop: stream opponent moves, send own moves to Lichess before pushing locally | `run` |

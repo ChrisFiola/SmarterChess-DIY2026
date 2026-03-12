@@ -16,7 +16,7 @@ from core.game_flow import (
     GameConfig,
     GameState,
     ReturnToMenu,
-    check_move_captures,
+    handle_capq_message,
     handle_typing_message,
     notify_game_over,
     prompt_next_turn,
@@ -29,7 +29,6 @@ from core.protocol import (
     EventType,
     parse_payload,
     parse_uci_move,
-    format_capture_reply,
     format_engine_move,
 )
 from modes.vs_computer.stockfish_opponent import StockfishOpponent
@@ -142,11 +141,7 @@ class GameController:
             return
 
         if typ == EventType.CAPTURE_QUERY:
-            try:
-                cap = check_move_captures(self.board, payload)
-            except Exception:
-                cap = False
-            self.deps.link.send_to_board(format_capture_reply(cap))
+            handle_capq_message(self.deps.link, self.board, f"capq_{payload}")
             return
 
         if typ == EventType.HINT:
