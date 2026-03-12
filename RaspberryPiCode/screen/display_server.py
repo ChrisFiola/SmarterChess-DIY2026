@@ -93,7 +93,7 @@ def _find_best_font_size(lines, min_size=14, max_size=28, vpad=4, spacing=6):
 # ------------------------------------------------------
 # Draw centered text with explicit size/spacing
 # ------------------------------------------------------
-def _draw_centered_text_with_size(lines, size: int, spacing: int = 6, vpad: int = 10):
+def _draw_centered_text_with_size(lines, size: int, spacing: int = 6, vpad: int = 12):
     # Clear framebuffer (no new allocations)
     DRAW.rectangle((0, 0, W, H), fill="BLACK")
 
@@ -135,7 +135,7 @@ def _draw_centered_text_with_size(lines, size: int, spacing: int = 6, vpad: int 
     disp.ShowImage(FRAME)
 
 
-def _draw_centered_text_auto(lines, min_size=14, max_size=28, vpad=4, spacing=6):
+def _draw_centered_text_auto(lines, min_size=14, max_size=28, vpad=12, spacing=6):
     """
     Autosize to fit, then render centered.
     """
