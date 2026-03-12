@@ -89,7 +89,7 @@ class OnlineController:
         Always raises ReturnToMenu — callers should not have code after this call.
         """
         self.display.send("Cancelling...")
-        self.link.send_to_board("ok_back_disable")
+        self.link.send_to_board("ok_cancel_disable")
         time.sleep(1.0)
         raise ReturnToMenu()
 
@@ -168,7 +168,7 @@ class OnlineController:
 
         link.send_to_board("SetupComplete")
         link.send_to_board("GameStart")
-        link.send_to_board("ok_back_enable")
+        link.send_to_board("ok_cancel_enable")
         display.send("Lichess connecting...\nOK = cancel")
 
         if is_ap_mode():
@@ -206,7 +206,7 @@ class OnlineController:
                     shutdown_raspberry_pi(link, display)
                     return
                 if m in OK_MSGS | NEW_GAME_MSGS:
-                    link.send_to_board("ok_back_disable")
+                    link.send_to_board("ok_cancel_disable")
                     raise ReturnToMenu()
 
         username = (acct.get("username") or acct.get("id") or "").strip().lower()
@@ -254,11 +254,11 @@ class OnlineController:
         if not game_id:
             display.send("No game found\nTry again")
             time.sleep(2)
-            link.send_to_board("ok_back_disable")
+            link.send_to_board("ok_cancel_disable")
             raise ReturnToMenu()
 
         display.send("Lichess connecting...\nLoading game")
-        link.send_to_board("ok_back_disable")
+        link.send_to_board("ok_cancel_disable")
         self._play_game(game_id, username)
 
     # ── Active game ──────────────────────────────────────────────────────────
