@@ -1085,7 +1085,7 @@ def _run_puzzle_game(link: BoardLink, display: Display) -> None:
     def menu(title: str, options: List[str]) -> Optional[str]:
         return _paged_menu(link, display, title, options)
 
-    top = menu("PUZZLES\n", ["Daily Puzzle", "Mix and match", "Themes"])
+    top = menu("PUZZLES", ["Daily Puzzle", "Mix and match", "Themes"])
     if top is None:
         raise ReturnToMenu()
 
@@ -1097,7 +1097,7 @@ def _run_puzzle_game(link: BoardLink, display: Display) -> None:
         PuzzleController(client, mode="mix").run(link, display)
         return
 
-    themes_top = menu("THEMES", ["\nPhases", "Openings"])
+    themes_top = menu("THEMES", ["Phases", "Openings"])
     if themes_top is None:
         raise ReturnToMenu()
 
