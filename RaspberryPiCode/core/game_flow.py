@@ -1067,7 +1067,7 @@ def _paged_menu(
             page = (page + 1) % pages
             continue
         if m in ("1", "2", "3", "4"):
-            idx = int(m) - 1
+            idx = int(m)
             if idx < len(chunk) and chunk[idx]:
                 return chunk[idx]
             # Out-of-range: Pico has exited its menu loop — put it back.
