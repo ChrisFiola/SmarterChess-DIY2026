@@ -466,9 +466,7 @@ class ReturnToMenu(Exception):
 
 def wait_for_mode_selection(link: BoardLink, display: Display, state: GameState) -> str:
     link.send_to_board("ChooseMode")
-    display.send(
-        "Choose mode:\n1) Against PC\n2) Lichess Online\n3) Local 2-player\n4) Puzzles"
-    )
+    display.send("1) Against PC\n2) Lichess Online\n3) Local 2-player\n4) Puzzles")
     while True:
         msg = link.read_from_board()
         if msg is None:
