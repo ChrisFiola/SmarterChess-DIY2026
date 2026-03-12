@@ -41,6 +41,10 @@ LICHESS_BASE = "https://lichess.org"
 def _iter_ndjson(resp) -> Iterator[Dict[str, Any]]:
     for line in resp.iter_lines(decode_unicode=True):
         if not line:
+            # Lichess sends empty keepalive lines every ~1 s. Yield an empty
+            # dict so callers can poll the serial port between real events
+            # without blocking for the full stream timeout.
+            yield {}
             continue
         try:
             yield json.loads(line)
