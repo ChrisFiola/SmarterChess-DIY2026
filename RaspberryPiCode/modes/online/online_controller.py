@@ -81,6 +81,15 @@ class OnlineController:
         except Exception:
             pass
 
+    def _cancel_to_menu(self) -> None:
+        """Show a brief 'Cancelling...' message, disable the back button, and return to menu.
+
+        Always raises ReturnToMenu — callers should not have code after this call.
+        """
+        self.display.send("Cancelling...")
+        self.link.send_to_board("ok_back_disable")
+        raise ReturnToMenu()
+
     # ── Common Pico message handling ─────────────────────────────────────────
 
     def _handle_common(self, msg: str, board: chess.Board) -> bool:
@@ -139,16 +148,14 @@ class OnlineController:
                     shutdown_raspberry_pi(link, display)
                     return
                 if m in OK_MSGS | NEW_GAME_MSGS:
-                    link.send_to_board("ok_back_disable")
-                    raise ReturnToMenu()
+                    self._cancel_to_menu()
 
         # Retry account fetch up to 3 times
         acct = None
         for _ in range(3):
             peek = link.try_read_from_board()
             if peek and peek in OK_MSGS | NEW_GAME_MSGS:
-                link.send_to_board("ok_back_disable")
-                raise ReturnToMenu()
+                self._cancel_to_menu()
             if peek == "shutdown":
                 shutdown_raspberry_pi(link, display)
                 return
@@ -182,8 +189,7 @@ class OnlineController:
                 shutdown_raspberry_pi(link, display)
                 return
             if peek and peek in OK_MSGS | NEW_GAME_MSGS:
-                link.send_to_board("ok_back_disable")
-                raise ReturnToMenu()
+                self._cancel_to_menu()
 
             now = int(time.time() * 1000)
             if now - last_banner_ms > 1500:
@@ -200,8 +206,7 @@ class OnlineController:
                         shutdown_raspberry_pi(link, display)
                         return
                     if peek2 and peek2 in OK_MSGS | NEW_GAME_MSGS:
-                        link.send_to_board("ok_back_disable")
-                        raise ReturnToMenu()
+                        self._cancel_to_menu()
                     if game_id:
                         break
             except Exception:

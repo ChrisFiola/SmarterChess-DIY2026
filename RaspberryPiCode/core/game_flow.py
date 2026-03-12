@@ -1078,6 +1078,7 @@ def _paged_menu(
 
 def _run_puzzle_game(link: BoardLink, display: Display) -> None:
     """Puzzle mode: show a submenu then launch the selected puzzle type."""
+    display.send("Loading...")
     from modes.online.lichess_client import LichessClient
     from modes.puzzles.puzzle_controller import PuzzleController
 
