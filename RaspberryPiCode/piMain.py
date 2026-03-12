@@ -49,7 +49,7 @@ def main():
                     display.send(f"Mode forced:\n{forced}")
                     time.sleep(0.5)
                 else:
-                    state.mode = wait_for_mode_selection(link, display, state)
+                    state.mode = wait_for_mode_selection(link, display, state, cfg)
                     print(f"[MODE SELECT] selected={state.mode!r}", flush=True)
 
                 run_selected_mode(link, display, ctx, state, cfg)

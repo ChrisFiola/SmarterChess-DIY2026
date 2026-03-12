@@ -87,6 +87,16 @@ MAGENTA = _C.MAGENTA
 YELLOW = _C.YELLOW
 ENGINE_COLOR = _C.ENGINE
 
+# ── Global LED brightness (1 = dim, 8 = full) ─────────────────────────────────
+_brightness = 5
+
+
+def _dim(color):
+    """Scale an RGB colour tuple by the global brightness level."""
+    r, g, b = color
+    f = _brightness / 8.0
+    return (int(r * f), int(g * f), int(b * f))
+
 
 class Game:
     IDLE = 0
@@ -271,7 +281,7 @@ class Profiles:
         self.cp.set_allowed(allowed)
 
     def main_menu(self):
-        self._apply(False, True, False, False, False, [1, 2, 3, 4])
+        self._apply(False, True, False, False, True, [1, 2, 3, 4, 10], hint_color=BLUE)
 
     def vs_strength_time(self):
         self._apply(
@@ -377,7 +387,11 @@ class ControlPanel:
     def apply(self, force=False):
         cur = self._snapshot()
         if force or self._panel_last is None or cur != self._panel_last:
+            for i, c in enumerate(cur):
+                self._panel[i] = _dim(c)
             self._panel.write()
+            for i, c in enumerate(cur):
+                self._panel[i] = c
             self._panel_last = cur
 
     def off(self, force=False):
@@ -555,7 +569,13 @@ class ChessBoard:
             self._marking_cache[idx] = color
 
     def write(self):
+        n = self.w * self.h
+        buf = [self.np[i] for i in range(n)]
+        for i, c in enumerate(buf):
+            self.np[i] = _dim(c)
         self.np.write()
+        for i, c in enumerate(buf):
+            self.np[i] = c
 
     def off(self):
         for i in range(self.w * self.h):
@@ -1503,6 +1523,9 @@ def _select_game_mode():
             st.game_mode, cmd = _MODE_MAP[b]
             link.send(cmd)
             return
+        if b == (Config.Buttons.HINT_INDEX + 1):
+            link.send("btn_hint")
+            return
 
 
 def _reset_to_idle():
@@ -1605,6 +1628,36 @@ def _run_game_setup_loop():
                 st.game_state = Game.RUNNING
                 st.in_setup = False
                 st.suspend_until_new_game = False
+                return
+
+            if msg.startswith("heyArduinoMenuPaged"):
+                _handle_menu_paged(msg)
+                return
+
+            if msg.startswith("heyArduinoSetBrightness_"):
+                global _brightness
+                try:
+                    _brightness = max(1, min(8, int(msg.split("_")[-1])))
+                    cp.apply(force=True)
+                    board.write()
+                except Exception:
+                    pass
+                continue
+
+            if msg.startswith("heyArduinoBrightnessControl"):
+                cp.profile.vs_strength_time()
+                board.prompt_strength()
+                v = _select_mapped_value(1, 8)
+                if v is None:
+                    return
+                link.send(str(v))
+                time.sleep_ms(Config.Timing.SETUP_TRANSITION_MS)
+                return
+
+            if msg.startswith("heyArduinoChooseMode"):
+                board.markings()
+                cp.show_coords_top(WHITE)
+                _select_game_mode()
                 return
     finally:
         cp.enable_hint_irq()
@@ -1841,6 +1894,16 @@ def _set_ok_back_enabled(enabled):
     cp.only_ok(enabled)
 
 
+def _handle_set_brightness(msg):
+    global _brightness
+    try:
+        _brightness = max(1, min(8, int(msg.split("_")[-1])))
+    except Exception:
+        pass
+    cp.apply(force=True)
+    board.write()
+
+
 ROUTES = [
     ("heyArduinook_back_enable", lambda _: (_set_ok_back_enabled(True))),
     ("heyArduinook_back_disable", lambda _: (_set_ok_back_enabled(False))),
@@ -1852,6 +1915,7 @@ ROUTES = [
             m.split("_", 1)[1].strip() if "_" in m else "", RED
         ),
     ),
+    ("heyArduinoSetBrightness_", _handle_set_brightness),
     ("heyArduinoGameOver", _handle_gameover),
     ("heyArduinoResetBoard", _handle_reset_board),
     ("heyArduinoChooseMode", _handle_choose_mode),

@@ -38,6 +38,7 @@ class GameConfig:
     skill_level: int = 5
     move_time_ms: int = 2000
     human_is_white: bool = True
+    brightness: int = 5
 
 
 @dataclass
@@ -464,9 +465,16 @@ class ReturnToMenu(Exception):
 # -------------------- Setup & mode selection --------------------
 
 
-def wait_for_mode_selection(link: BoardLink, display: Display, state: GameState) -> str:
+_MODE_MENU_DISPLAY = (
+    "1) Against PC\n2) Lichess Online\n3) Local 2-player\n4) Puzzles H=Set"
+)
+
+
+def wait_for_mode_selection(
+    link: BoardLink, display: Display, state: GameState, cfg: GameConfig
+) -> str:
     link.send_to_board("ChooseMode")
-    display.send("1) Against PC\n2) Lichess Online\n3) Local 2-player\n4) Puzzles")
+    display.send(_MODE_MENU_DISPLAY)
     while True:
         msg = link.read_from_board()
         if msg is None:
@@ -475,6 +483,13 @@ def wait_for_mode_selection(link: BoardLink, display: Display, state: GameState)
         # Helps diagnose when the Pico sends an unexpected token.
         print(f"[MODE SELECT] raw={msg!r}", flush=True)
         m = msg.strip().lower()
+
+        # HINT during mode selection → open Settings submenu.
+        if m in HINT_MSGS:
+            _run_settings_menu(link, display, cfg)
+            link.send_to_board("ChooseMode")
+            display.send(_MODE_MENU_DISPLAY)
+            continue
 
         # Robustness: the Pico can emit control / navigation tokens (e.g. OK+HINT
         # sends 'n' to request a return to the main menu). If we treat those as
@@ -504,6 +519,37 @@ def wait_for_mode_selection(link: BoardLink, display: Display, state: GameState)
             return "puzzle"
         link.send_to_board("error_unknown_mode")
         display.send("Unknown mode\n" + m + "\nSend again")
+
+
+# -------------------- Settings menu --------------------
+
+
+def _configure_brightness(link: BoardLink, display: Display, cfg: GameConfig) -> None:
+    """Show the 1-8 brightness picker and apply the chosen level."""
+    display.send(
+        f"LED Brightness\n1=dim  8=bright\nCurrent: {cfg.brightness}\nOK = cancel"
+    )
+    link.send_to_board("BrightnessControl")
+    while True:
+        msg = link.read_from_board()
+        if msg is None:
+            continue
+        if msg in OK_MSGS or msg.startswith("n"):
+            return
+        if msg.isdigit():
+            val = max(1, min(int(msg), 8))
+            cfg.brightness = val
+            link.send_to_board(f"SetBrightness_{val}")
+            display.send(f"Brightness: {val}\nApplied!")
+            time.sleep(0.5)
+            return
+
+
+def _run_settings_menu(link: BoardLink, display: Display, cfg: GameConfig) -> None:
+    """Paged settings submenu. Currently contains: Brightness."""
+    choice = _paged_menu(link, display, "Settings", ["Brightness"])
+    if choice == "Brightness":
+        _configure_brightness(link, display, cfg)
 
 
 def _configure_vs_computer(link: BoardLink, display: Display, cfg: GameConfig) -> None:
