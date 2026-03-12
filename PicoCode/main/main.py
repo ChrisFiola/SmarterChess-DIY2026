@@ -1,6 +1,8 @@
 from machine import Pin, UART, reset
 import time
 import neopixel
+import ubinascii
+import os as _uos
 
 
 class Config:
@@ -1668,6 +1670,10 @@ def _run_game_setup_loop():
                 time.sleep_ms(Config.Timing.SETUP_TRANSITION_MS)
                 return
 
+            if msg.startswith("heyArduinoUpdateMode"):
+                _handle_update_mode(msg)
+                return
+
             if msg.startswith("heyArduinoChooseMode"):
                 board.markings()
                 cp.show_coords_top(WHITE)
@@ -1915,6 +1921,43 @@ def _handle_set_brightness(msg):
         pass
 
 
+def _handle_update_mode(_msg):
+    """Receive a new main.py from the Pi in base64 chunks and flash it."""
+    _TEMP = "/main_new.py"
+    board.off()
+    cp.off(force=True)
+    cp.disable_hint_irq()
+    link.send("UpdateReady")
+    try:
+        with open(_TEMP, "wb") as _f:
+            while True:
+                time.sleep_ms(20)
+                msg = link.read()
+                if msg is None:
+                    continue
+                if msg.startswith("heyArduinoUpdateChunk_"):
+                    _f.write(ubinascii.a2b_base64(msg[len("heyArduinoUpdateChunk_"):]))
+                elif msg.startswith("heyArduinoUpdateDone"):
+                    break
+                elif msg.startswith("heyArduinoUpdateAbort"):
+                    try:
+                        _uos.remove(_TEMP)
+                    except Exception:
+                        pass
+                    return
+        _uos.remove("/main.py")
+        _uos.rename(_TEMP, "/main.py")
+        link.send("UpdateComplete")
+        time.sleep_ms(300)
+        reset()
+    except Exception:
+        try:
+            _uos.remove(_TEMP)
+        except Exception:
+            pass
+        link.send("UpdateError")
+
+
 ROUTES = [
     ("heyArduinook_back_enable", lambda _: (_set_ok_back_enabled(True))),
     ("heyArduinook_back_disable", lambda _: (_set_ok_back_enabled(False))),
@@ -1927,6 +1970,7 @@ ROUTES = [
         ),
     ),
     ("heyArduinoSetBrightness_", _handle_set_brightness),
+    ("heyArduinoUpdateMode", _handle_update_mode),
     ("heyArduinoGameOver", _handle_gameover),
     ("heyArduinoResetBoard", _handle_reset_board),
     ("heyArduinoChooseMode", _handle_choose_mode),

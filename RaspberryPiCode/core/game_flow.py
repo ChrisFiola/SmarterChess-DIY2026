@@ -551,11 +551,82 @@ def _configure_brightness(link: BoardLink, display: Display, cfg: GameConfig) ->
             return
 
 
+def _run_update(link: BoardLink, display: Display) -> None:
+    """git pull on the Pi, upload new main.py to the Pico, then restart the service."""
+    import subprocess
+    import base64
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parent.parent.parent
+    pico_main = repo / "PicoCode" / "main" / "main.py"
+
+    display.send("Checking for\nupdates...")
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo), "pull"],
+            capture_output=True, text=True, timeout=60,
+        )
+    except Exception as exc:
+        display.send(f"Git error:\n{exc}")
+        time.sleep(3)
+        return
+
+    if "Already up to date." in result.stdout:
+        display.send("Already up\nto date!")
+        time.sleep(2)
+        return
+
+    display.send("Uploading to\nPico...")
+    link.send_to_board("UpdateMode")
+
+    # Wait for Pico to signal it is ready to receive
+    deadline = time.time() + 15
+    while True:
+        msg = link.read_from_board()
+        if msg == "updateready":
+            break
+        if time.time() > deadline:
+            display.send("Pico timeout\nAbort.")
+            link.send_to_board("UpdateAbort")
+            time.sleep(2)
+            return
+
+    # Stream the file as 128-char base64 chunks (~96 decoded bytes each)
+    encoded = base64.b64encode(pico_main.read_bytes()).decode()
+    chunk_size = 128
+    for i in range(0, len(encoded), chunk_size):
+        link.send_to_board(f"UpdateChunk_{encoded[i:i + chunk_size]}")
+        time.sleep(0.02)
+
+    link.send_to_board("UpdateDone")
+    display.send("Waiting for\nPico...")
+
+    deadline = time.time() + 30
+    while True:
+        msg = link.read_from_board()
+        if msg == "updatecomplete":
+            break
+        if msg == "updateerror":
+            display.send("Pico update\nfailed!")
+            time.sleep(3)
+            return
+        if time.time() > deadline:
+            display.send("Pico timeout!")
+            time.sleep(2)
+            break
+
+    display.send("Update done!\nRestarting...")
+    time.sleep(1)
+    subprocess.Popen(["sudo", "systemctl", "restart", "smartChess.service"])
+
+
 def _run_settings_menu(link: BoardLink, display: Display, cfg: GameConfig) -> None:
-    """Paged settings submenu. Currently contains: Brightness."""
-    choice = _paged_menu(link, display, "Settings", ["Brightness"])
+    """Paged settings submenu."""
+    choice = _paged_menu(link, display, "Settings", ["Brightness", "Update"])
     if choice == "Brightness":
         _configure_brightness(link, display, cfg)
+    elif choice == "Update":
+        _run_update(link, display)
 
 
 def _configure_vs_computer(link: BoardLink, display: Display, cfg: GameConfig) -> None:
