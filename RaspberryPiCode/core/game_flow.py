@@ -436,8 +436,42 @@ def notify_game_over(link: BoardLink, display: Display, brd: chess.Board) -> str
     result = brd.result(claim_draw=True)
     winner = _result_to_winner_text(result)
     link.send_to_board(f"GameOver:{result}")
-    display.send(f"GAME OVER\n{winner}\nStart new game?")
+    display.send(f"GAME OVER\n{winner}\nHint=Analysis\nOK=new game")
     return result
+
+
+def offer_analysis_qr(link: BoardLink, display: Display, board: "chess.Board") -> None:
+    """Generate a PGN for the completed game and show it as a QR code.
+
+    The user scans the QR code and pastes the PGN into their preferred
+    analysis tool (e.g. lichess.org/paste). Any button dismisses.
+    """
+    import chess.pgn
+
+    display.send("Generating PGN...")
+    try:
+        game = chess.pgn.Game.from_board(board)
+        exporter = chess.pgn.StringExporter(
+            headers=False, variations=False, comments=False
+        )
+        pgn = game.accept(exporter).strip()
+    except Exception:
+        pgn = ""
+
+    if not pgn:
+        display.send("No moves yet\nNo PGN available\nOK = back")
+        wait_for_ok(link, display)
+        return
+
+    display.show_qr(pgn, "Paste PGN to", "analyse  OK=back")
+    while True:
+        msg = link.read_from_board()
+        if msg is None:
+            continue
+        if msg == "shutdown":
+            shutdown_raspberry_pi(link, display)
+            return
+        break  # any button dismisses
 
 
 def _get_draw_reason(brd: chess.Board) -> Optional[str]:
@@ -1020,7 +1054,11 @@ def _run_local_game(
                     continue
                 if msg2 in NEW_GAME_MSGS:
                     raise ReturnToMenu()
-                if msg2.startswith("typing_") or msg2 in HINT_MSGS:
+                if msg2 in HINT_MSGS:
+                    offer_analysis_qr(link, display, state.board)
+                    display.send("GAME OVER\nHint=Analysis\nOK=new game")
+                    continue
+                if msg2.startswith("typing_"):
                     continue
         else:
             prompt_next_turn(

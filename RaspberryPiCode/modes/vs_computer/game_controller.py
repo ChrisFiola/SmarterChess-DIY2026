@@ -19,6 +19,7 @@ from core.game_flow import (
     handle_capq_message,
     handle_typing_message,
     notify_game_over,
+    offer_analysis_qr,
     prompt_next_turn,
     send_move_hint,
     send_turn_notification,
@@ -145,6 +146,10 @@ class GameController:
             return
 
         if typ == EventType.HINT:
+            if self.board.is_game_over():
+                offer_analysis_qr(self.deps.link, self.deps.display, self.board)
+                self.deps.display.send("GAME OVER\nHint=Analysis\nOK=new game")
+                return
             state = GameState(board=self.board, mode="stockfish")
             cfg = GameConfig(
                 skill_level=5,
