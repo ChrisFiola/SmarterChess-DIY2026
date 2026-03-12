@@ -437,6 +437,10 @@ class ControlPanel:
         self._set_cp_buttons(False, False, ok=on, hint=False, ok_color=GREEN)
         self.apply()
 
+    def only_ok_cancel(self, on=True)
+        self._set_cp_buttons(False, False, ok=on, hint=False, ok_color=RED)
+        self.apply()
+
     def only_input(self):
         self.border(True)
         self._set_cp_buttons(
@@ -1895,6 +1899,9 @@ def _set_ok_back_enabled(enabled):
     st.ok_back_enabled = enabled
     cp.only_ok(enabled)
 
+def _set_ok_cancel_enabled(enabled):
+    st.ok_back_enabled = enabled
+    cp.only_cancel(enabled)
 
 def _handle_set_brightness(msg):
     try:
@@ -1945,6 +1952,8 @@ ROUTES = [
     ("heyArduinook_back_disable", lambda _: (_set_ok_back_enabled(False))),
     ("heyArduinohint_disable", lambda _: setattr(st, "hint_enabled", False)),
     ("heyArduinohint_enable", lambda _: setattr(st, "hint_enabled", True)),
+    ("heyArduinook_cancel_enable", lambda _: (_set_ok_cancel_enabled(True))),
+    ("heyArduinook_cancel_disable", lambda _: (_set_ok_cancel_enabled(False))),
     (
         "heyArduinocheck_",
         lambda m: board.blink_square_keep(
