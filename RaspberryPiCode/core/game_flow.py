@@ -503,6 +503,98 @@ class ReturnToMenu(Exception):
     pass
 
 
+# -------------------- Board setup guidance --------------------
+
+
+def compute_board_setup_steps(fen: str):
+    """Return placement steps for a physical board based on a FEN position.
+
+    Each step is a (side_char, square, piece_symbol) tuple:
+      side_char: 'w' or 'b'
+      square:    'e4'
+      piece_sym: like 'P', 'n', etc.
+
+    Steps are sorted white-first, with piece priority: K Q R B N P.
+    Used by both puzzle setup and ongoing-game resume to guide piece placement.
+    """
+    brd = chess.Board(fen)
+    steps = []
+    for sq in chess.SQUARES:
+        p = brd.piece_at(sq)
+        if not p:
+            continue
+        side = "w" if p.color == chess.WHITE else "b"
+        steps.append((side, chess.square_name(sq), p.symbol()))
+
+    order_pt = {
+        chess.KING: 0,
+        chess.QUEEN: 1,
+        chess.ROOK: 2,
+        chess.BISHOP: 3,
+        chess.KNIGHT: 4,
+        chess.PAWN: 5,
+    }
+
+    def _key(t):
+        s, square, sym = t
+        ptype = chess.Piece.from_symbol(sym).piece_type
+        return (0 if s == "w" else 1, order_pt.get(ptype, 9), square)
+
+    steps.sort(key=_key)
+    return steps
+
+
+def guide_board_setup(
+    link: BoardLink,
+    display: Display,
+    fen: str,
+    label: str = "Position",
+) -> bool:
+    """Guide the user through placing pieces for a given FEN position.
+
+    Sends puzzle_setup_begin/done and LED square hints to the Pico.
+    Returns True if setup completed, False if user backed out.
+    The caller is responsible for confirming the board is EMPTY before calling.
+    """
+    from core.protocol import piece_name  # local import to avoid circular
+
+    steps = compute_board_setup_steps(fen)
+    try:
+        link.clear_input()
+    except Exception:
+        pass
+
+    link.send_to_board("hint_disable")
+    link.send_to_board("puzzle_setup_begin")
+    try:
+        display.send(f"{label}\nSetup position\nOK = next")
+        time.sleep(0.3)
+        link.send_to_board("setup_clear")
+
+        if not wait_for_ok(link, display):
+            return False
+
+        for side, sq, sym in steps:
+            display.send(
+                f"PLACE {'WHITE' if side == 'w' else 'BLACK'}\n"
+                f"{piece_name(sym)} {sq}\nOK = next"
+            )
+            link.send_to_board(f"setup_place_{sq}_{side}")
+            if not wait_for_ok(link, display):
+                return False
+
+        display.send(f"{label}\nSetup done!")
+        time.sleep(0.5)
+        return True
+    finally:
+        link.send_to_board("hint_enable")
+        link.send_to_board("puzzle_setup_done")
+        try:
+            link.clear_input()
+        except Exception:
+            pass
+
+
 # -------------------- Setup & mode selection --------------------
 
 
@@ -862,6 +954,10 @@ def _run_local_game(
     Both sides are human; the engine context is kept available for hints only.
     """
     state.board = chess.Board()
+    try:
+        link.clear_input()
+    except Exception:
+        pass
     link.send_to_board("GameStart")
     _show_new_game_banner(display)
     time.sleep(0.3)
@@ -877,6 +973,10 @@ def _run_local_game(
         if msg == "shutdown":
             shutdown_raspberry_pi(link, display)
             return
+
+        # Silently ignore navigation/system messages that can linger from menus
+        if msg in IGNORED_MSGS or msg == "menu_ready":
+            continue
 
         if handle_capq_message(link, state.board, msg):
             continue

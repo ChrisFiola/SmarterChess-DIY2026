@@ -1,11 +1,23 @@
 # -*- coding: utf-8 -*-
 """
-Online (Lichess manual-start) controller.
+Online (Lichess) controller — full submenu structure.
+
+Menu tree:
+  Online Main
+  ├── New Game
+  │   ├── Challenge Friend  (select from following list, then time control)
+  │   ├── Quick Pairing     (10+0 / 10+5 / 15+10 / 30+0 / 30+20)
+  │   └── Correspondence    (open challenge, casual, 3-day clock)
+  └── Ongoing Games         (resume any active game; board setup if needed)
+
+During active play:
+  - OK + Hint  →  "Leave game?" paged menu (Resign / Exit to menu)
+  - Hold Hint  →  offer draw
+  - Serial checked every keepalive (~1 s) even during opponent's turn
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Optional
 import threading
 import time
@@ -22,7 +34,6 @@ from modes.online.lichess_game import (
 )
 from core.net_utils import is_ap_mode, wifi_config_url
 from core.protocol import (
-    send_lcd_ack_for_payload,
     parse_uci_move,
     format_engine_move,
     NEW_GAME_MSGS,
@@ -33,6 +44,7 @@ from core.protocol import (
 from core.game_flow import (
     GameConfig,
     ReturnToMenu,
+    _paged_menu,
     run_in_bg,
     wait_for_ok,
     handle_typing_message,
@@ -44,16 +56,42 @@ from core.game_flow import (
     send_check_signal,
     send_turn_notification,
     shutdown_raspberry_pi,
+    guide_board_setup,
 )
+
+# ── Time-control definitions ──────────────────────────────────────────────────
+
+# Quick pairing options (label, time_minutes, increment_seconds)
+_QUICK_PAIRING_OPTIONS = [
+    ("10+0 Rapid",      10, 0),
+    ("10+5 Rapid",      10, 5),
+    ("15+10 Rapid",     15, 10),
+    ("30+0 Classical",  30, 0),
+    ("30+20 Classical", 30, 20),
+]
+
+# Time controls offered when challenging a friend
+# (label, limit_seconds, increment_seconds)
+_CHALLENGE_TIME_OPTIONS = [
+    ("3+0 Blitz",       180,  0),
+    ("5+0 Blitz",       300,  0),
+    ("5+3 Blitz",       300,  3),
+    ("10+0 Rapid",      600,  0),
+    ("10+5 Rapid",      600,  5),
+    ("15+10 Rapid",     900, 10),
+    ("30+0 Classical", 1800,  0),
+]
+
+# Starting FEN piece-placement string — used to detect untouched boards
+_STARTING_FEN_PIECES = chess.STARTING_FEN.split(" ")[0]
 
 
 class OnlineController:
     """Manages one complete Lichess online game session.
 
-    Covers the full lifecycle: WiFi check, account auth, waiting for a game
-    to start on lichess.org, and playing it through to completion. All Pico
-    communication — move entry, typing preview, draw offers, resignation —
-    is handled here. Raises ReturnToMenu when the session ends.
+    Covers the full lifecycle: WiFi check, account auth, submenu navigation,
+    game creation / ongoing-game selection, optional board setup, and active
+    play (move entry, typing preview, draw offers, resignation).
     """
 
     def __init__(self, link: BoardLink, display: Display, cfg: GameConfig):
@@ -62,13 +100,10 @@ class OnlineController:
         self.cfg = cfg
         self.client = LichessClient()
 
-    # ── Per-game actions (resign / draw) ─────────────────────────────────────
+    # ── Per-game actions ─────────────────────────────────────────────────────
 
     def _resign_and_exit(self, game_id: str) -> None:
-        """Resign the active game and return to the main menu.
-
-        Always raises ReturnToMenu — callers should not have code after this call.
-        """
+        """Resign the active game on Lichess and return to the main menu."""
         self.display.send("Resigning...")
         try:
             self.client.resign_game(game_id)
@@ -85,22 +120,41 @@ class OnlineController:
             pass
 
     def _cancel_to_menu(self) -> None:
-        """Show a brief 'Cancelling...' message, disable the back button, and return to menu.
-
-        Always raises ReturnToMenu — callers should not have code after this call.
-        """
+        """Show 'Cancelling...', disable back button, raise ReturnToMenu."""
         self.display.send("Cancelling...")
         self.link.send_to_board("ok_back_disable")
         time.sleep(1.0)
         raise ReturnToMenu()
 
-    # ── Common Pico message handling ─────────────────────────────────────────
+    def _confirm_resign_or_exit(self, game_id: str) -> None:
+        """Show 'Leave game?' menu after OK+Hint is pressed during active play.
+
+        Uses the paged-menu mechanism (wake Pico via ChooseMode then MenuPaged)
+        so the user can choose between resigning and exiting without resigning.
+
+        Pressing OK (back) or selecting 'Exit to menu' leaves the Lichess game
+        open so it can be resumed later via 'Ongoing Games'.
+        Always raises ReturnToMenu.
+        """
+        choice = _paged_menu(
+            self.link,
+            self.display,
+            "Leave game?",
+            ["Resign", "Exit to menu"],
+            wake_command="ChooseMode",
+            resend_timeout=3.0,
+        )
+        if choice == "Resign":
+            self._resign_and_exit(game_id)  # raises ReturnToMenu
+        # "Exit to menu", back (None), or any other selection → exit w/o resign
+        raise ReturnToMenu()
+
+    # ── Common Pico message handling ──────────────────────────────────────────
 
     def _handle_common(self, msg: str, board: chess.Board) -> bool:
-        """Handle messages that are processed identically in every state.
+        """Handle messages processed identically in every state.
 
         Returns True if the message was consumed.
-        Raises ReturnToMenu or calls shutdown_raspberry_pi as appropriate.
         """
         if msg == "shutdown":
             shutdown_raspberry_pi(self.link, self.display)
@@ -110,7 +164,7 @@ class OnlineController:
             handle_typing_message(
                 self.link,
                 self.display,
-                msg[len("typing_") :],
+                msg[len("typing_"):],
                 board,
                 log_prefix="[ONLINE ACK]",
             )
@@ -125,22 +179,20 @@ class OnlineController:
 
         return False
 
-    # ── Connection / lobby ───────────────────────────────────────────────────
+    # ── Connection & account fetch ────────────────────────────────────────────
 
-    def run(self) -> None:
-        """Connect to Lichess and wait for a game to start.
+    def _connect_and_get_account(self) -> Optional[str]:
+        """Check WiFi, fetch Lichess account, return username or raise.
 
-        If the Pi is in AP (hotspot) mode, shows a WiFi setup QR code instead.
-        Once connected, polls the Lichess event stream until a gameStart event
-        arrives, then hands off to _play_game(). The OK/back button cancels
-        at any point and raises ReturnToMenu.
+        Returns the lowercase username string on success.
+        Raises ReturnToMenu on error or user cancel.
         """
         link, display = self.link, self.display
 
         link.send_to_board("SetupComplete")
         link.send_to_board("GameStart")
         link.send_to_board("ok_cancel_enable")
-        display.send("Lichess connecting...\nOK = cancel")
+        display.send("Lichess\nConnecting...\nOK = cancel")
 
         if is_ap_mode():
             url = wifi_config_url() or "http://192.168.4.1/"
@@ -154,18 +206,23 @@ class OnlineController:
                     continue
                 if m == "shutdown":
                     shutdown_raspberry_pi(link, display)
-                    return
+                    return None
                 if m in OK_MSGS | NEW_GAME_MSGS:
                     self._cancel_to_menu()
 
-        # Retry account fetch up to 3 times.  Each call runs in the background
-        # so serial is polled every 50 ms — cancel shows instantly if OK is pressed.
+        # Retry account fetch up to 3 times in background (serial stays live)
         acct = None
         for _ in range(3):
-            acct = run_in_bg(self.client.get_account, link, display, on_cancel=self._cancel_to_menu)
+            acct = run_in_bg(
+                self.client.get_account, link, display,
+                on_cancel=self._cancel_to_menu,
+            )
             if acct and not acct.get("_error"):
                 break
-            run_in_bg(lambda: time.sleep(1.0), link, display, on_cancel=self._cancel_to_menu)
+            run_in_bg(
+                lambda: time.sleep(1.0), link, display,
+                on_cancel=self._cancel_to_menu,
+            )
 
         if not acct or acct.get("_error"):
             display.send("Lichess offline\nWiFi/DNS error\nOK = Menu")
@@ -175,17 +232,22 @@ class OnlineController:
                     continue
                 if m == "shutdown":
                     shutdown_raspberry_pi(link, display)
-                    return
+                    return None
                 if m in OK_MSGS | NEW_GAME_MSGS:
                     link.send_to_board("ok_back_disable")
                     raise ReturnToMenu()
 
-        username = (acct.get("username") or acct.get("id") or "").strip().lower()
-        display.send("Lichess online\nStart a game\non lichess.org\nOK = cancel")
+        return (acct.get("username") or acct.get("id") or "").strip().lower()
 
-        # Poll for gameStart.  The Lichess event stream runs in a background
-        # daemon thread so the main thread can check serial every 50 ms —
-        # pressing OK cancels instantly regardless of stream latency.
+    # ── Waiting for gameStart ─────────────────────────────────────────────────
+
+    def _wait_for_game_start(self) -> Optional[str]:
+        """Poll the Lichess event stream until a gameStart event arrives.
+
+        Returns the game ID string, or None if cancelled / error.
+        Raises ReturnToMenu on user cancel.
+        """
+        link, display = self.link, self.display
         game_id_box = [None]
         stream_done = threading.Event()
 
@@ -211,41 +273,288 @@ class OnlineController:
             if msg == "shutdown":
                 stream_done.set()
                 shutdown_raspberry_pi(link, display)
-                return
+                return None
             if msg and msg in OK_MSGS | NEW_GAME_MSGS:
                 stream_done.set()
                 self._cancel_to_menu()
             now = int(time.time() * 1000)
             if now - last_banner_ms > 1500:
-                display.send("Lichess online\nWaiting for game...\nOK = cancel")
+                display.send("Waiting for\ngame to start...\nOK = cancel")
                 last_banner_ms = now
 
-        game_id = game_id_box[0]
+        return game_id_box[0]
 
-        if not game_id:
-            display.send("No game found\nTry again")
-            time.sleep(2)
-            link.send_to_board("ok_back_disable")
+    # ── New game flows ────────────────────────────────────────────────────────
+
+    def _run_quick_pairing(self) -> Optional[str]:
+        """Show time-control selector, create seek, return game ID or None."""
+        link, display = self.link, self.display
+
+        labels = [opt[0] for opt in _QUICK_PAIRING_OPTIONS]
+        choice = _paged_menu(link, display, "Quick Pairing", labels)
+        if choice is None:
+            return None
+
+        selected = next((o for o in _QUICK_PAIRING_OPTIONS if o[0] == choice), None)
+        if not selected:
+            return None
+        _, time_min, inc_sec = selected
+
+        display.send(f"Seeking {choice}\nOK = cancel")
+        link.send_to_board("ok_cancel_enable")
+
+        # Start seek in background; game appears via event stream
+        seek_done = threading.Event()
+
+        def _do_seek():
+            self.client.create_seek(time_min, inc_sec)
+            seek_done.set()
+
+        threading.Thread(target=_do_seek, daemon=True).start()
+
+        game_id = self._wait_for_game_start()
+        seek_done.set()  # signal seek thread to stop if still running
+        return game_id
+
+    def _run_challenge_friend(self) -> Optional[str]:
+        """Fetch friends list, let user pick one, select time control, challenge."""
+        link, display = self.link, self.display
+
+        display.send("Loading friends...")
+        friends = run_in_bg(
+            self.client.get_following, link, display,
+            on_cancel=self._cancel_to_menu,
+        ) or []
+
+        if not friends:
+            display.send("No friends found\nOK = back")
+            wait_for_ok(link, display)
+            return None
+
+        names = [
+            (f.get("username") or f.get("id") or "")[:18]
+            for f in friends
+            if f.get("username") or f.get("id")
+        ]
+        if not names:
+            display.send("No friends found\nOK = back")
+            wait_for_ok(link, display)
+            return None
+
+        chosen_name = _paged_menu(link, display, "Challenge Friend", names)
+        if not chosen_name:
+            return None
+
+        # Time control selection
+        tc_labels = [o[0] for o in _CHALLENGE_TIME_OPTIONS]
+        chosen_tc = _paged_menu(link, display, "Time Control", tc_labels)
+        if not chosen_tc:
+            return None
+
+        tc = next((o for o in _CHALLENGE_TIME_OPTIONS if o[0] == chosen_tc), None)
+        if not tc:
+            return None
+        _, limit_sec, inc_sec = tc
+
+        display.send(f"Challenging\n{chosen_name}...\nOK = cancel")
+        link.send_to_board("ok_cancel_enable")
+
+        resp = run_in_bg(
+            lambda: self.client.challenge_user(chosen_name, limit_sec, inc_sec),
+            link, display,
+            on_cancel=self._cancel_to_menu,
+        )
+        if not resp or resp.get("_error"):
+            err = (resp or {}).get("_error") or "Challenge failed"
+            display.send(f"Challenge error\n{err[:18]}\nOK = back")
+            wait_for_ok(link, display)
+            return None
+
+        return self._wait_for_game_start()
+
+    def _run_correspondence(self) -> Optional[str]:
+        """Create an open correspondence challenge and wait for an opponent."""
+        link, display = self.link, self.display
+
+        display.send("Creating\ncorrespondence...\nOK = cancel")
+        link.send_to_board("ok_cancel_enable")
+
+        resp = run_in_bg(
+            lambda: self.client.create_open_challenge(days=3),
+            link, display,
+            on_cancel=self._cancel_to_menu,
+        )
+        if not resp or resp.get("_error"):
+            err = (resp or {}).get("_error") or "Creation failed"
+            display.send(f"Challenge error\n{err[:18]}\nOK = back")
+            wait_for_ok(link, display)
+            return None
+
+        # Show challenge URL via QR if possible
+        url = ((resp.get("challenge") or {}).get("url") or "").strip()
+        if url:
+            if hasattr(display, "show_qr"):
+                display.show_qr(url, "Share link:", "OK = cancel")
+            else:
+                display.send(f"Challenge ready\n{url[:18]}\nOK = cancel")
+
+        return self._wait_for_game_start()
+
+    def _run_new_game(self) -> Optional[str]:
+        """New Game submenu → returns game ID or None."""
+        link, display = self.link, self.display
+        choice = _paged_menu(
+            link, display, "New Game",
+            ["Challenge Friend", "Quick Pairing", "Correspondence"],
+        )
+        if choice is None:
+            return None
+        if choice == "Challenge Friend":
+            return self._run_challenge_friend()
+        if choice == "Quick Pairing":
+            return self._run_quick_pairing()
+        if choice == "Correspondence":
+            return self._run_correspondence()
+        return None
+
+    # ── Ongoing games flow ────────────────────────────────────────────────────
+
+    def _run_ongoing_games(self) -> Optional[str]:
+        """Fetch ongoing games, let user select one, return game ID or None."""
+        link, display = self.link, self.display
+
+        display.send("Loading games...")
+        data = run_in_bg(
+            self.client.get_ongoing_games, link, display,
+            on_cancel=self._cancel_to_menu,
+        )
+        if not data or data.get("_error"):
+            display.send("No ongoing games\nOK = back")
+            wait_for_ok(link, display)
+            return None
+
+        game_list = data.get("nowPlaying") or []
+        if not game_list:
+            display.send("No active games\nOK = back")
+            wait_for_ok(link, display)
+            return None
+
+        # Build short labels: "W vs Opponent" or "B vs Opponent"
+        labels = []
+        for g in game_list[:10]:
+            color = g.get("color", "?")[0].upper()
+            opp = (g.get("opponent") or {}).get("username") or "Unknown"
+            labels.append(f"{color} vs {opp[:15]}")
+
+        choice = _paged_menu(link, display, "Ongoing Games", labels)
+        if choice is None:
+            return None
+
+        try:
+            idx = labels.index(choice)
+        except ValueError:
+            return None
+
+        return (game_list[idx].get("gameId") or game_list[idx].get("id") or "").strip() or None
+
+    def _setup_ongoing_board(self, game_id: str) -> Optional[chess.Board]:
+        """Open the game stream, replay moves, and guide board setup if needed.
+
+        Returns the pre-loaded Board (with all moves replayed) on success,
+        or None if the user backed out or an error occurred.
+        The returned board is used to skip replaying moves in _play_game.
+        """
+        link, display = self.link, self.display
+
+        display.send("Loading game...")
+        try:
+            stream = self.client.stream_game(game_id)
+            first = next(stream)
+        except Exception:
+            display.send("Stream error\nOK = back")
+            wait_for_ok(link, display)
+            return None
+
+        # Replay all past moves to get current position
+        moves = extract_moves(first)
+        board = chess.Board()
+        for uci in moves:
+            try:
+                board.push(chess.Move.from_uci(uci))
+            except Exception:
+                break
+
+        # If board is still at starting position, skip setup
+        current_pieces = board.fen().split(" ")[0]
+        if not moves or current_pieces == _STARTING_FEN_PIECES:
+            display.send("Board at start\nNo setup needed\nOK = continue")
+            if not wait_for_ok(link, display):
+                return None
+            return board
+
+        # Guide user through physical board setup
+        ok = guide_board_setup(link, display, board.fen(), label="Current position")
+        if not ok:
+            return None
+        return board
+
+    # ── Main entry point ──────────────────────────────────────────────────────
+
+    def run(self) -> None:
+        """Connect to Lichess, show menus, launch game."""
+        link, display = self.link, self.display
+
+        username = self._connect_and_get_account()
+        if not username:
             raise ReturnToMenu()
 
-        display.send("Lichess connecting...\nLoading game")
+        # Disable cancel button before showing main menu
         link.send_to_board("ok_back_disable")
-        self._play_game(game_id, username)
 
-    # ── Active game ──────────────────────────────────────────────────────────
+        while True:
+            display.send(f"Lichess\n{username}\nOK=back")
+            choice = _paged_menu(
+                link, display, "Online",
+                ["New Game", "Ongoing Games"],
+            )
+            if choice is None:
+                raise ReturnToMenu()
 
-    def _play_game(self, game_id: str, username: str) -> None:
+            pre_loaded_board: Optional[chess.Board] = None
+            game_id: Optional[str] = None
+
+            if choice == "New Game":
+                game_id = self._run_new_game()
+            elif choice == "Ongoing Games":
+                game_id = self._run_ongoing_games()
+                if game_id:
+                    pre_loaded_board = self._setup_ongoing_board(game_id)
+                    if pre_loaded_board is None:
+                        # User backed out of board setup
+                        continue
+
+            if not game_id:
+                continue
+
+            display.send("Lichess\nLoading game...")
+            link.send_to_board("ok_back_disable")
+            self._play_game(game_id, username, pre_loaded_board=pre_loaded_board)
+            # _play_game raises ReturnToMenu when the game ends
+
+    # ── Active game loop ──────────────────────────────────────────────────────
+
+    def _play_game(
+        self,
+        game_id: str,
+        username: str,
+        *,
+        pre_loaded_board: Optional[chess.Board] = None,
+    ) -> None:
         """Run the active game loop for a Lichess board-API game.
 
-        On the opponent's turn the Lichess stream is polled until a new move
-        arrives. On our turn the Pico is read for move input. Moves are
-        validated locally first, then submitted to Lichess — this way a
-        Lichess rejection doesn't corrupt the local board state.
-
-        State flags:
-          awaiting_ok_ack  — opponent just moved; waiting for player to press
-                             OK before showing the move-entry prompt again
-          in_move_entry    — player is actively typing a move (suppress auto-prompt)
+        pre_loaded_board: when resuming an ongoing game, the board state is
+        already advanced to the current position. We still open a fresh stream
+        so we receive new moves, but skip LED animations for past moves.
         """
         link, display = self.link, self.display
         stream = self.client.stream_game(game_id)
@@ -259,7 +568,6 @@ class OnlineController:
                 return
             send_turn_notification(link, board)
 
-        # Tracks UI state so we don't re-prompt while the player is mid-entry.
         awaiting_ok_ack = False
         in_move_entry = False
 
@@ -274,16 +582,13 @@ class OnlineController:
                 is_cap = board.is_capture(mv)
                 board.push(mv)
                 last_move_count += 1
-                # Signal check before the opponent-move overlay so the Pico's
-                # blink_square_keep completes before engine_ack_pending is set.
                 if announce_new:
                     send_check_signal(link, board)
                     if board.is_check():
                         time.sleep(1.6)
-                link.send_to_board(format_engine_move(uci, is_cap))
-                time.sleep(0.3)
-                send_turn_if_human()
-                if announce_new:
+                    link.send_to_board(format_engine_move(uci, is_cap))
+                    time.sleep(0.3)
+                    send_turn_if_human()
                     side_to_move = "WHITE" if board.turn == chess.WHITE else "BLACK"
                     promo_line = ""
                     if mv.promotion:
@@ -300,6 +605,7 @@ class OnlineController:
                     awaiting_ok_ack = True
                     in_move_entry = False
 
+        # Read the initial game state from the stream
         try:
             first = next(stream)
         except Exception:
@@ -317,24 +623,37 @@ class OnlineController:
             you_are_white = True
         your_color = chess.WHITE if you_are_white else chess.BLACK
 
-        display.send(f"Connected\nYou are {'WHITE' if you_are_white else 'BLACK'}")
-        apply_new_moves(extract_moves(first), announce_new=False)
+        # For ongoing game resumes: board state already set up physically.
+        # Replay past moves silently (no LED) to sync the Python board object.
+        if pre_loaded_board is not None:
+            display.send(f"You are {'WHITE' if you_are_white else 'BLACK'}")
+            # Use pre_loaded_board as the starting board state and skip old moves
+            board_moves = extract_moves(first)
+            for uci in board_moves:
+                try:
+                    board.push(chess.Move.from_uci(uci))
+                    last_move_count += 1
+                except Exception:
+                    break
+        else:
+            display.send(f"Connected\nYou are {'WHITE' if you_are_white else 'BLACK'}")
+            apply_new_moves(extract_moves(first), announce_new=False)
+
         send_turn_if_human()
 
         prompted_for_this_turn = False
         last_wait_banner_ms = 0
 
         while True:
-            # Non-blocking peek
+            # ── Non-blocking peek for resign/draw/common events ───────────────
             peek = link.try_read_from_board()
             if peek:
                 if self._handle_common(peek, board):
                     if peek.startswith("typing_"):
                         awaiting_ok_ack = False
                         in_move_entry = True
-                    # capq/hint handled; continue
                 elif peek in NEW_GAME_MSGS:
-                    self._resign_and_exit(game_id)
+                    self._confirm_resign_or_exit(game_id)  # raises ReturnToMenu
                 elif peek in ("draw", "btn_draw"):
                     self._offer_draw(game_id)
 
@@ -342,15 +661,29 @@ class OnlineController:
                 notify_game_over(link, display, board)
                 raise ReturnToMenu()
 
-            # Opponent's turn — poll stream
+            # ── Opponent's turn — poll stream ─────────────────────────────────
             if board.turn != your_color:
                 now = int(time.time() * 1000)
                 if now - last_wait_banner_ms > 1500:
-                    display.send("Waiting\nfor opponent...")
+                    display.send("Waiting for\nopponent...")
                     last_wait_banner_ms = now
                 try:
                     while True:
                         payload = next(stream)
+
+                        # Check serial on every keepalive so resign/draw work
+                        # even during the opponent's turn (~1 s resolution)
+                        msg = link.try_read_from_board()
+                        if msg:
+                            if msg == "shutdown":
+                                shutdown_raspberry_pi(link, display)
+                                raise ReturnToMenu()
+                            if msg in NEW_GAME_MSGS:
+                                self._confirm_resign_or_exit(game_id)
+                            if msg in ("draw", "btn_draw"):
+                                self._offer_draw(game_id)
+                            self._handle_common(msg, board)
+
                         move_list = extract_moves(payload)
                         if len(move_list) > last_move_count:
                             apply_new_moves(move_list, announce_new=True)
@@ -364,7 +697,7 @@ class OnlineController:
                             elif winner == "black":
                                 result = "0-1"
                             link.send_to_board(f"GameOver:{result}")
-                            display.send(f"GAME OVER\nResult {result}\nOK = Menu")
+                            display.send(f"GAME OVER\n{result}\nOK = Menu")
                             raise ReturnToMenu()
                 except StopIteration:
                     display.send("Lichess ended\nOK = menu")
@@ -379,7 +712,7 @@ class OnlineController:
                 prompted_for_this_turn = False
                 continue
 
-            # Your turn
+            # ── Your turn ─────────────────────────────────────────────────────
             send_turn_if_human()
             if not prompted_for_this_turn and not awaiting_ok_ack and not in_move_entry:
                 side = "WHITE" if your_color == chess.WHITE else "BLACK"
@@ -397,7 +730,7 @@ class OnlineController:
                 continue
 
             if msg in NEW_GAME_MSGS:
-                self._resign_and_exit(game_id)
+                self._confirm_resign_or_exit(game_id)  # raises ReturnToMenu
 
             if msg in ("draw", "btn_draw"):
                 self._offer_draw(game_id)
@@ -420,10 +753,6 @@ class OnlineController:
                 display.show_invalid(msg)
                 continue
 
-            # Validate locally without pushing yet. We deliberately don't call
-            # validate_and_push_move here because that pushes immediately — for
-            # online games we need to submit to Lichess first and only update
-            # the board if the server accepts the move.
             try:
                 uci = resolve_uci_promotion(link, display, board, uci) or uci
             except ReturnToMenu:
@@ -442,7 +771,7 @@ class OnlineController:
                 )
                 continue
 
-            # Submit to Lichess
+            # Submit to Lichess before pushing locally
             resp = self.client.make_move(game_id, uci)
             if not resp.get("ok"):
                 display.send("Move rejected\nOK = retry")

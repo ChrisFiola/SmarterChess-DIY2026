@@ -132,6 +132,124 @@ class LichessClient:
         except RequestException as e:
             return {"ok": False, "error": str(e)}
 
+    # -------------------- Online game creation --------------------
+
+    def get_ongoing_games(self) -> Dict[str, Any]:
+        """Fetch the list of currently active games for this account."""
+        try:
+            r = requests.get(
+                f"{LICHESS_BASE}/api/account/playing",
+                headers=self.headers,
+                timeout=10,
+            )
+            r.raise_for_status()
+            return r.json()
+        except RequestException as e:
+            return {"_error": str(e)}
+
+    def get_following(self, max_count: int = 30) -> list:
+        """Fetch followed users (friends list) as a list of account dicts."""
+        try:
+            r = requests.get(
+                f"{LICHESS_BASE}/api/rel/following",
+                headers=self.headers,
+                stream=True,
+                timeout=10,
+            )
+            r.raise_for_status()
+            users = []
+            for obj in _iter_ndjson(r):
+                if obj and isinstance(obj, dict) and obj.get("id"):
+                    users.append(obj)
+                    if len(users) >= max_count:
+                        break
+            return users
+        except RequestException:
+            return []
+
+    def challenge_user(
+        self,
+        username: str,
+        limit_seconds: int,
+        increment_seconds: int,
+        rated: bool = False,
+        color: str = "random",
+    ) -> Dict[str, Any]:
+        """Challenge a specific Lichess user to a game."""
+        try:
+            r = requests.post(
+                f"{LICHESS_BASE}/api/challenge/{username}",
+                headers=self.headers,
+                data={
+                    "rated": "true" if rated else "false",
+                    "clock.limit": str(limit_seconds),
+                    "clock.increment": str(increment_seconds),
+                    "color": color,
+                },
+                timeout=15,
+            )
+            if r.status_code in (200, 201):
+                return r.json()
+            return {"_error": f"HTTP {r.status_code}: {r.text[:120]}"}
+        except RequestException as e:
+            return {"_error": str(e)}
+
+    def create_seek(
+        self,
+        time_minutes: int,
+        increment_seconds: int,
+        rated: bool = False,
+        color: str = "random",
+    ) -> None:
+        """Create an open real-time seek (quick pairing).
+
+        Blocks until matched or the connection is closed. Intended to run in a
+        background thread — the actual game ID arrives via the event stream.
+        """
+        try:
+            r = requests.post(
+                f"{LICHESS_BASE}/api/board/seek",
+                headers=self.headers,
+                data={
+                    "rated": "true" if rated else "false",
+                    "time": str(time_minutes),
+                    "increment": str(increment_seconds),
+                    "color": color,
+                },
+                stream=True,
+                timeout=300,  # wait up to 5 min for pairing
+            )
+            r.raise_for_status()
+            # Drain until matched (stream closes when game starts)
+            for _ in r.iter_content(chunk_size=32):
+                pass
+        except Exception:
+            pass
+
+    def create_open_challenge(
+        self,
+        days: int = 3,
+        rated: bool = False,
+    ) -> Dict[str, Any]:
+        """Create an open correspondence challenge (anyone can accept).
+
+        Returns the challenge dict including 'challenge.url' for sharing.
+        """
+        try:
+            r = requests.post(
+                f"{LICHESS_BASE}/api/challenge/open",
+                headers=self.headers,
+                data={
+                    "rated": "true" if rated else "false",
+                    "days": str(days),
+                },
+                timeout=15,
+            )
+            r.raise_for_status()
+            return r.json()
+        except RequestException as e:
+            return {"_error": str(e)}
+
     # -------------------- Puzzles --------------------
 
     def get_daily_puzzle(self) -> Dict[str, Any]:

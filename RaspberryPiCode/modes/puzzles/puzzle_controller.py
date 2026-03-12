@@ -832,11 +832,11 @@ class PuzzleController:
         # 1) Fetch puzzle — runs in background so serial stays live during HTTP wait.
         display.send("Puzzle\nLoading…")
         if self.mode == "mix":
-            result = _run_in_bg(self._fetch_mix, link, display)
+            result = run_in_bg(self._fetch_mix, link, display)
         elif self.mode == "theme":
-            result = _run_in_bg(lambda: self._fetch_theme(self.theme or ""), link, display)
+            result = run_in_bg(lambda: self._fetch_theme(self.theme or ""), link, display)
         else:
-            result = _run_in_bg(self._fetch_daily, link, display)
+            result = run_in_bg(self._fetch_daily, link, display)
         st, err = result if result is not None else (None, "cancelled")
 
         if err or st is None:
