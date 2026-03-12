@@ -466,7 +466,7 @@ class ReturnToMenu(Exception):
 
 
 _MODE_MENU_DISPLAY = (
-    "1) Against PC\n2) Lichess Online\n3) Local 2-player\n4) Puzzles\tHint=Settings"
+    "1) Against PC\n2) Lichess Online\n3) Local 2-player\n4) Puzzles\\tHint=Settings"
 )
 
 
