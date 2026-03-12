@@ -22,6 +22,7 @@ from core.protocol import (
     IGNORED_MSGS,
     NEW_GAME_MSGS,
     OK_MSGS,
+    format_capture_reply,
     format_hint_move,
     parse_uci_move,
     piece_name,
@@ -104,13 +105,27 @@ def handle_capq_message(link: BoardLink, board: "chess.Board", msg: str) -> bool
         cap = check_move_captures(board, uci)
     except Exception:
         cap = False
-    link.send_to_board(f"capr_{1 if cap else 0}")
+    link.send_to_board(format_capture_reply(cap))
     return True
 
 
 def send_turn_notification(link: BoardLink, board: "chess.Board") -> None:
     """Send the current turn colour to the Pico (turn_white or turn_black)."""
     link.send_to_board(f"turn_{'white' if board.turn == chess.WHITE else 'black'}")
+
+
+def send_check_signal(link: BoardLink, board: "chess.Board") -> None:
+    """If the side to move is in check, tell the Pico which king square to blink.
+
+    Safe to call after any push — does nothing when the position is not in check.
+    """
+    try:
+        if board.is_check():
+            ksq = board.king(board.turn)
+            if ksq is not None:
+                link.send_to_board(f"check_{chess.square_name(ksq)}")
+    except Exception:
+        pass
 
 
 def resolve_uci_promotion(
@@ -187,13 +202,7 @@ def validate_and_push_move(
     board.push(move)
 
     # 5) Check signal
-    try:
-        if board.is_check():
-            ksq = board.king(board.turn)
-            if ksq is not None:
-                link.send_to_board(f"check_{chess.square_name(ksq)}")
-    except Exception:
-        pass
+    send_check_signal(link, board)
 
     return move
 
@@ -567,7 +576,14 @@ def prompt_next_turn(
     mode: str,
     cfg: GameConfig,
     last_uci: str,
-):
+) -> None:
+    """Update the display and Pico after a move has been pushed.
+
+    For human-to-move situations: sends turn_{color} to the Pico and shows
+    the last-move arrow with the side label. For engine-to-move (stockfish
+    mode only): shows the last-move arrow with "ENGINE thinking" so the
+    player knows to wait.
+    """
     print(brd)
 
     human_to_move = mode == "local" or (

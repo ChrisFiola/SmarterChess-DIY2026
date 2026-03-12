@@ -38,19 +38,48 @@ from core.game_flow import (
     notify_game_over,
     handle_illegal_move,
     resolve_uci_promotion,
+    send_check_signal,
     send_turn_notification,
     shutdown_raspberry_pi,
 )
 
 
 class OnlineController:
-    """Manages one complete Lichess game session."""
+    """Manages one complete Lichess online game session.
+
+    Covers the full lifecycle: WiFi check, account auth, waiting for a game
+    to start on lichess.org, and playing it through to completion. All Pico
+    communication — move entry, typing preview, draw offers, resignation —
+    is handled here. Raises ReturnToMenu when the session ends.
+    """
 
     def __init__(self, link: BoardLink, display: Display, cfg: GameConfig):
         self.link = link
         self.display = display
         self.cfg = cfg
         self.client = LichessClient()
+
+    # ── Per-game actions (resign / draw) ─────────────────────────────────────
+
+    def _resign_and_exit(self, game_id: str) -> None:
+        """Resign the active game and return to the main menu.
+
+        Always raises ReturnToMenu — callers should not have code after this call.
+        """
+        self.display.send("Resigning...")
+        try:
+            self.client.resign_game(game_id)
+        except Exception:
+            pass
+        raise ReturnToMenu()
+
+    def _offer_draw(self, game_id: str) -> None:
+        """Send a draw offer to the opponent on Lichess."""
+        self.display.send("Offering draw...")
+        try:
+            self.client.offer_draw(game_id)
+        except Exception:
+            pass
 
     # ── Common Pico message handling ─────────────────────────────────────────
 
@@ -82,6 +111,13 @@ class OnlineController:
     # ── Connection / lobby ───────────────────────────────────────────────────
 
     def run(self) -> None:
+        """Connect to Lichess and wait for a game to start.
+
+        If the Pi is in AP (hotspot) mode, shows a WiFi setup QR code instead.
+        Once connected, polls the Lichess event stream until a gameStart event
+        arrives, then hands off to _play_game(). The OK/back button cancels
+        at any point and raises ReturnToMenu.
+        """
         link, display = self.link, self.display
 
         link.send_to_board("SetupComplete")
@@ -185,6 +221,18 @@ class OnlineController:
     # ── Active game ──────────────────────────────────────────────────────────
 
     def _play_game(self, game_id: str, username: str) -> None:
+        """Run the active game loop for a Lichess board-API game.
+
+        On the opponent's turn the Lichess stream is polled until a new move
+        arrives. On our turn the Pico is read for move input. Moves are
+        validated locally first, then submitted to Lichess — this way a
+        Lichess rejection doesn't corrupt the local board state.
+
+        State flags:
+          awaiting_ok_ack  — opponent just moved; waiting for player to press
+                             OK before showing the move-entry prompt again
+          in_move_entry    — player is actively typing a move (suppress auto-prompt)
+        """
         link, display = self.link, self.display
         stream = self.client.stream_game(game_id)
 
@@ -197,6 +245,7 @@ class OnlineController:
                 return
             send_turn_notification(link, board)
 
+        # Tracks UI state so we don't re-prompt while the player is mid-entry.
         awaiting_ok_ack = False
         in_move_entry = False
 
@@ -213,10 +262,9 @@ class OnlineController:
                 last_move_count += 1
                 # Signal check before the opponent-move overlay so the Pico's
                 # blink_square_keep completes before engine_ack_pending is set.
-                if announce_new and board.is_check():
-                    ksq = board.king(board.turn)
-                    if ksq is not None:
-                        link.send_to_board(f"check_{chess.square_name(ksq)}")
+                if announce_new:
+                    send_check_signal(link, board)
+                    if board.is_check():
                         time.sleep(1.6)
                 link.send_to_board(format_engine_move(uci, is_cap))
                 time.sleep(0.3)
@@ -268,18 +316,9 @@ class OnlineController:
                         in_move_entry = True
                     # capq/hint handled; continue
                 elif peek in NEW_GAME_MSGS:
-                    display.send("Resigning...")
-                    try:
-                        self.client.resign_game(game_id)
-                    except Exception:
-                        pass
-                    raise ReturnToMenu()
+                    self._resign_and_exit(game_id)
                 elif peek in ("draw", "btn_draw"):
-                    display.send("Offering draw...")
-                    try:
-                        self.client.offer_draw(game_id)
-                    except Exception:
-                        pass
+                    self._offer_draw(game_id)
 
             if board.is_game_over():
                 notify_game_over(link, display, board)
@@ -340,19 +379,10 @@ class OnlineController:
                 continue
 
             if msg in NEW_GAME_MSGS:
-                display.send("Resigning...")
-                try:
-                    self.client.resign_game(game_id)
-                except Exception:
-                    pass
-                raise ReturnToMenu()
+                self._resign_and_exit(game_id)
 
             if msg in ("draw", "btn_draw"):
-                display.send("Offering draw...")
-                try:
-                    self.client.offer_draw(game_id)
-                except Exception:
-                    pass
+                self._offer_draw(game_id)
                 continue
 
             if msg in OK_MSGS:
@@ -372,7 +402,10 @@ class OnlineController:
                 display.show_invalid(msg)
                 continue
 
-            # Validate locally (promotion + legality) without pushing yet
+            # Validate locally without pushing yet. We deliberately don't call
+            # validate_and_push_move here because that pushes immediately — for
+            # online games we need to submit to Lichess first and only update
+            # the board if the server accepts the move.
             try:
                 uci = resolve_uci_promotion(link, display, board, uci) or uci
             except ReturnToMenu:
@@ -398,10 +431,7 @@ class OnlineController:
 
             board.push(move)
             last_move_count += 1
-            if board.is_check():
-                ksq = board.king(board.turn)
-                if ksq is not None:
-                    link.send_to_board(f"check_{chess.square_name(ksq)}")
+            send_check_signal(link, board)
             send_turn_if_human()
             prompted_for_this_turn = False
             in_move_entry = False

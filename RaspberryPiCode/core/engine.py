@@ -19,6 +19,11 @@ if TYPE_CHECKING:
 
 class EngineContext:
     def __init__(self):
+        """Create an unstarted engine context.
+
+        The Stockfish process is not launched until ensure() is first called,
+        so construction is always cheap and safe to do at program start.
+        """
         self.engine: Optional["chess.engine.SimpleEngine"] = None
         self._chess_engine = None  # chess.engine module, lazily loaded
 

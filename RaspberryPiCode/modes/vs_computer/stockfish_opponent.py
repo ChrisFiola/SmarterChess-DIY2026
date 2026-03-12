@@ -50,11 +50,19 @@ class StockfishOpponent(Opponent):
         skill_level: int = 1,
         use_elo: bool = False,
     ):
+        """
+        ctx           — shared EngineContext (the single Stockfish process)
+        move_time_ms  — think time per move in milliseconds
+        skill_level   — 1-8 UI scale (mapped to Stockfish internals on first move)
+        use_elo       — if True, configure UCI_Elo instead of Skill Level
+        """
         self.ctx = ctx
         self.move_time_ms = move_time_ms
         self.skill_level = _clamp(int(skill_level), 1, 8)
         self.use_elo = use_elo
 
+        # Avoid reconfiguring the engine every move — only push settings when
+        # skill_level actually changes between games.
         self._configured = False
         self._last_skill = None
 

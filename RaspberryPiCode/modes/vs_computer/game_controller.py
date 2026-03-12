@@ -45,6 +45,14 @@ class GameDeps:
 
 class GameController:
     def __init__(self, deps: GameDeps, *, human_is_white: bool = True, cfg: GameConfig):
+        """
+        deps                — injected link, display, and Stockfish opponent
+        cfg                 — skill/time/color settings (human_is_white read from cfg)
+        _pending_check_sq   — when Stockfish gives check, we defer lighting up the
+                              king square until the player presses OK. This lets the
+                              Pico finish its piece-trail animation before the check
+                              blink starts.
+        """
         self.deps = deps
         self.cfg = cfg
         self.board = chess.Board()
@@ -69,6 +77,13 @@ class GameController:
             self._handle_event(evt.type, evt.payload, nonblocking=True)
 
     def run_stockfish_game(self, *, move_time_ms: int) -> None:
+        """Main game loop for vs-computer mode.
+
+        Alternates between reading the Pico for human moves and asking
+        Stockfish for engine replies. Typing previews and capture queries
+        are drained non-blocking each tick so the display stays responsive
+        while the engine is thinking.
+        """
         self.deps.opponent.set_time_ms(move_time_ms)
         self.board = chess.Board()
         self.deps.link.send_to_board("GameStart")

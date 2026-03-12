@@ -413,6 +413,37 @@ def _find_best_start_board_from_pgn(
     return best_board, best_ply, best_len
 
 
+# -------------------- Shared state builder --------------------
+
+
+def _build_puzzle_state(
+    puzzle_id: str,
+    pgn: str,
+    initial_ply: int,
+    solution: list,
+    themes: list,
+    rating,
+) -> "PuzzleState":
+    """Build a PuzzleState from already-validated puzzle API fields.
+
+    Searches a window of plies around initial_ply to find the board
+    position where the full solution is legal — compensates for
+    off-by-one edge cases in Lichess's initialPly field.
+    """
+    sol = [str(m) for m in solution]
+    start_board, _used_ply, _matched = _find_best_start_board_from_pgn(
+        pgn=pgn, initial_ply=initial_ply, sol=sol, back=6, forward=10
+    )
+    return PuzzleState(
+        puzzle_id=puzzle_id,
+        fen_start=start_board.fen(),
+        solution=sol,
+        themes=[str(x) for x in (themes or [])],
+        rating=int(rating) if rating is not None else None,
+        idx=0,
+    )
+
+
 # -------------------- Controller --------------------
 
 
@@ -480,6 +511,10 @@ class PuzzleController:
             pass
 
     def _fetch_daily(self) -> Tuple[Optional[PuzzleState], Optional[str]]:
+        """Fetch today's Lichess daily puzzle. Retries once on transient failure.
+
+        Returns (PuzzleState, None) on success or (None, error_string) on failure.
+        """
         # Daily puzzle occasionally fails transiently (Wi‑Fi bring-up, DNS hiccup,
         # Lichess 5xx). Retry once to avoid bouncing back to the main menu.
         payload = self.client.get_daily_puzzle()
@@ -518,16 +553,6 @@ class PuzzleController:
         if not puzzle_id or not pgn or not solution:
             return None, "Daily puzzle response missing required fields"
 
-        sol = [str(m) for m in solution]
-
-        start_board, _used_ply, _matched = _find_best_start_board_from_pgn(
-            pgn=pgn,
-            initial_ply=initial_ply,
-            sol=sol,
-            back=6,
-            forward=10,
-        )
-
         # Debug (journalctl)
         try:
             print(
@@ -536,19 +561,13 @@ class PuzzleController:
             )
         except Exception:
             pass
-        return (
-            PuzzleState(
-                puzzle_id=puzzle_id,
-                fen_start=start_board.fen(),
-                solution=sol,
-                themes=[str(x) for x in (themes or [])],
-                rating=int(rating) if rating is not None else None,
-                idx=0,
-            ),
-            None,
-        )
+        return _build_puzzle_state(puzzle_id, pgn, initial_ply, solution, themes, rating), None
 
     def _fetch_mix(self) -> Tuple[Optional[PuzzleState], Optional[str]]:
+        """Pick a random puzzle from the local puzzle_ids.txt and fetch it from Lichess.
+
+        Returns (PuzzleState, None) on success or (None, error_string) on failure.
+        """
         if not os.path.exists(PUZZLE_IDS_PATH):
             return None, "puzzle_ids.txt missing"
 
@@ -578,16 +597,6 @@ class PuzzleController:
         if not puzzle_id or not pgn or not solution:
             return None, "Puzzle response missing required fields"
 
-        sol = [str(m) for m in solution]
-
-        start_board, _used_ply, _matched = _find_best_start_board_from_pgn(
-            pgn=pgn,
-            initial_ply=initial_ply,
-            sol=sol,
-            back=6,
-            forward=10,
-        )
-
         # Debug (journalctl)
         try:
             print(
@@ -596,18 +605,7 @@ class PuzzleController:
             )
         except Exception:
             pass
-
-        return (
-            PuzzleState(
-                puzzle_id=puzzle_id,
-                fen_start=start_board.fen(),
-                solution=sol,
-                themes=[str(x) for x in (themes or [])],
-                rating=int(rating) if rating is not None else None,
-                idx=0,
-            ),
-            None,
-        )
+        return _build_puzzle_state(puzzle_id, pgn, initial_ply, solution, themes, rating), None
 
     def _fetch_theme(self, angle: str) -> Tuple[Optional[PuzzleState], Optional[str]]:
         """Fetch a puzzle for a given Lichess *angle*.
@@ -794,28 +792,10 @@ class PuzzleController:
                 pass
 
             if puzzle_id and pgn and solution:
-                sol = [str(m) for m in solution]
-                start_board, _used_ply, _matched = _find_best_start_board_from_pgn(
-                    pgn=pgn,
-                    initial_ply=initial_ply,
-                    sol=sol,
-                    back=6,
-                    forward=10,
-                )
                 self._last_next_angle = angle
                 self._last_next_id = puzzle_id
                 self._last_next_id_by_angle[angle] = puzzle_id
-                return (
-                    PuzzleState(
-                        puzzle_id=puzzle_id,
-                        fen_start=start_board.fen(),
-                        solution=sol,
-                        themes=[str(x) for x in (themes or [])],
-                        rating=int(rating) if rating is not None else None,
-                        idx=0,
-                    ),
-                    None,
-                )
+                return _build_puzzle_state(puzzle_id, pgn, initial_ply, solution, themes, rating), None
 
         # 2) Fallback path: only works for THEME TAGS (because it filters by 'themes')
         if not os.path.exists(PUZZLE_IDS_PATH):
@@ -864,26 +844,7 @@ class PuzzleController:
             if not puzzle_id or not pgn or not solution:
                 continue
 
-            sol = [str(m) for m in solution]
-            start_board, _used_ply, _matched = _find_best_start_board_from_pgn(
-                pgn=pgn,
-                initial_ply=initial_ply,
-                sol=sol,
-                back=6,
-                forward=10,
-            )
-
-            return (
-                PuzzleState(
-                    puzzle_id=puzzle_id,
-                    fen_start=start_board.fen(),
-                    solution=sol,
-                    themes=themes,
-                    rating=int(rating) if rating is not None else None,
-                    idx=0,
-                ),
-                None,
-            )
+            return _build_puzzle_state(puzzle_id, pgn, initial_ply, solution, themes, rating), None
 
         return None, last_err
 
