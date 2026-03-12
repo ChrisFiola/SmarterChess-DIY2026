@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Optional
+import threading
 import time
 import chess
 
@@ -91,6 +92,40 @@ class OnlineController:
         time.sleep(1.0)
         raise ReturnToMenu()
 
+    def _run_in_bg(self, fn):
+        """Run fn() in a background daemon thread while polling serial every 50 ms.
+
+        If the user presses OK (or new-game) while fn is running, 'Cancelling...'
+        is shown immediately and ReturnToMenu is raised — making cancel feel instant
+        even during blocking HTTP calls.  Returns fn()'s return value on normal
+        completion.
+        """
+        result_box = [None]
+        exc_box = [None]
+        done = threading.Event()
+
+        def _worker():
+            try:
+                result_box[0] = fn()
+            except Exception as e:
+                exc_box[0] = e
+            finally:
+                done.set()
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+        while not done.wait(timeout=0.05):  # wake up every 50 ms to check serial
+            msg = self.link.try_read_from_board()
+            if msg == "shutdown":
+                shutdown_raspberry_pi(self.link, self.display)
+                return None
+            if msg and msg in OK_MSGS | NEW_GAME_MSGS:
+                self._cancel_to_menu()  # raises ReturnToMenu
+
+        if exc_box[0] is not None:
+            raise exc_box[0]
+        return result_box[0]
+
     # ── Common Pico message handling ─────────────────────────────────────────
 
     def _handle_common(self, msg: str, board: chess.Board) -> bool:
@@ -151,19 +186,14 @@ class OnlineController:
                 if m in OK_MSGS | NEW_GAME_MSGS:
                     self._cancel_to_menu()
 
-        # Retry account fetch up to 3 times
+        # Retry account fetch up to 3 times.  Each call runs in the background
+        # so serial is polled every 50 ms — cancel shows instantly if OK is pressed.
         acct = None
         for _ in range(3):
-            peek = link.try_read_from_board()
-            if peek and peek in OK_MSGS | NEW_GAME_MSGS:
-                self._cancel_to_menu()
-            if peek == "shutdown":
-                shutdown_raspberry_pi(link, display)
-                return
-            acct = self.client.get_account()
-            if not acct.get("_error"):
+            acct = self._run_in_bg(self.client.get_account)
+            if acct and not acct.get("_error"):
                 break
-            time.sleep(1.0)
+            self._run_in_bg(lambda: time.sleep(1.0))
 
         if not acct or acct.get("_error"):
             display.send("Lichess offline\nWiFi/DNS error\nOK = Menu")
@@ -181,38 +211,44 @@ class OnlineController:
         username = (acct.get("username") or acct.get("id") or "").strip().lower()
         display.send("Lichess online\nStart a game\non lichess.org\nOK = cancel")
 
-        # Poll for gameStart
-        game_id = None
+        # Poll for gameStart.  The Lichess event stream runs in a background
+        # daemon thread so the main thread can check serial every 50 ms —
+        # pressing OK cancels instantly regardless of stream latency.
+        game_id_box = [None]
+        stream_done = threading.Event()
+
+        def _stream_watcher():
+            while not stream_done.is_set():
+                try:
+                    for ev in self.client.stream_events(timeout_s=5):
+                        if stream_done.is_set():
+                            return
+                        if ev.get("type") == "gameStart":
+                            game_id_box[0] = (ev.get("game") or {}).get("id")
+                            stream_done.set()
+                            return
+                except Exception:
+                    if not stream_done.is_set():
+                        time.sleep(0.5)
+
+        threading.Thread(target=_stream_watcher, daemon=True).start()
+
         last_banner_ms = 0
-        while not game_id:
-            peek = link.try_read_from_board()
-            if peek == "shutdown":
+        while not stream_done.wait(timeout=0.05):
+            msg = link.try_read_from_board()
+            if msg == "shutdown":
+                stream_done.set()
                 shutdown_raspberry_pi(link, display)
                 return
-            if peek and peek in OK_MSGS | NEW_GAME_MSGS:
+            if msg and msg in OK_MSGS | NEW_GAME_MSGS:
+                stream_done.set()
                 self._cancel_to_menu()
-
             now = int(time.time() * 1000)
             if now - last_banner_ms > 1500:
                 display.send("Lichess online\nWaiting for game...\nOK = cancel")
                 last_banner_ms = now
 
-            try:
-                for ev in self.client.stream_events(timeout_s=5):
-                    if ev.get("type") == "gameStart":
-                        game_id = (ev.get("game") or {}).get("id")
-                        break
-                    peek2 = link.try_read_from_board()
-                    if peek2 == "shutdown":
-                        shutdown_raspberry_pi(link, display)
-                        return
-                    if peek2 and peek2 in OK_MSGS | NEW_GAME_MSGS:
-                        self._cancel_to_menu()
-                    if game_id:
-                        break
-            except Exception:
-                time.sleep(0.5)
-                continue
+        game_id = game_id_box[0]
 
         if not game_id:
             display.send("No game found\nTry again")
