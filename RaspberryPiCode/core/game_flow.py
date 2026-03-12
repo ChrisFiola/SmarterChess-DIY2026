@@ -1085,7 +1085,7 @@ def _run_puzzle_game(link: BoardLink, display: Display) -> None:
     def menu(title: str, options: List[str]) -> Optional[str]:
         return _paged_menu(link, display, title, options)
 
-    top = menu("PUZZLES", ["\nDaily Puzzle", "Mix and match", "Themes"])
+    top = menu("PUZZLES", ["Daily Puzzle", "Mix and match", "Themes"])
     if top is None:
         raise ReturnToMenu()
 
