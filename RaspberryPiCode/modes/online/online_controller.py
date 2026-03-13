@@ -732,6 +732,8 @@ class OnlineController:
                     if peek.startswith("typing_"):
                         awaiting_ok_ack = False
                         in_move_entry = True
+                elif peek in OK_MSGS and board.turn != your_color:
+                    self._confirm_resign_or_exit(game_id)
                 elif peek in NEW_GAME_MSGS:
                     self._confirm_resign_or_exit(game_id)
                     # Returned → user pressed Back; game continues
@@ -773,7 +775,7 @@ class OnlineController:
                         if smsg == "shutdown":
                             shutdown_raspberry_pi(link, display)
                             raise ReturnToMenu()
-                        if smsg in NEW_GAME_MSGS:
+                        if smsg in OK_MSGS | NEW_GAME_MSGS:
                             self._confirm_resign_or_exit(game_id)
                             last_wait_banner_ms = 0  # re-show banner immediately
                         elif smsg in ("draw", "btn_draw"):

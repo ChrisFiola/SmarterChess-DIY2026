@@ -2056,6 +2056,19 @@ def _main_loop():
             st.buffered_turn_msg = None
             continue
 
+        if (
+            st.game_state == Game.RUNNING
+            and not st.in_input
+            and not st.engine_ack_pending
+            and not st.ok_back_enabled
+            and not st.puzzle_setup_active
+        ):
+            b_idle = cp.detect_press_raw()
+            if b_idle == (Config.Buttons.OK_INDEX + 1):
+                link.send("btn_ok")
+                time.sleep_ms(Config.Timing.POLL_MS)
+                continue
+
         if st.engine_ack_pending:
             nxt = link.read()
 
