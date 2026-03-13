@@ -133,9 +133,9 @@ class OnlineController:
         Uses the paged-menu mechanism (wake Pico via ChooseMode then MenuPaged)
         so the user can choose between resigning and exiting without resigning.
 
-        Pressing OK (back) or selecting 'Exit to menu' leaves the Lichess game
-        open so it can be resumed later via 'Ongoing Games'.
-        Always raises ReturnToMenu.
+        Raises ReturnToMenu if the user exits or resigns.
+        Returns normally (without raising) if the user presses Back to continue.
+        In that case the Pico is re-armed via SetupComplete.
         """
         choice = _paged_menu(
             self.link,
@@ -146,8 +146,10 @@ class OnlineController:
         )
         if choice == "Resign":
             self._resign_and_exit(game_id)  # raises ReturnToMenu
-        # "Exit to menu", back (None), or any other selection → exit w/o resign
-        raise ReturnToMenu()
+        if choice == "Exit to menu":
+            raise ReturnToMenu()
+        # choice is None — user pressed Back to stay in game
+        self.link.send_to_board("SetupComplete")
 
     # ── Common Pico message handling ──────────────────────────────────────────
 
@@ -727,7 +729,8 @@ class OnlineController:
                         awaiting_ok_ack = False
                         in_move_entry = True
                 elif peek in NEW_GAME_MSGS:
-                    self._confirm_resign_or_exit(game_id)  # raises ReturnToMenu
+                    self._confirm_resign_or_exit(game_id)
+                    # Returned → user pressed Back; game continues
                 elif peek in ("draw", "btn_draw"):
                     self._offer_draw(game_id)
 
@@ -768,7 +771,8 @@ class OnlineController:
                             raise ReturnToMenu()
                         if smsg in NEW_GAME_MSGS:
                             self._confirm_resign_or_exit(game_id)
-                        if smsg in ("draw", "btn_draw"):
+                            last_wait_banner_ms = 0  # re-show banner immediately
+                        elif smsg in ("draw", "btn_draw"):
                             self._offer_draw(game_id)
                         self._handle_common(smsg, board)
 
@@ -820,7 +824,10 @@ class OnlineController:
                 continue
 
             if msg in NEW_GAME_MSGS:
-                self._confirm_resign_or_exit(game_id)  # raises ReturnToMenu
+                self._confirm_resign_or_exit(game_id)
+                # Returned → user pressed Back; re-prompt and continue
+                prompted_for_this_turn = False
+                continue
 
             if msg in ("draw", "btn_draw"):
                 self._offer_draw(game_id)

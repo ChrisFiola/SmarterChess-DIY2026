@@ -86,6 +86,34 @@ def wait_for_ok(link: BoardLink, display: Display) -> bool:
             continue
 
 
+def confirm_exit_game(
+    link: BoardLink,
+    display: Display,
+    options: Optional[List[str]] = None,
+) -> bool:
+    """Show a paged 'Leave game?' confirmation menu.
+
+    Wakes the Pico from its suspended-after-OK+Hint state via ChooseMode,
+    then shows the menu.  If the user presses Back (OK), the Pico is
+    re-armed for gameplay by sending SetupComplete.
+
+    Returns True  – user confirmed exit; caller should raise ReturnToMenu.
+    Returns False – user pressed Back; caller should re-prompt and continue.
+    """
+    choice = _paged_menu(
+        link,
+        display,
+        options or ["Exit to menu"],
+        wake_command="ChooseMode",
+        resend_timeout=3.0,
+    )
+    if choice is None:
+        # User pressed Back — put Pico back into RUNNING state
+        link.send_to_board("SetupComplete")
+        return False
+    return True
+
+
 def run_in_bg(
     fn: Callable,
     link: BoardLink,
@@ -1100,7 +1128,11 @@ def _run_local_game(
 
         # Actionable signals — must be checked before the ignore filter below
         if msg in NEW_GAME_MSGS:
-            raise ReturnToMenu()
+            if confirm_exit_game(link, display):
+                raise ReturnToMenu()
+            side = "WHITE" if state.board.turn == chess.WHITE else "BLACK"
+            display.prompt_move(side, force=True)
+            continue
 
         if msg in HINT_MSGS:
             send_move_hint(link, display, ctx, state, cfg)

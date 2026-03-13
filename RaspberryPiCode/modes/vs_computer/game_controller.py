@@ -16,6 +16,7 @@ from core.game_flow import (
     GameConfig,
     GameState,
     ReturnToMenu,
+    confirm_exit_game,
     handle_capq_message,
     handle_typing_message,
     notify_game_over,
@@ -118,7 +119,11 @@ class GameController:
             raise ReturnToMenu()
 
         if typ == EventType.NEW_GAME:
-            raise ReturnToMenu()
+            if confirm_exit_game(self.deps.link, self.deps.display):
+                raise ReturnToMenu()
+            side = "WHITE" if self.board.turn == chess.WHITE else "BLACK"
+            self.deps.display.prompt_move(side)
+            return
 
         if typ == EventType.TYPING:
             handle_typing_message(

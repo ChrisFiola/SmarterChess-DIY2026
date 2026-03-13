@@ -41,6 +41,7 @@ from core.game_flow import (
     shutdown_raspberry_pi,
     run_in_bg,
     wait_for_ok,
+    confirm_exit_game,
     handle_illegal_move,
     handle_typing_message,
     handle_capq_message,
@@ -935,6 +936,9 @@ class PuzzleController:
                 return
 
             if msg in NEW_GAME_MSGS:
+                if not confirm_exit_game(link, display):
+                    _rearm()
+                    continue
                 return
 
             if handle_capq_message(link, board, msg):
