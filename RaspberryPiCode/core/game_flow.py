@@ -56,11 +56,19 @@ class GameState:
 def wait_for_ok(link: BoardLink, display: Display) -> bool:
     """Wait for Pico OK acknowledgement (btn_ok/ok).
 
+    Sends MenuPaged_0_1 so the Pico enters button-handling mode regardless of
+    whether it is in SETUP (setup loop) or RUNNING (main loop) state.
+
     Returns False if the user exits to menu (new game) or shutdown is triggered.
     """
+    link.send_to_board("MenuPaged_0_1")
+
     while True:
         m = link.read_from_board()
         if m is None:
+            continue
+
+        if m == "menu_ready":
             continue
 
         if m == "shutdown":
