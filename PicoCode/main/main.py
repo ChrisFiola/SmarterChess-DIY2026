@@ -313,16 +313,23 @@ class Profiles:
     def vs_color(self):
         self._apply(False, True, False, True, False, [1, 2, 3, 9], ok_color=RED)
 
-    def menu_paged(self):
+    def menu_paged(self, *, allow_select=True, has_hint=True, has_back=True):
+        allowed = []
+        if allow_select:
+            allowed.extend([1, 2, 3])
+        if has_back:
+            allowed.append(9)
+        if has_hint:
+            allowed.append(10)
         self._apply(
             False,
             True,
             False,
             True,
             True,
-            [1, 2, 3, 9, 10],
-            ok_color=RED,
-            hint_color=BLUE,
+            allowed,
+            ok_color=RED if has_back else OFF,
+            hint_color=BLUE if has_hint else OFF,
         )
 
     def puzzle_play(self):
@@ -1806,7 +1813,22 @@ def _handle_choose_mode(_msg):
 
 
 def _handle_menu_paged(_msg):
-    cp.profile.menu_paged()
+    allow_select = False
+    has_hint = False
+    has_back = True
+    try:
+        parts = _msg.split("_")
+        if len(parts) >= 3:
+            allow_select = True
+            has_hint = parts[-2] == "1"
+            has_back = parts[-1] == "1"
+    except Exception:
+        pass
+    cp.profile.menu_paged(
+        allow_select=allow_select,
+        has_hint=has_hint,
+        has_back=has_back,
+    )
     cp.disable_hint_irq()
     cp.reset_edges()
     board.markings()

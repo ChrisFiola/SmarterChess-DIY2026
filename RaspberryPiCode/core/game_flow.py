@@ -1347,12 +1347,12 @@ def _render_paged_menu(
     while len(lines) < 3:
         lines.append("")
 
-    has_next = (page + 1) < pages
-    if can_back and has_next:
+    has_hint = pages > 1
+    if can_back and has_hint:
         footer = "OK=Back  Hint=Next"
     elif can_back:
         footer = "OK=Back"
-    elif has_next:
+    elif has_hint:
         footer = "         Hint=Next"
     else:
         footer = ""
@@ -1388,7 +1388,9 @@ def _paged_menu(
         nonlocal last_sync, menu_ready
         if wake_command:
             link.send_to_board(wake_command)
-        link.send_to_board("MenuPaged")
+        has_hint = 1 if pages > 1 else 0
+        has_back = 1 if can_back else 0
+        link.send_to_board(f"MenuPaged_{has_hint}_{has_back}")
         last_sync = time.monotonic()
         menu_ready = False
 
@@ -1430,8 +1432,8 @@ def _paged_menu(
                 return None
             continue
         if m in HINT_MSGS:
-            if (page + 1) < pages:
-                page += 1
+            if pages > 1:
+                page = (page + 1) % pages
             continue
         if m in ("1", "2", "3", "4"):
             idx = int(m) - 1
