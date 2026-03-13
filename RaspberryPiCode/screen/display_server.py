@@ -212,7 +212,10 @@ def _draw_qr(data: str, caption_lines):
                 ycur += (bbox[3] - bbox[1]) + 4
 
         disp.ShowImage(FRAME)
-    except Exception:
+    except Exception as _qr_exc:
+        import traceback
+        print(f"[QR ERROR] {type(_qr_exc).__name__}: {_qr_exc}", flush=True)
+        traceback.print_exc()
         _draw_centered_text_auto(["QR error", data[:18]])
 
 
