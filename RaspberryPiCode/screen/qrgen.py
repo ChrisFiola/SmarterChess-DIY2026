@@ -465,7 +465,7 @@ class _BitBuffer(list):
             self.append((val >> i) & 1)
 
     def _extend(self, bits: List[int]) -> None:
-        super()._extend(bits)
+        self.extend(bits)
 
     def _to_bytes(self) -> bytes:
         out = bytearray()
