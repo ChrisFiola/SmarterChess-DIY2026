@@ -121,6 +121,9 @@ class GameController:
         if typ == EventType.NEW_GAME:
             if confirm_exit_game(self.deps.link, self.deps.display):
                 raise ReturnToMenu()
+            # Re-arm Pico for move collection if it's the human's turn
+            if self._is_human_turn():
+                self._send_turn_notification()
             side = "WHITE" if self.board.turn == chess.WHITE else "BLACK"
             self.deps.display.prompt_move(side)
             return

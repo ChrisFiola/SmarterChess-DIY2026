@@ -558,6 +558,10 @@ class OnlineController:
             except Exception:
                 break
 
+        # Transition Pico from setup-menu loop to RUNNING state so that
+        # puzzle_setup_begin / setup_place_* are handled by _main_loop.
+        link.send_to_board("SetupComplete")
+
         # If board is still at starting position, skip setup
         current_pieces = board.fen().split(" ")[0]
         if not moves or current_pieces == _STARTING_FEN_PIECES:

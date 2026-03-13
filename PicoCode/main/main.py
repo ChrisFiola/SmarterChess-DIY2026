@@ -2047,7 +2047,10 @@ def _main_loop():
         if _handle_hint_irq() == "new":
             cp.disable_hint_irq()
             cp.off()
-            board.opening()
+            # Don't play board.opening() here — the Pi will immediately send
+            # ChooseMode + MenuPaged for the exit-confirmation menu. Playing
+            # the full startup animation first makes it look like the Pico
+            # already exited to the main menu before the user confirms.
             st.engine_ack_pending = False
             st.pending_gameover_result = None
             st.buffered_turn_msg = None

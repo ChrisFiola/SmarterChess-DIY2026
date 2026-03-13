@@ -1131,6 +1131,7 @@ def _run_local_game(
             if confirm_exit_game(link, display):
                 raise ReturnToMenu()
             side = "WHITE" if state.board.turn == chess.WHITE else "BLACK"
+            send_turn_notification(link, state.board)
             display.prompt_move(side, force=True)
             continue
 
