@@ -145,21 +145,68 @@ def _draw_centered_text_auto(lines, min_size=14, max_size=28, vpad=12, spacing=6
     _draw_centered_text_with_size(lines, size=size, spacing=sp, vpad=vpad)
 
 
-def _draw_centered_block_text_with_size(
-    lines, size: int, spacing: int = 6, vpad: int = 12
-):
-    """Center the whole text block, but left-align lines within it."""
+def _draw_menu(lines):
+    """Draw menu lines: center the items vertically, pin the last line as a footer at the bottom.
+
+    Expects lines = [item1, item2, item3, footer].  Footer may be empty string.
+    """
+    if not lines:
+        return
+
+    footer = lines[-1] if lines else ""
+    items = lines[:-1] if len(lines) > 1 else list(lines)
+
     DRAW.rectangle((0, 0, W, H), fill="BLACK")
+
+    # Measure footer first so we know how much space it takes
+    footer_h = 0
+    if footer:
+        font_footer = _get_font(12)
+        key = (12, footer)
+        wh = MEASURE_CACHE.get(key)
+        if wh is None:
+            bbox = DRAW_MEASURE.textbbox((0, 0), footer, font=font_footer)
+            wh = (bbox[2] - bbox[0], bbox[3] - bbox[1])
+            MEASURE_CACHE[key] = wh
+        _, footer_h = wh
+
+    footer_reserved = (footer_h + 8) if footer else 0
+    avail_h = H - footer_reserved
+
+    # Auto-size items to fit in available height (above footer)
+    spacing = 6
+    vpad = 8
+    size = 14  # fallback minimum
+    for s in range(28, 13, -1):
+        font_test = _get_font(s)
+        total = 0
+        max_w = 0
+        for ln in items:
+            if not ln:
+                h = s
+                w = 0
+            else:
+                key = (s, ln)
+                wh = MEASURE_CACHE.get(key)
+                if wh is None:
+                    bbox = DRAW_MEASURE.textbbox((0, 0), ln, font=font_test)
+                    wh = (bbox[2] - bbox[0], bbox[3] - bbox[1])
+                    MEASURE_CACHE[key] = wh
+                w, h = wh
+            total += h + spacing
+            if w > max_w:
+                max_w = w
+        total -= spacing
+        if total <= (avail_h - 2 * vpad) and max_w <= (W - 2 * vpad):
+            size = s
+            break
 
     font = _get_font(size)
 
     heights = []
-    widths = []
     total_h = 0
-    block_w = 0
-    for ln in lines:
+    for ln in items:
         if not ln:
-            w = 0
             h = size
         else:
             key = (size, ln)
@@ -168,33 +215,40 @@ def _draw_centered_block_text_with_size(
                 bbox = DRAW_MEASURE.textbbox((0, 0), ln, font=font)
                 wh = (bbox[2] - bbox[0], bbox[3] - bbox[1])
                 MEASURE_CACHE[key] = wh
-            w, h = wh
-        widths.append(w)
+            _, h = wh
         heights.append(h)
         total_h += h + spacing
-        if w > block_w:
-            block_w = w
-    total_h -= spacing
+    if heights:
+        total_h -= spacing
 
-    x = max(vpad, (W - block_w) // 2)
-    y = max(vpad, (H - total_h - 2 * vpad) // 2 + vpad)
+    # Center items within the available height (above footer)
+    y = max(vpad, (avail_h - total_h) // 2)
 
-    for ln, h, _w in zip(lines, heights, widths):
+    for ln, h in zip(items, heights):
         if ln:
-            DRAW.text((x, y), ln, font=font, fill="WHITE")
+            key = (size, ln)
+            wh = MEASURE_CACHE.get(key)
+            if wh is None:
+                bbox = DRAW_MEASURE.textbbox((0, 0), ln, font=font)
+                wh = (bbox[2] - bbox[0], bbox[3] - bbox[1])
+                MEASURE_CACHE[key] = wh
+            w, _ = wh
+            DRAW.text(((W - w) // 2, y), ln, font=font, fill="WHITE")
         y += h + spacing
 
+    # Pin footer to the very bottom
+    if footer:
+        font_footer = _get_font(12)
+        key = (12, footer)
+        wh = MEASURE_CACHE.get(key)
+        if wh is None:
+            bbox = DRAW_MEASURE.textbbox((0, 0), footer, font=font_footer)
+            wh = (bbox[2] - bbox[0], bbox[3] - bbox[1])
+            MEASURE_CACHE[key] = wh
+        fw, fh = wh
+        DRAW.text(((W - fw) // 2, H - fh - 4), footer, font=font_footer, fill="WHITE")
+
     disp.ShowImage(FRAME)
-
-
-def _draw_centered_block_text_auto(
-    lines, min_size=14, max_size=28, vpad=12, spacing=6
-):
-    """Autosize to fit, then render as a centered left-aligned block."""
-    size, sp = _find_best_font_size(
-        lines, min_size=min_size, max_size=max_size, vpad=vpad, spacing=spacing
-    )
-    _draw_centered_block_text_with_size(lines, size=size, spacing=sp, vpad=vpad)
 
 
 # ------------------------------------------------------
@@ -372,7 +426,7 @@ while True:
             captions = [ln.strip() for ln in lines[1:]] if len(lines) > 1 else []
             _draw_qr(qr_data, captions)
         elif raw_size.lower() == "menu":
-            _draw_centered_text_auto(lines)
+            _draw_menu(lines)
         elif raw_size.lower() == "auto":
             _draw_centered_text_auto(lines)
         else:
