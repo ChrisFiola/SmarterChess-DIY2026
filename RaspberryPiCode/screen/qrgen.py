@@ -481,7 +481,7 @@ class _BitBuffer(list):
 def _reed_solomon_divisor(degree: int) -> bytes:
     result = bytearray([1])
     for i in range(degree):
-        result = _reed_solomon_multiply(result, bytes([_reed_solomon_exp(i)]))
+        result = _reed_solomon_multiply(result, bytes([1, _reed_solomon_exp(i)]))
     return bytes(result)
 
 
