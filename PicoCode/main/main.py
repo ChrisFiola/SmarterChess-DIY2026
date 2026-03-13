@@ -313,13 +313,13 @@ class Profiles:
     def vs_color(self):
         self._apply(False, True, False, True, False, [1, 2, 3, 9], ok_color=RED)
 
-    def menu_paged(self, *, allow_select=True, has_hint=True, has_back=True):
+    def menu_paged(self, has_next=True, has_back=True, *, allow_select=True):
         allowed = []
         if allow_select:
             allowed.extend([1, 2, 3])
         if has_back:
             allowed.append(9)
-        if has_hint:
+        if has_next:
             allowed.append(10)
         self._apply(
             False,
@@ -328,8 +328,8 @@ class Profiles:
             True,
             True,
             allowed,
-            ok_color=RED if has_back else OFF,
-            hint_color=BLUE if has_hint else OFF,
+            ok_color=GREEN if has_back else OFF,
+            hint_color=YELLOW if has_next else OFF,
         )
 
     def puzzle_play(self):
@@ -1814,20 +1814,20 @@ def _handle_choose_mode(_msg):
 
 def _handle_menu_paged(_msg):
     allow_select = False
-    has_hint = False
+    has_next = False
     has_back = True
     try:
         parts = _msg.split("_")
         if len(parts) >= 3:
             allow_select = True
-            has_hint = parts[-2] == "1"
+            has_next = parts[-2] == "1"
             has_back = parts[-1] == "1"
     except Exception:
         pass
     cp.profile.menu_paged(
-        allow_select=allow_select,
-        has_hint=has_hint,
+        has_next=has_next,
         has_back=has_back,
+        allow_select=allow_select,
     )
     cp.disable_hint_irq()
     cp.reset_edges()
@@ -1845,7 +1845,7 @@ def _handle_menu_paged(_msg):
             break
         if b == (Config.Buttons.HINT_INDEX + 1):
             link.send("btn_hint")
-            continue
+            break
         if 1 <= b <= 3:
             link.send(str(b))
             break
