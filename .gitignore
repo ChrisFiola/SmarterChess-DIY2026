@@ -151,3 +151,7 @@ docs/prompt
 # Project files
 .micropico
 __init__.py
+.continue/
+puzzle_ids.txt
+ChessSans.ttf
+*.pdf
