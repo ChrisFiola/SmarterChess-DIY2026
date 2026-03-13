@@ -367,7 +367,7 @@ class QrCode:
             dat = data[k : k + dat_len]
             k += dat_len
             ecc = _reed_solomon_compute_remainder(
-                dat, QrCode._reed_solomon_divisor(block_ecc_len)
+                dat, _reed_solomon_divisor(block_ecc_len)
             )
             blocks.append(dat + ecc)
 
