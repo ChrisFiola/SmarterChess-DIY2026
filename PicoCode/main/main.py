@@ -1660,7 +1660,7 @@ def _run_game_setup_loop():
 
             if msg.startswith("heyArduinoBrightnessControl"):
                 cp.profile.brightness()
-                board.prompt_brightness()
+                # board.off()
                 link.send("brightness_" + str(_brightness))
                 v = _select_mapped_value(1, 8)
                 if v is None:
