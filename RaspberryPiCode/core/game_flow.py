@@ -14,6 +14,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
+from urllib.parse import quote
 
 import chess
 
@@ -432,6 +433,28 @@ def _result_to_winner_text(res: str) -> str:
     return "Draw"
 
 
+LICHESS_ANALYSIS_PGN_URL = "https://lichess.org/analysis/pgn/"
+
+
+def _build_lichess_analysis_url(board: "chess.Board") -> str:
+    import chess.pgn
+
+    try:
+        game = chess.pgn.Game.from_board(board)
+        exporter = chess.pgn.StringExporter(
+            headers=False, variations=False, comments=False
+        )
+        # Collapse line wrapping so the QR payload is a compact, browser-safe URL.
+        pgn = " ".join(game.accept(exporter).split())
+    except Exception:
+        return ""
+
+    if not pgn or pgn == "*":
+        return ""
+
+    return f"{LICHESS_ANALYSIS_PGN_URL}{quote(pgn, safe='')}"
+
+
 def notify_game_over(link: BoardLink, display: Display, brd: chess.Board) -> str:
     result = brd.result(claim_draw=True)
     winner = _result_to_winner_text(result)
@@ -441,31 +464,21 @@ def notify_game_over(link: BoardLink, display: Display, brd: chess.Board) -> str
 
 
 def offer_analysis_qr(link: BoardLink, display: Display, board: "chess.Board") -> None:
-    """Generate a PGN for the completed game and show it as a QR code.
+    """Generate a Lichess analysis URL for the completed game and show it as a QR code."""
+    display.send("Generating\nanalysis link...")
+    analysis_url = _build_lichess_analysis_url(board)
 
-    The user scans the QR code and pastes the PGN into their preferred
-    analysis tool (e.g. lichess.org/paste). Any button dismisses.
-    """
-    import chess.pgn
-
-    display.send("Generating PGN...")
-    try:
-        game = chess.pgn.Game.from_board(board)
-        exporter = chess.pgn.StringExporter(
-            headers=False, variations=False, comments=False
-        )
-        pgn = game.accept(exporter).strip()
-    except Exception:
-        pgn = ""
-
-    if not pgn:
-        display.send("No moves yet\nNo PGN available\nOK = back")
+    if not analysis_url:
+        display.send("No moves yet\nNo analysis link\nOK = back")
         link.send_to_board("MenuPaged")
         wait_for_ok(link, display)
         return
 
-    print(f"[QR PGN] length={len(pgn)} pgn={pgn!r}", flush=True)
-    display.show_qr(pgn)  # full-screen, no caption
+    print(
+        f"[QR ANALYSIS] length={len(analysis_url)} url={analysis_url!r}",
+        flush=True,
+    )
+    display.show_qr(analysis_url)  # full-screen, no caption
     link.send_to_board("MenuPaged")
     wait_for_ok(link, display)
 
@@ -473,12 +486,12 @@ def offer_analysis_qr(link: BoardLink, display: Display, board: "chess.Board") -
 def post_game_menu(
     link: BoardLink, display: Display, board: "chess.Board"
 ) -> None:
-    """Show post-game flow: OK to view PGN QR, then return to menu.
+    """Show post-game flow: OK to view analysis QR, then return to menu.
 
     Always raises ReturnToMenu. Call this after notify_game_over().
     """
     time.sleep(1.5)  # let the game-over display settle
-    display.send("Press OK\nto view PGN")
+    display.send("Press OK\nto view analysis")
     link.send_to_board("ChooseMode")
     link.send_to_board("only_ok_cancel")
     wait_for_ok(link, display)

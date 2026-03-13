@@ -704,12 +704,12 @@ Interaction:
 ### Post-game PGN prompt
 
 After local and VS Computer games finish, the player is prompted to view a QR
-code for the PGN.
+code that opens the game in Lichess analysis.
 
 ```text
 +--------------------+
 |Press OK            |
-|to view PGN         |
+|to view analysis    |
 |                    |
 |                    |
 +--------------------+
