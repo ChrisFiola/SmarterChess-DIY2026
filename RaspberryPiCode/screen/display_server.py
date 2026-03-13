@@ -400,7 +400,7 @@ while True:
             captions = [ln.strip() for ln in lines[1:]] if len(lines) > 1 else []
             _draw_qr(qr_data, captions)
         elif raw_size.lower() == "menu":
-            _draw_menu(lines)
+            _draw_centered_block_text_auto(lines)
         elif raw_size.lower() == "auto":
             _draw_centered_text_auto(lines)
         else:
