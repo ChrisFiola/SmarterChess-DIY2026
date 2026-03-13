@@ -328,8 +328,8 @@ class Profiles:
             True,
             True,
             allowed,
-            ok_color=GREEN if has_back else OFF,
-            hint_color=YELLOW if has_next else OFF,
+            ok_color=GREEN if has_back else BLACK,
+            hint_color=YELLOW if has_next else BLACK,
         )
 
     def puzzle_play(self):
