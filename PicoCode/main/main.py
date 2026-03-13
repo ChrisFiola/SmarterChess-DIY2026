@@ -1920,6 +1920,10 @@ def _set_ok_back_enabled(enabled, color=GREEN):
     cp.only_ok(enabled, color)
 
 
+def _set_ok_indicator(enabled, color=GREEN):
+    cp.only_ok(enabled, color)
+
+
 def _handle_set_brightness(msg):
     try:
         _save_and_reset_brightness(int(msg.split("_")[-1]))
@@ -1968,6 +1972,8 @@ ROUTES = [
     ("heyArduinook_back_enable", lambda _: (_set_ok_back_enabled(True))),
     ("heyArduinook_cancel_enable", lambda _: (_set_ok_back_enabled(True, RED))),
     ("heyArduinook_back_disable", lambda _: (_set_ok_back_enabled(False))),
+    ("heyArduinowait_exit_enable", lambda _: (_set_ok_indicator(True, RED))),
+    ("heyArduinowait_exit_disable", lambda _: (_set_ok_indicator(False))),
     ("heyArduinohint_disable", lambda _: setattr(st, "hint_enabled", False)),
     ("heyArduinohint_enable", lambda _: setattr(st, "hint_enabled", True)),
     (

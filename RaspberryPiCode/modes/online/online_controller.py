@@ -650,9 +650,18 @@ class OnlineController:
 
         awaiting_ok_ack = False
         in_move_entry = False
+        waiting_exit_ui = False
+
+        def set_waiting_exit_ui(enabled: bool) -> None:
+            nonlocal waiting_exit_ui
+            if waiting_exit_ui == enabled:
+                return
+            link.send_to_board("wait_exit_enable" if enabled else "wait_exit_disable")
+            waiting_exit_ui = enabled
 
         def apply_new_moves(move_list, announce_new: bool = True):
             nonlocal last_move_count, awaiting_ok_ack, in_move_entry
+            set_waiting_exit_ui(False)
             for uci in move_list[last_move_count:]:
                 try:
                     mv = chess.Move.from_uci(uci)
@@ -733,22 +742,27 @@ class OnlineController:
                         awaiting_ok_ack = False
                         in_move_entry = True
                 elif peek in OK_MSGS and board.turn != your_color:
+                    set_waiting_exit_ui(False)
                     self._confirm_resign_or_exit(game_id)
                 elif peek in NEW_GAME_MSGS:
+                    set_waiting_exit_ui(False)
                     self._confirm_resign_or_exit(game_id)
                     # Returned → user pressed Back; game continues
                 elif peek in ("draw", "btn_draw"):
+                    set_waiting_exit_ui(False)
                     self._offer_draw(game_id)
 
             if board.is_game_over():
+                set_waiting_exit_ui(False)
                 notify_game_over(link, display, board)
                 raise ReturnToMenu()
 
             # ── Opponent's turn — poll stream in background ───────────────────
             if board.turn != your_color:
+                set_waiting_exit_ui(True)
                 now = int(time.time() * 1000)
                 if now - last_wait_banner_ms > 1500:
-                    display.send("Waiting for\nopponent...")
+                    display.send("Waiting for\nopponent...\nOK = exit menu")
                     last_wait_banner_ms = now
 
                 # Read ONE stream event in a background thread so the main
@@ -773,20 +787,25 @@ class OnlineController:
                     smsg = link.try_read_from_board()
                     if smsg:
                         if smsg == "shutdown":
+                            set_waiting_exit_ui(False)
                             shutdown_raspberry_pi(link, display)
                             raise ReturnToMenu()
                         if smsg in OK_MSGS | NEW_GAME_MSGS:
+                            set_waiting_exit_ui(False)
                             self._confirm_resign_or_exit(game_id)
                             last_wait_banner_ms = 0  # re-show banner immediately
                         elif smsg in ("draw", "btn_draw"):
+                            set_waiting_exit_ui(False)
                             self._offer_draw(game_id)
                         self._handle_common(smsg, board)
 
                 if error_box[0] == "stop":
+                    set_waiting_exit_ui(False)
                     display.send("Lichess ended\nOK = menu")
                     wait_for_ok(link, display)
                     raise ReturnToMenu()
                 if error_box[0]:
+                    set_waiting_exit_ui(False)
                     display.send("Lichess error\nStream lost\nOK = menu")
                     wait_for_ok(link, display)
                     raise ReturnToMenu()
@@ -800,6 +819,7 @@ class OnlineController:
 
                 status = extract_status(payload)
                 if status and status != "started":
+                    set_waiting_exit_ui(False)
                     winner = extract_winner(payload)
                     result = "1/2-1/2"
                     if winner == "white":
@@ -813,6 +833,7 @@ class OnlineController:
                 continue  # keepalive or unrecognised event — loop back
 
             # ── Your turn ─────────────────────────────────────────────────────
+            set_waiting_exit_ui(False)
             send_turn_if_human()
             if not prompted_for_this_turn and not awaiting_ok_ack and not in_move_entry:
                 side = "WHITE" if your_color == chess.WHITE else "BLACK"
