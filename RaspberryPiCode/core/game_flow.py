@@ -434,9 +434,10 @@ def _result_to_winner_text(res: str) -> str:
 
 
 LICHESS_ANALYSIS_PGN_URL = "https://lichess.org/analysis/pgn/"
+LICHESS_BASE_URL = "https://lichess.org"
 
 
-def _build_lichess_analysis_url(board: "chess.Board") -> str:
+def _export_game_pgn(board: "chess.Board") -> str:
     import chess.pgn
 
     try:
@@ -452,7 +453,48 @@ def _build_lichess_analysis_url(board: "chess.Board") -> str:
     if not pgn or pgn == "*":
         return ""
 
+    return pgn
+
+
+def _build_lichess_analysis_url_from_pgn(pgn: str) -> str:
+    pgn = (pgn or "").strip()
+    if not pgn or pgn == "*":
+        return ""
     return f"{LICHESS_ANALYSIS_PGN_URL}{quote(pgn, safe='')}"
+
+
+def _extract_imported_game_url(resp: dict) -> str:
+    url = str((resp or {}).get("url") or "").strip()
+    if url:
+        return url
+
+    game = (resp or {}).get("game") or {}
+    url = str(game.get("url") or "").strip()
+    if url:
+        return url
+
+    game_id = str((resp or {}).get("id") or game.get("id") or "").strip()
+    if game_id:
+        return f"{LICHESS_BASE_URL}/{game_id}"
+
+    return ""
+
+
+def _build_post_game_analysis_url(pgn: str) -> Tuple[str, str]:
+    from modes.online.lichess_client import import_game_pgn
+
+    imported = import_game_pgn(pgn)
+    imported_url = _extract_imported_game_url(imported)
+    if imported_url:
+        return imported_url, "import"
+
+    fallback_url = _build_lichess_analysis_url_from_pgn(pgn)
+    if fallback_url:
+        err = str((imported or {}).get("_error") or "unknown error").strip()
+        print(f"[QR ANALYSIS] import failed, using PGN URL: {err}", flush=True)
+        return fallback_url, "pgn"
+
+    return "", "none"
 
 
 def notify_game_over(link: BoardLink, display: Display, brd: chess.Board) -> str:
@@ -465,17 +507,29 @@ def notify_game_over(link: BoardLink, display: Display, brd: chess.Board) -> str
 
 def offer_analysis_qr(link: BoardLink, display: Display, board: "chess.Board") -> None:
     """Generate a Lichess analysis URL for the completed game and show it as a QR code."""
-    display.send("Generating\nanalysis link...")
-    analysis_url = _build_lichess_analysis_url(board)
+    pgn = _export_game_pgn(board)
 
-    if not analysis_url:
+    if not pgn:
         display.send("No moves yet\nNo analysis link\nOK = back")
         link.send_to_board("MenuPaged")
         wait_for_ok(link, display)
         return
 
+    display.send("Uploading to\nLichess...")
+    analysis_url, url_source = run_in_bg(
+        lambda: _build_post_game_analysis_url(pgn),
+        link,
+        display,
+    )
+
+    if not analysis_url:
+        display.send("No analysis link\navailable\nOK = back")
+        link.send_to_board("MenuPaged")
+        wait_for_ok(link, display)
+        return
+
     print(
-        f"[QR ANALYSIS] length={len(analysis_url)} url={analysis_url!r}",
+        f"[QR ANALYSIS] source={url_source} length={len(analysis_url)} url={analysis_url!r}",
         flush=True,
     )
     display.show_qr(analysis_url)  # full-screen, no caption

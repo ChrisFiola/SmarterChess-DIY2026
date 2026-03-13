@@ -52,6 +52,38 @@ def _iter_ndjson(resp) -> Iterator[Dict[str, Any]]:
             continue
 
 
+def import_game_pgn(pgn: str, timeout_s: float = 8.0) -> Dict[str, Any]:
+    """Import a finished game PGN and return the Lichess API response.
+
+    Uses the configured account token when available, but also works
+    anonymously so local games can still get a short Lichess URL.
+    """
+    pgn = (pgn or "").strip()
+    if not pgn or pgn == "*":
+        return {"_error": "No PGN to import"}
+
+    headers = {"Accept": "application/json"}
+    tok = os.environ.get("LICHESS_TOKEN")
+    if tok:
+        headers["Authorization"] = f"Bearer {tok}"
+
+    try:
+        r = requests.post(
+            f"{LICHESS_BASE}/api/import",
+            headers=headers,
+            data={"pgn": pgn},
+            timeout=timeout_s,
+        )
+        if r.status_code not in (200, 201):
+            return {"_error": f"HTTP {r.status_code}: {r.text[:120]}"}
+        try:
+            return r.json()
+        except ValueError:
+            return {"_error": "Invalid JSON from Lichess import"}
+    except RequestException as e:
+        return {"_error": str(e)}
+
+
 class LichessClient:
     def __init__(self, token: Optional[str] = None):
         tok = token or os.environ.get("LICHESS_TOKEN")
