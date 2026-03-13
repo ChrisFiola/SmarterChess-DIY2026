@@ -162,6 +162,8 @@ def _draw_qr(data: str, caption_lines):
     try:
         qr = _qr_encode_text(data, ecl="M")
         qsz = qr.size
+        quiet_zone_modules = 4
+        outer_margin_px = 2
 
         # Reserve caption height
         caption_h = 0
@@ -174,26 +176,33 @@ def _draw_qr(data: str, caption_lines):
                 caption_h += (bbox[3] - bbox[1]) + 4
             caption_h = min(caption_h + 6, 52)
 
-        pad = 6
-        avail_w = W - 2 * pad
-        avail_h = H - 2 * pad - caption_h
-        scale = max(1, min(avail_w // qsz, avail_h // qsz))
+        total_modules = qsz + 2 * quiet_zone_modules
+        avail_w = max(1, W - 2 * outer_margin_px)
+        avail_h = max(1, H - 2 * outer_margin_px - caption_h)
+        scale = max(1, min(avail_w // total_modules, avail_h // total_modules))
 
         # Clear framebuffer
         DRAW.rectangle((0, 0, W, H), fill="BLACK")
 
+        total_px = total_modules * scale
         qr_px = qsz * scale
-        ox = (W - qr_px) // 2
-        oy = max(pad, (avail_h - qr_px) // 2 + pad)
+        ox = (W - total_px) // 2
+        oy = max(outer_margin_px, (avail_h - total_px) // 2 + outer_margin_px)
+        qx = ox + quiet_zone_modules * scale
+        qy = oy + quiet_zone_modules * scale
 
-        # White background for QR
-        DRAW.rectangle([ox - 2, oy - 2, ox + qr_px + 1, oy + qr_px + 1], fill="WHITE")
+        # Render the quiet zone as part of the QR block so scanners get the
+        # required white border while still maximizing module size.
+        DRAW.rectangle(
+            [ox, oy, ox + total_px - 1, oy + total_px - 1],
+            fill="WHITE",
+        )
 
         for yy in range(qsz):
-            y0 = oy + yy * scale
+            y0 = qy + yy * scale
             for xx in range(qsz):
                 if qr.get_module(xx, yy):
-                    x0 = ox + xx * scale
+                    x0 = qx + xx * scale
                     DRAW.rectangle(
                         [x0, y0, x0 + scale - 1, y0 + scale - 1],
                         fill="BLACK",
@@ -202,7 +211,7 @@ def _draw_qr(data: str, caption_lines):
         # Caption
         if caption_lines:
             font_cap = _get_font(14)
-            ycur = min(H - caption_h + 4, oy + qr_px + 6)
+            ycur = min(H - caption_h + 4, oy + total_px + 4)
             for ln in caption_lines[:3]:
                 if not ln:
                     continue
