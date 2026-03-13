@@ -1433,9 +1433,8 @@ def _paged_menu(
                 return None
             continue
         if m in HINT_MSGS:
-            if (page + 1) < pages:
-                page += 1
-                _sync_menu()
+            page = (page + 1) % pages
+            _sync_menu()
             continue
         if m in ("1", "2", "3", "4"):
             idx = int(m) - 1

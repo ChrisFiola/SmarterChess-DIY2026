@@ -512,7 +512,6 @@ class OnlineController:
         link.send_to_board("ok_back_disable")
 
         while True:
-            display.send(f"Lichess\n{username}\nOK=back")
             choice = _paged_menu(
                 link, display,
                 ["New Game", "Ongoing Games"],
