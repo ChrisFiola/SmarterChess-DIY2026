@@ -166,6 +166,45 @@ class LichessClient:
 
     # -------------------- Online game creation --------------------
 
+    def get_incoming_challenges(self) -> list:
+        """Fetch pending incoming challenges. Returns a list of challenge dicts."""
+        try:
+            r = requests.get(
+                f"{LICHESS_BASE}/api/challenge",
+                headers=self.headers,
+                timeout=10,
+            )
+            r.raise_for_status()
+            data = r.json()
+            return data.get("in") or []
+        except RequestException as e:
+            return [{"_error": str(e)}]
+
+    def accept_challenge(self, challenge_id: str) -> Dict[str, Any]:
+        """Accept an incoming challenge by ID."""
+        try:
+            r = requests.post(
+                f"{LICHESS_BASE}/api/challenge/{challenge_id}/accept",
+                headers=self.headers,
+                timeout=10,
+            )
+            if r.status_code == 200:
+                return {"ok": True}
+            return {"ok": False, "status": r.status_code}
+        except RequestException as e:
+            return {"ok": False, "_error": str(e)}
+
+    def decline_challenge(self, challenge_id: str) -> None:
+        """Decline an incoming challenge by ID."""
+        try:
+            requests.post(
+                f"{LICHESS_BASE}/api/challenge/{challenge_id}/decline",
+                headers=self.headers,
+                timeout=10,
+            )
+        except RequestException:
+            pass
+
     def get_ongoing_games(self) -> Dict[str, Any]:
         """Fetch the list of currently active games for this account."""
         try:

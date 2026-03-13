@@ -49,6 +49,17 @@ def _open_fifo_blocking(path: str):
     return os.fdopen(fd, "r", buffering=1)
 
 
+def _measure(size: int, text: str, font) -> tuple:
+    """Return (width, height) of text at the given font size, using the cache."""
+    key = (size, text)
+    wh = MEASURE_CACHE.get(key)
+    if wh is None:
+        bbox = DRAW_MEASURE.textbbox((0, 0), text, font=font)
+        wh = (bbox[2] - bbox[0], bbox[3] - bbox[1])
+        MEASURE_CACHE[key] = wh
+    return wh
+
+
 def _get_font(size: int):
     if size not in FONTS:
         FONTS[size] = ImageFont.truetype(FONT_PATH, size)
@@ -159,18 +170,11 @@ def _draw_menu(lines):
     DRAW.rectangle((0, 0, W, H), fill="BLACK")
 
     # Find largest font size where footer fits the screen width
+    FOOTER_SIZE = 14
     footer_h = 0
-    FOOTER_SIZE = 14  # fallback
     if footer:
         for fs in range(22, 11, -1):
-            fnt = _get_font(fs)
-            key = (fs, footer)
-            wh = MEASURE_CACHE.get(key)
-            if wh is None:
-                bbox = DRAW_MEASURE.textbbox((0, 0), footer, font=fnt)
-                wh = (bbox[2] - bbox[0], bbox[3] - bbox[1])
-                MEASURE_CACHE[key] = wh
-            fw, fh = wh
+            fw, fh = _measure(fs, footer, _get_font(fs))
             if fw <= W - 8:
                 FOOTER_SIZE = fs
                 footer_h = fh
@@ -179,80 +183,35 @@ def _draw_menu(lines):
     footer_reserved = (footer_h + 8) if footer else 0
     avail_h = H - footer_reserved
 
-    # Auto-size items to fit in available height (above footer)
+    # Auto-size non-empty items to fit in available height (above footer)
     spacing = 6
     vpad = 8
-    size = 14  # fallback minimum
+    visible_items = [ln for ln in items if ln]
+    size = 14  # fallback
     for s in range(28, 13, -1):
-        font_test = _get_font(s)
-        total = 0
-        max_w = 0
-        for ln in items:
-            if not ln:
-                h = s
-                w = 0
-            else:
-                key = (s, ln)
-                wh = MEASURE_CACHE.get(key)
-                if wh is None:
-                    bbox = DRAW_MEASURE.textbbox((0, 0), ln, font=font_test)
-                    wh = (bbox[2] - bbox[0], bbox[3] - bbox[1])
-                    MEASURE_CACHE[key] = wh
-                w, h = wh
-            total += h + spacing
-            if w > max_w:
-                max_w = w
-        total -= spacing
+        fnt = _get_font(s)
+        sizes = [_measure(s, ln, fnt) for ln in visible_items]
+        total = sum(h for _, h in sizes) + spacing * (len(sizes) - 1) if sizes else 0
+        max_w = max((w for w, _ in sizes), default=0)
         if total <= (avail_h - 2 * vpad) and max_w <= (W - 2 * vpad):
             size = s
             break
 
     font = _get_font(size)
+    visible = [(ln, _measure(size, ln, font)) for ln in visible_items]
 
-    heights = []
-    total_h = 0
-    for ln in items:
-        if not ln:
-            h = size
-        else:
-            key = (size, ln)
-            wh = MEASURE_CACHE.get(key)
-            if wh is None:
-                bbox = DRAW_MEASURE.textbbox((0, 0), ln, font=font)
-                wh = (bbox[2] - bbox[0], bbox[3] - bbox[1])
-                MEASURE_CACHE[key] = wh
-            _, h = wh
-        heights.append(h)
-        total_h += h + spacing
-    if heights:
-        total_h -= spacing
+    total_h = sum(h for _, (_, h) in visible) + spacing * (len(visible) - 1) if visible else 0
 
-    # Center items within the available height (above footer)
+    # Center visible items within the available height (above footer)
     y = max(vpad, (avail_h - total_h) // 2)
-
-    for ln, h in zip(items, heights):
-        if ln:
-            key = (size, ln)
-            wh = MEASURE_CACHE.get(key)
-            if wh is None:
-                bbox = DRAW_MEASURE.textbbox((0, 0), ln, font=font)
-                wh = (bbox[2] - bbox[0], bbox[3] - bbox[1])
-                MEASURE_CACHE[key] = wh
-            w, _ = wh
-            DRAW.text(((W - w) // 2, y), ln, font=font, fill="WHITE")
+    for ln, (w, h) in visible:
+        DRAW.text(((W - w) // 2, y), ln, font=font, fill="WHITE")
         y += h + spacing
 
     # Pin footer to the very bottom
     if footer:
-        font_footer = _get_font(FOOTER_SIZE)
-        key = (FOOTER_SIZE, footer)
-        wh = MEASURE_CACHE.get(key)
-        if wh is None:
-            bbox = DRAW_MEASURE.textbbox((0, 0), footer, font=font_footer)
-            wh = (bbox[2] - bbox[0], bbox[3] - bbox[1])
-            MEASURE_CACHE[key] = wh
-        fw, fh = wh
-        DRAW.text(((W - fw) // 2, H - fh - 4), footer, font=font_footer, fill="WHITE")
+        fw, fh = _measure(FOOTER_SIZE, footer, _get_font(FOOTER_SIZE))
+        DRAW.text(((W - fw) // 2, H - fh - 4), footer, font=_get_font(FOOTER_SIZE), fill="WHITE")
 
     disp.ShowImage(FRAME)
 

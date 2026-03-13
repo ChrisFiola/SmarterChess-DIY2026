@@ -1090,17 +1090,7 @@ def _run_local_game(
             shutdown_raspberry_pi(link, display)
             return
 
-        # Silently ignore navigation/system messages that can linger from menus
-        if msg in IGNORED_MSGS or msg == "menu_ready":
-            continue
-
-        if handle_capq_message(link, state.board, msg):
-            continue
-
-        if msg.startswith("typing_"):
-            handle_typing_message(link, display, msg[len("typing_") :], state.board)
-            continue
-
+        # Actionable signals — must be checked before the ignore filter below
         if msg in NEW_GAME_MSGS:
             raise ReturnToMenu()
 
@@ -1112,6 +1102,17 @@ def _run_local_game(
             side = "WHITE" if state.board.turn == chess.WHITE else "BLACK"
             send_turn_notification(link, state.board)
             display.prompt_move(side, force=True)
+            continue
+
+        # Silently ignore lingering navigation/system messages
+        if msg == "menu_ready" or msg in {"draw", "btn_draw"}:
+            continue
+
+        if handle_capq_message(link, state.board, msg):
+            continue
+
+        if msg.startswith("typing_"):
+            handle_typing_message(link, display, msg[len("typing_") :], state.board)
             continue
 
         uci = parse_uci_move(msg)

@@ -8,7 +8,8 @@ Menu tree:
   │   ├── Challenge Friend  (select from following list, then time control)
   │   ├── Quick Pairing     (10+0 / 10+5 / 15+10 / 30+0 / 30+20)
   │   └── Correspondence    (open challenge, casual, 3-day clock)
-  └── Ongoing Games         (resume any active game; board setup if needed)
+  ├── Ongoing Games         (resume any active game; board setup if needed)
+  └── Challenge Received    (accept a pending incoming challenge)
 
 During active play:
   - OK + Hint  →  "Leave game?" paged menu (Resign / Exit to menu)
@@ -224,7 +225,7 @@ class OnlineController:
             )
 
         if not acct or acct.get("_error"):
-            display.send("Lichess offline\nWiFi/DNS error\nOK = Menu")
+            display.send("Lichess offline\nWiFi/DNS error\nOK = menu")
             while True:
                 m = link.read_from_board()
                 if not m:
@@ -400,6 +401,77 @@ class OnlineController:
 
         return self._wait_for_game_start()
 
+    def _run_challenge_received(self) -> Optional[str]:
+        """Fetch pending incoming challenges, let user accept one, return game ID."""
+        link, display = self.link, self.display
+
+        display.send("Loading\nchallenges...")
+        challenges = run_in_bg(
+            self.client.get_incoming_challenges, link, display,
+            on_cancel=self._cancel_to_menu,
+        ) or []
+
+        # Filter out error sentinel
+        challenges = [c for c in challenges if isinstance(c, dict) and not c.get("_error")]
+
+        if not challenges:
+            display.send("No challenges\nOK = back")
+            wait_for_ok(link, display)
+            return None
+
+        # Build labels: "Challenger (time control)"
+        def _tc_label(c: dict) -> str:
+            tc = c.get("timeControl") or {}
+            kind = tc.get("type", "")
+            if kind == "clock":
+                mins = tc.get("limit", 0) // 60
+                inc = tc.get("increment", 0)
+                return f"{mins}+{inc}"
+            if kind == "correspondence":
+                days = tc.get("daysPerTurn", "?")
+                return f"{days}d"
+            return "?"
+
+        labels = []
+        challenge_ids = []
+        for c in challenges[:10]:
+            challenger = (
+                (c.get("challenger") or {}).get("name")
+                or (c.get("challenger") or {}).get("id")
+                or "Unknown"
+            )
+            tc = _tc_label(c)
+            labels.append(f"{challenger[:12]} {tc}")
+            challenge_ids.append(c.get("id") or "")
+
+        choice = _paged_menu(link, display, labels)
+        if choice is None:
+            return None
+
+        try:
+            idx = labels.index(choice)
+        except ValueError:
+            return None
+
+        challenge_id = challenge_ids[idx]
+        challenger_name = labels[idx]
+
+        display.send(f"Accepting\n{challenger_name}...\nOK = cancel")
+        link.send_to_board("ok_cancel_enable")
+
+        resp = run_in_bg(
+            lambda: self.client.accept_challenge(challenge_id),
+            link, display,
+            on_cancel=self._cancel_to_menu,
+        )
+        if not resp or not resp.get("ok"):
+            err = (resp or {}).get("_error") or "Accept failed"
+            display.send(f"Challenge error\n{err[:18]}\nOK = back")
+            wait_for_ok(link, display)
+            return None
+
+        return self._wait_for_game_start()
+
     def _run_new_game(self) -> Optional[str]:
         """New Game submenu → returns game ID or None."""
         link, display = self.link, self.display
@@ -514,7 +586,7 @@ class OnlineController:
         while True:
             choice = _paged_menu(
                 link, display,
-                ["New Game", "Ongoing Games"],
+                ["New Game", "Ongoing Games", "Challenge Received"],
             )
             if choice is None:
                 raise ReturnToMenu()
@@ -531,6 +603,8 @@ class OnlineController:
                     if pre_loaded_board is None:
                         # User backed out of board setup
                         continue
+            elif choice == "Challenge Received":
+                game_id = self._run_challenge_received()
 
             if not game_id:
                 continue
@@ -723,7 +797,7 @@ class OnlineController:
                     elif winner == "black":
                         result = "0-1"
                     link.send_to_board(f"GameOver:{result}")
-                    display.send(f"GAME OVER\n{result}\nOK = Menu")
+                    display.send(f"GAME OVER\n{result}\nOK = menu")
                     raise ReturnToMenu()
 
                 continue  # keepalive or unrecognised event — loop back
