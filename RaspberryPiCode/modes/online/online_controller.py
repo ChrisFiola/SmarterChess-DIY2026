@@ -258,7 +258,8 @@ class OnlineController:
                         if stream_done.is_set():
                             return
                         if ev.get("type") == "gameStart":
-                            game_id_box[0] = (ev.get("game") or {}).get("id")
+                            game = ev.get("game") or {}
+                            game_id_box[0] = game.get("id") or game.get("gameId")
                             stream_done.set()
                             return
                 except Exception:
@@ -446,7 +447,7 @@ class OnlineController:
             opp = (g.get("opponent") or {}).get("username") or "Unknown"
             labels.append(f"{color} vs {opp[:15]}")
 
-        choice = _paged_menu(link, display, "Ongoing Games", labels)
+        choice = _paged_menu(link, display, "Ongoing Games", labels, wake_command="ChooseMode")
         if choice is None:
             return None
 
@@ -538,6 +539,7 @@ class OnlineController:
 
             display.send("Lichess\nLoading game...")
             link.send_to_board("ok_back_disable")
+            link.send_to_board("GameStart")
             self._play_game(game_id, username, pre_loaded_board=pre_loaded_board)
             # _play_game raises ReturnToMenu when the game ends
 

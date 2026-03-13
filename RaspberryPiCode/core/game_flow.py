@@ -1016,7 +1016,7 @@ def _run_local_game(
         pass
     link.send_to_board("GameStart")
     _show_new_game_banner(display)
-    time.sleep(0.3)
+    time.sleep(0.7)
 
     link.send_to_board("turn_white")
     display.prompt_move("WHITE")
@@ -1050,6 +1050,7 @@ def _run_local_game(
 
         if msg in OK_MSGS:
             side = "WHITE" if state.board.turn == chess.WHITE else "BLACK"
+            send_turn_notification(link, state.board)
             display.prompt_move(side, force=True)
             continue
 
