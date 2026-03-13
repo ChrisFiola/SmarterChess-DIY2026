@@ -1654,12 +1654,12 @@ def _run_puzzle_game(link: BoardLink, display: Display) -> None:
             continue
 
         while True:
-            themes_top = menu("THEMES", ["Phases", "Openings"])
+            themes_top = menu(["Phases", "Openings"])
             if themes_top is None:
                 break
 
             if themes_top.startswith("Phases"):
-                label = menu("PHASES", [v for _, v in PHASE_THEMES])
+                label = menu([v for _, v in PHASE_THEMES])
                 if label is None:
                     continue
                 tag = next((k for k, v in PHASE_THEMES if v == label), None)
@@ -1671,13 +1671,13 @@ def _run_puzzle_game(link: BoardLink, display: Display) -> None:
                 return
 
             if themes_top.startswith("Openings"):
-                grp = menu("OPENINGS", [g for g, _ in OPENING_GROUPS])
+                grp = menu([g for g, _ in OPENING_GROUPS])
                 if grp is None:
                     continue
                 opts = next((items for g, items in OPENING_GROUPS if g == grp), None)
                 if not opts:
                     continue
-                label = menu(grp.upper(), opts)
+                label = menu(opts)
                 if label is None:
                     continue
                 PuzzleController(

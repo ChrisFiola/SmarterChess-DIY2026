@@ -289,6 +289,34 @@ def _draw_splash():
     disp.ShowImage(FRAME)
 
 
+def _draw_menu(lines, font_size=16, left_pad=6, vpad=6):
+    """Render menu lines left-aligned and evenly distributed vertically.
+
+    Uses a fixed font size so menus always look the same regardless of
+    how many items are on the page.  Lines are spaced by dividing the
+    available height into equal slots rather than auto-scaling the font.
+    """
+    DRAW.rectangle((0, 0, W, H), fill="BLACK")
+    font = _get_font(font_size)
+
+    n = len(lines)
+    if n == 0:
+        disp.ShowImage(FRAME)
+        return
+
+    usable_h = H - 2 * vpad
+    slot_h = usable_h // n
+
+    for i, ln in enumerate(lines):
+        if not ln:
+            continue
+        slot_top = vpad + i * slot_h
+        y = slot_top + max(0, (slot_h - font_size) // 2)
+        DRAW.text((left_pad, y), ln, font=font, fill="WHITE")
+
+    disp.ShowImage(FRAME)
+
+
 # Draw splash on start
 _draw_splash()
 
@@ -372,7 +400,7 @@ while True:
             captions = [ln.strip() for ln in lines[1:]] if len(lines) > 1 else []
             _draw_qr(qr_data, captions)
         elif raw_size.lower() == "menu":
-            _draw_centered_block_text_auto(lines)
+            _draw_menu(lines)
         elif raw_size.lower() == "auto":
             _draw_centered_text_auto(lines)
         else:
