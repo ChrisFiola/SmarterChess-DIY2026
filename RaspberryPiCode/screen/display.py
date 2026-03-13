@@ -97,10 +97,9 @@ class Display:
                 pass
 
         # Start server with same interpreter as piMain
+        # stdout/stderr intentionally inherited so errors appear in journalctl
         subprocess.Popen(
             ["python3", DISPLAY_SERVER_SCRIPT],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
         )
 
     def wait_ready(self, timeout_s: float = 10.0) -> None:
