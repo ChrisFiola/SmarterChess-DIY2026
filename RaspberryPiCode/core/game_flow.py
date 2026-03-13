@@ -830,7 +830,6 @@ def _run_settings_menu(link: BoardLink, display: Display, cfg: GameConfig) -> No
         choice = _paged_menu(
             link,
             display,
-            "Settings",
             ["Brightness", "Update"],
             resend_timeout=3.0,
         )
@@ -1323,18 +1322,17 @@ def _menu_truncate(s: str, n: int) -> str:
 
 
 def _render_paged_menu(
-    title: str,
     page: int,
     pages: int,
     items: List[str],
     *,
-    per_page: int = 4,
+    can_back: bool,
+    per_page: int = 3,
 ) -> str:
     """Format a title-free paged menu for a 20-char wide 4-line LCD display."""
-    del title
 
     def _fmt(i: int, s: str) -> str:
-        return f"{i}) {_menu_truncate(s or '', 18)}"[:20].rstrip()
+        return f"{i}) {_menu_truncate(s or '', 17)}"[:20].rstrip()
 
     lines = [_fmt(i + 1, opt) for i, opt in enumerate(items[:per_page])]
     if lines and pages > 1:
@@ -1345,22 +1343,34 @@ def _render_paged_menu(
         else:
             line1 = line1[: max(0, 20 - len(suffix))] + suffix
         lines[0] = line1
-    while len(lines) < 4:
-        lines.append("OK=back Hint=next"[:20] if len(lines) == 3 else "")
+
+    while len(lines) < 3:
+        lines.append("")
+
+    has_next = (page + 1) < pages
+    if can_back and has_next:
+        footer = "OK=Back  Hint=Next"
+    elif can_back:
+        footer = "OK=Back"
+    elif has_next:
+        footer = "         Hint=Next"
+    else:
+        footer = ""
+    lines.append(footer[:20])
     return "\n".join(x[:20] for x in lines)
 
 
 def _paged_menu(
     link: BoardLink,
     display: Display,
-    title: str,
     options: List[str],
     *,
+    can_back: bool = True,
     wake_command: Optional[str] = None,
     resend_timeout: Optional[float] = None,
-    per_page: int = 4,
+    per_page: int = 3,
 ) -> Optional[str]:
-    """Show a scrollable 4-item menu and return the user's selection.
+    """Show a scrollable menu and return the user's selection.
 
     ``wake_command`` is used by startup/setup menus that need to recover from a
     Pico reboot before reopening the paged menu UI.
@@ -1389,10 +1399,10 @@ def _paged_menu(
         chunk = opts[page * per_page : page * per_page + per_page]
         display.send(
             _render_paged_menu(
-                title,
                 page,
                 pages,
                 chunk,
+                can_back=can_back,
                 per_page=per_page,
             )
         )
@@ -1416,15 +1426,18 @@ def _paged_menu(
 
         last_sync = time.monotonic()
         if m in OK_MSGS | NEW_GAME_MSGS:
-            return None
+            if can_back:
+                return None
+            continue
         if m in HINT_MSGS:
-            page = (page + 1) % pages
+            if (page + 1) < pages:
+                page += 1
             continue
         if m in ("1", "2", "3", "4"):
             idx = int(m) - 1
             if idx < len(chunk) and chunk[idx]:
                 return chunk[idx]
-            _sync_menu()
+            continue
 
 
 def wait_for_mode_selection(
@@ -1435,11 +1448,10 @@ def wait_for_mode_selection(
         top_choice = _paged_menu(
             link,
             display,
-            "Main Menu",
             [label for label, _ in _TOP_MENU_OPTIONS],
+            can_back=False,
             wake_command="ChooseMode",
             resend_timeout=3.0,
-            per_page=3,
         )
         if top_choice is None:
             continue
@@ -1459,11 +1471,9 @@ def wait_for_mode_selection(
         play_choice = _paged_menu(
             link,
             display,
-            "Play Chess!",
             [label for label, _ in _PLAY_CHESS_MENU_OPTIONS],
             wake_command="ChooseMode",
             resend_timeout=3.0,
-            per_page=3,
         )
         if play_choice is None:
             continue
@@ -1620,11 +1630,11 @@ def _run_puzzle_game(link: BoardLink, display: Display) -> None:
 
     client = LichessClient()
 
-    def menu(title: str, options: List[str]) -> Optional[str]:
-        return _paged_menu(link, display, title, options)
+    def menu(options: List[str]) -> Optional[str]:
+        return _paged_menu(link, display, options)
 
     while True:
-        top = menu("PUZZLES", ["Daily Puzzle", "Mix and match", "Themes"])
+        top = menu(["Daily Puzzle", "Mix and match", "Themes"])
         if top is None:
             raise ReturnToMenu()
 

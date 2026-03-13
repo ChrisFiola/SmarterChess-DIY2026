@@ -139,7 +139,6 @@ class OnlineController:
         choice = _paged_menu(
             self.link,
             self.display,
-            "Leave game?",
             ["Resign", "Exit to menu"],
             wake_command="ChooseMode",
             resend_timeout=3.0,
@@ -292,7 +291,7 @@ class OnlineController:
         link, display = self.link, self.display
 
         labels = [opt[0] for opt in _QUICK_PAIRING_OPTIONS]
-        choice = _paged_menu(link, display, "Quick Pairing", labels)
+        choice = _paged_menu(link, display, labels)
         if choice is None:
             return None
 
@@ -342,13 +341,13 @@ class OnlineController:
             wait_for_ok(link, display)
             return None
 
-        chosen_name = _paged_menu(link, display, "Challenge Friend", names)
+        chosen_name = _paged_menu(link, display, names)
         if not chosen_name:
             return None
 
         # Time control selection
         tc_labels = [o[0] for o in _CHALLENGE_TIME_OPTIONS]
-        chosen_tc = _paged_menu(link, display, "Time Control", tc_labels)
+        chosen_tc = _paged_menu(link, display, tc_labels)
         if not chosen_tc:
             return None
 
@@ -405,7 +404,7 @@ class OnlineController:
         """New Game submenu → returns game ID or None."""
         link, display = self.link, self.display
         choice = _paged_menu(
-            link, display, "New Game",
+            link, display,
             ["Challenge Friend", "Quick Pairing", "Correspondence"],
         )
         if choice is None:
@@ -447,7 +446,7 @@ class OnlineController:
             opp = (g.get("opponent") or {}).get("username") or "Unknown"
             labels.append(f"{color} vs {opp[:15]}")
 
-        choice = _paged_menu(link, display, "Ongoing Games", labels, wake_command="ChooseMode")
+        choice = _paged_menu(link, display, labels, wake_command="ChooseMode")
         if choice is None:
             return None
 
@@ -515,7 +514,7 @@ class OnlineController:
         while True:
             display.send(f"Lichess\n{username}\nOK=back")
             choice = _paged_menu(
-                link, display, "Online",
+                link, display,
                 ["New Game", "Ongoing Games"],
             )
             if choice is None:

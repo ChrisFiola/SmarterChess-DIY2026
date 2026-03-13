@@ -320,7 +320,7 @@ class Profiles:
             False,
             True,
             True,
-            [1, 2, 3, 4, 9, 10],
+            [1, 2, 3, 9, 10],
             ok_color=RED,
             hint_color=BLUE,
         )
@@ -1824,7 +1824,7 @@ def _handle_menu_paged(_msg):
         if b == (Config.Buttons.HINT_INDEX + 1):
             link.send("btn_hint")
             continue
-        if 1 <= b <= 4:
+        if 1 <= b <= 3:
             link.send(str(b))
             break
     board.markings()
