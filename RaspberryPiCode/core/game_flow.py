@@ -465,8 +465,7 @@ def offer_analysis_qr(link: BoardLink, display: Display, board: "chess.Board") -
         return
 
     print(f"[QR PGN] length={len(pgn)} pgn={pgn!r}", flush=True)
-    display.show_qr(pgn, "Paste PGN to", "analyse  OK=back")
-    # Re-enter MenuPaged so the Pico stays responsive after the menu selection.
+    display.show_qr(pgn)  # full-screen, no caption
     link.send_to_board("MenuPaged")
     wait_for_ok(link, display)
 
@@ -474,26 +473,17 @@ def offer_analysis_qr(link: BoardLink, display: Display, board: "chess.Board") -
 def post_game_menu(
     link: BoardLink, display: Display, board: "chess.Board"
 ) -> None:
-    """Show a post-game paged menu: New game or View PGN QR.
+    """Show post-game flow: OK to view PGN QR, then return to menu.
 
-    Uses ChooseMode to wake the Pico from game-over state, then shows
-    a MenuPaged menu so all buttons work. Always raises ReturnToMenu.
-    Call this after notify_game_over().
+    Always raises ReturnToMenu. Call this after notify_game_over().
     """
     time.sleep(1.5)  # let the game-over display settle
-    while True:
-        choice = _paged_menu(
-            link,
-            display,
-            "Game over",
-            ["New game", "View PGN QR"],
-            wake_command="ChooseMode",
-            resend_timeout=3.0,
-        )
-        if choice == "View PGN QR":
-            offer_analysis_qr(link, display, board)
-            raise ReturnToMenu()
-        raise ReturnToMenu()
+    display.send("Press OK\nto view PGN")
+    link.send_to_board("ChooseMode")
+    link.send_to_board("only_ok_cancel")
+    wait_for_ok(link, display)
+    offer_analysis_qr(link, display, board)
+    raise ReturnToMenu()
 
 
 def _get_draw_reason(brd: chess.Board) -> Optional[str]:
