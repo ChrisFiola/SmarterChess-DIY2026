@@ -711,12 +711,16 @@ def guide_board_setup(
 # -------------------- Setup & mode selection --------------------
 
 
-_MODE_MENU_OPTIONS: List[Tuple[str, Optional[str]]] = [
-    ("Against PC", "stockfish"),
-    ("Lichess Online", "online"),
-    ("Local 2-player", "local"),
+_TOP_MENU_OPTIONS: List[Tuple[str, Optional[str]]] = [
+    ("Play Chess!", "play"),
     ("Puzzles", "puzzle"),
-    ("Settings", None),
+    ("Settings", "settings"),
+]
+
+_PLAY_CHESS_MENU_OPTIONS: List[Tuple[str, Optional[str]]] = [
+    ("Against PC", "stockfish"),
+    ("Local 2-player", "local"),
+    ("Lichess Online", "online"),
 ]
 
 
@@ -1318,35 +1322,29 @@ def _menu_truncate(s: str, n: int) -> str:
     return s if len(s) <= n else (s[: max(0, n - 1)] + "…")
 
 
-def _render_paged_menu(title: str, page: int, pages: int, items: List[str]) -> str:
-    """Format up to 4 menu items for a 20-char wide 4-line LCD display.
-
-    When all 4 slots are filled, the page number is shown in the first item.
-    When fewer items are shown, a header line and navigation hint are added.
-    """
+def _render_paged_menu(
+    title: str,
+    page: int,
+    pages: int,
+    items: List[str],
+    *,
+    per_page: int = 4,
+) -> str:
+    """Format a title-free paged menu for a 20-char wide 4-line LCD display."""
+    del title
 
     def _fmt(i: int, s: str) -> str:
         return f"{i}) {_menu_truncate(s or '', 18)}"[:20].rstrip()
 
-    n = len(items)
-    if n >= 4:
-        line1 = _fmt(1, items[0])
-        if pages > 1:
-            suffix = f" {page + 1}/{pages}"
-            if len(line1) + len(suffix) <= 20:
-                line1 = line1 + suffix
-            else:
-                line1 = line1[: max(0, 20 - len(suffix))] + suffix
-        lines = [line1, _fmt(2, items[1]), _fmt(3, items[2]), _fmt(4, items[3])]
-        return "\n".join(x[:20] for x in lines)
-
-    # Fewer than 4 options: show header + items + navigation hint on last line.
-    header = (
-        f"{_menu_truncate(title, 14)} {page + 1}/{pages}"
-        if pages > 1
-        else _menu_truncate(title, 20)
-    )
-    lines = [header[:20].rstrip()] + [_fmt(i + 1, opt) for i, opt in enumerate(items)]
+    lines = [_fmt(i + 1, opt) for i, opt in enumerate(items[:per_page])]
+    if lines and pages > 1:
+        line1 = lines[0]
+        suffix = f" {page + 1}/{pages}"
+        if len(line1) + len(suffix) <= 20:
+            line1 = line1 + suffix
+        else:
+            line1 = line1[: max(0, 20 - len(suffix))] + suffix
+        lines[0] = line1
     while len(lines) < 4:
         lines.append("OK=back Hint=next"[:20] if len(lines) == 3 else "")
     return "\n".join(x[:20] for x in lines)
@@ -1360,6 +1358,7 @@ def _paged_menu(
     *,
     wake_command: Optional[str] = None,
     resend_timeout: Optional[float] = None,
+    per_page: int = 4,
 ) -> Optional[str]:
     """Show a scrollable 4-item menu and return the user's selection.
 
@@ -1370,7 +1369,6 @@ def _paged_menu(
     if not opts:
         return None
 
-    per_page = 4
     pages = (len(opts) + per_page - 1) // per_page
     page = 0
     last_sync = 0.0
@@ -1389,7 +1387,15 @@ def _paged_menu(
 
     while True:
         chunk = opts[page * per_page : page * per_page + per_page]
-        display.send(_render_paged_menu(title, page, pages, chunk))
+        display.send(
+            _render_paged_menu(
+                title,
+                page,
+                pages,
+                chunk,
+                per_page=per_page,
+            )
+        )
         msg = link.read_from_board()
         if msg is None:
             if (
@@ -1426,22 +1432,44 @@ def wait_for_mode_selection(
 ) -> str:
     del state
     while True:
-        choice = _paged_menu(
+        top_choice = _paged_menu(
             link,
             display,
-            "Game Mode",
-            [label for label, _ in _MODE_MENU_OPTIONS],
+            "Main Menu",
+            [label for label, _ in _TOP_MENU_OPTIONS],
             wake_command="ChooseMode",
             resend_timeout=3.0,
+            per_page=3,
         )
-        if choice is None:
+        if top_choice is None:
             continue
-        if choice == "Settings":
+        if top_choice == "Settings":
             _run_settings_menu(link, display, cfg)
             continue
 
+        top_action = next(
+            (mode for label, mode in _TOP_MENU_OPTIONS if label == top_choice),
+            None,
+        )
+        if top_action == "puzzle":
+            return "puzzle"
+        if top_action != "play":
+            continue
+
+        play_choice = _paged_menu(
+            link,
+            display,
+            "Play Chess!",
+            [label for label, _ in _PLAY_CHESS_MENU_OPTIONS],
+            wake_command="ChooseMode",
+            resend_timeout=3.0,
+            per_page=3,
+        )
+        if play_choice is None:
+            continue
+
         selected_mode = next(
-            (mode for label, mode in _MODE_MENU_OPTIONS if label == choice),
+            (mode for label, mode in _PLAY_CHESS_MENU_OPTIONS if label == play_choice),
             None,
         )
         if selected_mode:

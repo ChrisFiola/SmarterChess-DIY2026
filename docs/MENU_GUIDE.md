@@ -69,21 +69,22 @@ These prompts are used for:
 
 ```text
 Game Mode
-|- Against PC
-|  |- Difficulty
-|  |- Move time
-|  `- Player color
-|- Lichess Online
-|  |- Online
-|  |  |- New Game
-|  |  |  |- Challenge Friend
-|  |  |  |  |- Friend list (dynamic)
-|  |  |  |  `- Time Control
-|  |  |  |- Quick Pairing
-|  |  |  `- Correspondence
-|  |  |- Ongoing Games (dynamic)
-|  |  `- Leave game? (during an active online game)
-|- Local 2-player
+|- Play Chess!
+|  |- Against PC
+|  |  |- Difficulty
+|  |  |- Move time
+|  |  `- Player color
+|  |- Local 2-player
+|  `- Lichess Online
+|     |- Online
+|     |  |- New Game
+|     |  |  |- Challenge Friend
+|     |  |  |  |- Friend list (dynamic)
+|     |  |  |  `- Time Control
+|     |  |  |- Quick Pairing
+|     |  |  `- Correspondence
+|     |  |- Ongoing Games (dynamic)
+|     |  `- Leave game? (during an active online game)
 |- Puzzles
 |  |- Daily Puzzle
 |  |- Mix and match
@@ -103,35 +104,35 @@ Game Mode
 
 ## Main menu
 
-`Game Mode` has 5 items, so it appears across 2 pages.
+`Game Mode` now opens on a single compact page.
 
-### Page 1 of 2
+### Main page
 
 ```text
 +--------------------+
-|1) Against PC 1/2   |
-|2) Lichess Online   |
-|3) Local 2-player   |
-|4) Puzzles          |
+|1) Play Chess!      |
+|2) Puzzles          |
+|3) Settings         |
+|OK=back Hint=next   |
 +--------------------+
 ```
 
-### Page 2 of 2
+### Play Chess! submenu
 
 ```text
 +--------------------+
-|Game Mode 2/2       |
-|1) Settings         |
-|                    |
+|1) Against PC       |
+|2) Local 2-player   |
+|3) Lichess Online   |
 |OK=back Hint=next   |
 +--------------------+
 ```
 
 Interaction:
 
-- Press `1` to `4` on page 1 to select a mode.
-- Press `HINT` to go to page 2.
-- On page 2, press `1` for `Settings`.
+- Press `1` on the main page for `Play Chess!`, then `1` to `3` to choose a chess mode.
+- Press `2` on the main page for `Puzzles`.
+- Press `3` on the main page for `Settings`.
 - Press `OK` to cancel/back, though the main loop will simply keep you in mode
   selection.
 
@@ -720,11 +721,9 @@ Pressing `OK` shows a full-screen QR code.
 ## Behavior details and quirks
 
 - Menus always use `HINT` for next page. There is no previous-page button.
-- Menus with 3 visible items can fill all 4 rows, so they may not display an
-  `OK=back` footer even though `OK` still works.
+- The top-level menu and `Play Chess!` submenu use a compact 3-item layout with
+  `OK=back Hint=next` on the fourth line.
 - Dynamic menus truncate names to fit the LCD width.
-- The top-level `Settings` item is on page 2 of the main menu because only 4
-  options fit on the first page.
 - The online and puzzle systems also show non-menu status screens such as
   `Loading...`, `Waiting for opponent...`, and QR codes. Those are not paged
   menus, but they still use the same `OK` cancel/back behavior where noted.
