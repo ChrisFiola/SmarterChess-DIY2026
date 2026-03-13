@@ -158,17 +158,23 @@ def _draw_menu(lines):
 
     DRAW.rectangle((0, 0, W, H), fill="BLACK")
 
-    # Measure footer first so we know how much space it takes
+    # Find largest font size where footer fits the screen width
     footer_h = 0
+    FOOTER_SIZE = 14  # fallback
     if footer:
-        font_footer = _get_font(12)
-        key = (12, footer)
-        wh = MEASURE_CACHE.get(key)
-        if wh is None:
-            bbox = DRAW_MEASURE.textbbox((0, 0), footer, font=font_footer)
-            wh = (bbox[2] - bbox[0], bbox[3] - bbox[1])
-            MEASURE_CACHE[key] = wh
-        _, footer_h = wh
+        for fs in range(22, 11, -1):
+            fnt = _get_font(fs)
+            key = (fs, footer)
+            wh = MEASURE_CACHE.get(key)
+            if wh is None:
+                bbox = DRAW_MEASURE.textbbox((0, 0), footer, font=fnt)
+                wh = (bbox[2] - bbox[0], bbox[3] - bbox[1])
+                MEASURE_CACHE[key] = wh
+            fw, fh = wh
+            if fw <= W - 8:
+                FOOTER_SIZE = fs
+                footer_h = fh
+                break
 
     footer_reserved = (footer_h + 8) if footer else 0
     avail_h = H - footer_reserved
@@ -238,8 +244,8 @@ def _draw_menu(lines):
 
     # Pin footer to the very bottom
     if footer:
-        font_footer = _get_font(12)
-        key = (12, footer)
+        font_footer = _get_font(FOOTER_SIZE)
+        key = (FOOTER_SIZE, footer)
         wh = MEASURE_CACHE.get(key)
         if wh is None:
             bbox = DRAW_MEASURE.textbbox((0, 0), footer, font=font_footer)
