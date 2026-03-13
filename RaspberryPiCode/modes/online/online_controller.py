@@ -651,6 +651,7 @@ class OnlineController:
         awaiting_ok_ack = False
         in_move_entry = False
         waiting_exit_ui = False
+        pending_check_sq: Optional[str] = None
 
         def set_waiting_exit_ui(enabled: bool) -> None:
             nonlocal waiting_exit_ui
@@ -660,7 +661,7 @@ class OnlineController:
             waiting_exit_ui = enabled
 
         def apply_new_moves(move_list, announce_new: bool = True):
-            nonlocal last_move_count, awaiting_ok_ack, in_move_entry
+            nonlocal last_move_count, awaiting_ok_ack, in_move_entry, pending_check_sq
             set_waiting_exit_ui(False)
             for uci in move_list[last_move_count:]:
                 try:
@@ -671,10 +672,12 @@ class OnlineController:
                 is_cap = board.is_capture(mv)
                 board.push(mv)
                 last_move_count += 1
+                pending_check_sq = None
+                if board.is_check():
+                    ksq = board.king(board.turn)
+                    if ksq is not None:
+                        pending_check_sq = chess.square_name(ksq)
                 if announce_new:
-                    send_check_signal(link, board)
-                    if board.is_check():
-                        time.sleep(1.6)
                     link.send_to_board(format_engine_move(uci, is_cap))
                     time.sleep(0.3)
                     send_turn_if_human()
@@ -861,6 +864,9 @@ class OnlineController:
                 continue
 
             if msg in OK_MSGS:
+                if pending_check_sq is not None:
+                    link.send_to_board(f"check_{pending_check_sq}")
+                    pending_check_sq = None
                 awaiting_ok_ack = False
                 in_move_entry = False
                 side = "WHITE" if your_color == chess.WHITE else "BLACK"

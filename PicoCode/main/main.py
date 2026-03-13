@@ -163,6 +163,7 @@ class State:
         self.suspend_until_new_game = False
         self.ok_back_enabled = False
         self.ok_cancel_enabled = False
+        self.wait_exit_enabled = False
         self.hint_enabled = True
         self.puzzle_setup_active = False
 
@@ -1921,6 +1922,7 @@ def _set_ok_back_enabled(enabled, color=GREEN):
 
 
 def _set_ok_indicator(enabled, color=GREEN):
+    st.wait_exit_enabled = enabled
     cp.only_ok(enabled, color)
 
 
@@ -2067,6 +2069,7 @@ def _main_loop():
             and not st.in_input
             and not st.engine_ack_pending
             and not st.ok_back_enabled
+            and st.wait_exit_enabled
             and not st.puzzle_setup_active
         ):
             b_idle = cp.detect_press_raw()
