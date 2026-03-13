@@ -7,6 +7,7 @@ display_server.py listens on PIPE_PATH for single-line messages in the format:
 
 Where size is one of:
   'auto'    — pick a font size that fits all lines on screen
+  'menu'    — autosize and center the block, but left-align lines within it
   integer   — fixed font size in points
   'qr'      — render L1 as a QR code with optional captions in L2..L4
 """

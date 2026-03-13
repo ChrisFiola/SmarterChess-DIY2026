@@ -145,6 +145,58 @@ def _draw_centered_text_auto(lines, min_size=14, max_size=28, vpad=12, spacing=6
     _draw_centered_text_with_size(lines, size=size, spacing=sp, vpad=vpad)
 
 
+def _draw_centered_block_text_with_size(
+    lines, size: int, spacing: int = 6, vpad: int = 12
+):
+    """Center the whole text block, but left-align lines within it."""
+    DRAW.rectangle((0, 0, W, H), fill="BLACK")
+
+    font = _get_font(size)
+
+    heights = []
+    widths = []
+    total_h = 0
+    block_w = 0
+    for ln in lines:
+        if not ln:
+            w = 0
+            h = size
+        else:
+            key = (size, ln)
+            wh = MEASURE_CACHE.get(key)
+            if wh is None:
+                bbox = DRAW_MEASURE.textbbox((0, 0), ln, font=font)
+                wh = (bbox[2] - bbox[0], bbox[3] - bbox[1])
+                MEASURE_CACHE[key] = wh
+            w, h = wh
+        widths.append(w)
+        heights.append(h)
+        total_h += h + spacing
+        if w > block_w:
+            block_w = w
+    total_h -= spacing
+
+    x = max(vpad, (W - block_w) // 2)
+    y = max(vpad, (H - total_h - 2 * vpad) // 2 + vpad)
+
+    for ln, h, _w in zip(lines, heights, widths):
+        if ln:
+            DRAW.text((x, y), ln, font=font, fill="WHITE")
+        y += h + spacing
+
+    disp.ShowImage(FRAME)
+
+
+def _draw_centered_block_text_auto(
+    lines, min_size=14, max_size=28, vpad=12, spacing=6
+):
+    """Autosize to fit, then render as a centered left-aligned block."""
+    size, sp = _find_best_font_size(
+        lines, min_size=min_size, max_size=max_size, vpad=vpad, spacing=spacing
+    )
+    _draw_centered_block_text_with_size(lines, size=size, spacing=sp, vpad=vpad)
+
+
 # ------------------------------------------------------
 # QR rendering
 # ------------------------------------------------------
@@ -319,6 +371,8 @@ while True:
             qr_data = (lines[0] if lines else "").strip()
             captions = [ln.strip() for ln in lines[1:]] if len(lines) > 1 else []
             _draw_qr(qr_data, captions)
+        elif raw_size.lower() == "menu":
+            _draw_centered_block_text_auto(lines)
         elif raw_size.lower() == "auto":
             _draw_centered_text_auto(lines)
         else:

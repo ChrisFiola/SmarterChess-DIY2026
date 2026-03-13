@@ -1406,7 +1406,8 @@ def _paged_menu(
                 chunk,
                 can_back=can_back,
                 per_page=per_page,
-            )
+            ),
+            size="menu",
         )
         msg = link.read_from_board()
         if msg is None:
