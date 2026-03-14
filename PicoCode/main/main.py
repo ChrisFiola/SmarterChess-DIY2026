@@ -287,7 +287,7 @@ class Profiles:
         ok_color=GREEN,
         hint_color=YELLOW,
     ):
-        self.cp.border(border_on)
+        self.cp.border(border_on, apply_now=False)
         self.cp._set_cp_buttons(
             top=top,
             bottom=bottom,
@@ -430,11 +430,18 @@ class ControlPanel:
         for i in range(Config.LEDs.CP_ZONE_START, Config.LEDs.CP_ZONE_END):
             self._panel[i] = BLACK
 
-    def border(self, on=True, color=Config.LEDs.BORDER_COLOR, force=False):
+    def border(
+        self,
+        on=True,
+        color=Config.LEDs.BORDER_COLOR,
+        force=False,
+        apply_now=True,
+    ):
         col = color if on else BLACK
         for idx in Config.LEDs.FILES + Config.LEDs.RANKS:
             self._panel[idx] = col
-        self.apply(force=force)
+        if apply_now:
+            self.apply(force=force)
 
     def _set_cp_buttons(self, top, bottom, ok, hint, ok_color=GREEN, hint_color=YELLOW):
         self._panel[0] = WHITE if top else BLACK
@@ -444,23 +451,25 @@ class ControlPanel:
         self._panel[Config.LEDs.CP_OK_PIX] = ok_color if ok else BLACK
         self._panel[Config.LEDs.CP_HINT_PIX] = hint_color if hint else BLACK
 
-    def only_ok(self, on=True, color=GREEN):
+    def only_ok(self, on=True, color=GREEN, *, border_on=None, force=False):
+        if border_on is not None:
+            self.border(border_on, force=force, apply_now=False)
         self._set_cp_buttons(False, False, ok=on, hint=False, ok_color=color)
-        self.apply()
+        self.apply(force=force)
 
     def set_ok_led(self, on=True, color=GREEN):
         self._panel[Config.LEDs.CP_OK_PIX] = color if on else BLACK
         self.apply()
 
     def only_input(self):
-        self.border(True)
+        self.border(True, apply_now=False)
         self._set_cp_buttons(
             True, True, ok=True, hint=True, ok_color=RED, hint_color=YELLOW
         )
         self.apply()
 
     def show_coords_top(self, color=WHITE, keep_border=False):
-        self.border(keep_border)
+        self.border(keep_border, apply_now=False)
         self._panel[0] = color
         self._panel[1] = color
         self._panel[2] = BLACK
@@ -982,8 +991,7 @@ def _handle_hint_irq():
         link.send("n")
         board.markings()
         if st.in_game:
-            cp.only_ok(False)
-            cp.border(True, force=True)
+            cp.only_ok(False, border_on=True, force=True)
         else:
             cp.show_coords_top(WHITE)
         cp.suppress_hints_until_ms = time.ticks_add(
@@ -1525,8 +1533,7 @@ def _enter_setup_mode():
     cp.reset_edges()
     board.markings()
     if st.in_game:
-        cp.only_ok(False)
-        cp.border(True, force=True)
+        cp.only_ok(False, border_on=True, force=True)
     else:
         cp.show_coords_top(WHITE)
     st.game_state = Game.SETUP
@@ -1828,8 +1835,7 @@ def _handle_wait_for_ok_confirm(_msg=None):
         return
     cp.reset_edges()
     board.markings()
-    cp.border(st.in_game, force=True)
-    cp.only_ok(True, GREEN)
+    cp.only_ok(True, GREEN, border_on=st.in_game, force=True)
     while True:
         if cp.shutdown_held():
             _shutdown_pico()
