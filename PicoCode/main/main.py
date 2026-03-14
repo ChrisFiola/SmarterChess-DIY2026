@@ -1684,6 +1684,10 @@ def _run_game_setup_loop():
                 _handle_menu_paged(msg, ok_color=GREEN)
                 continue
 
+            if msg.startswith("heyArduinoWaitForOkConfirm"):
+                _handle_wait_for_ok_confirm(msg)
+                continue
+
             if msg.startswith("heyArduinoMenuPaged"):
                 _enter_setup_mode()
                 _handle_menu_paged(msg)
@@ -1854,6 +1858,29 @@ def _handle_choose_mode(_msg):
     _enter_setup_mode()
     while st.game_state == Game.SETUP:
         _run_game_setup_loop()
+
+
+def _handle_wait_for_ok_confirm(_msg=None):
+    cp.reset_edges()
+    board.markings()
+    cp.border(st.in_game, force=True)
+    cp.only_ok(True, GREEN)
+    while True:
+        if cp.shutdown_held():
+            _shutdown_pico()
+        if _handle_hint_irq() == "new":
+            cp.only_ok(False)
+            return
+        b = cp.detect_press_raw()
+        if b == (Config.Buttons.OK_INDEX + 1):
+            while cp.BTN_OK.value() == 0:
+                time.sleep_ms(Config.Timing.POLL_MS)
+            cp.disarm_confirm_ok()
+            cp.only_ok(False)
+            cp.reset_edges()
+            link.send("btn_ok")
+            return
+        time.sleep_ms(Config.Timing.FAST_POLL_MS)
 
 
 def _handle_menu_paged(_msg, *, ok_color=None):
@@ -2054,6 +2081,7 @@ def _handle_update_mode(_msg):
 ROUTES = [
     ("heyArduinoGameStart", _handle_game_start),
     ("heyArduinoGameEnd", _handle_game_end),
+    ("heyArduinoWaitForOkConfirm", _handle_wait_for_ok_confirm),
     ("heyArduinoonly_ok_cancel", lambda _: cp.only_ok(True, RED)),
     ("heyArduinook_back_enable", lambda _: (_set_ok_back_enabled(True))),
     ("heyArduinook_cancel_enable", lambda _: (_set_ok_back_enabled(True, RED))),
