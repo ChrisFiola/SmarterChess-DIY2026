@@ -320,6 +320,7 @@ class Profiles:
         allow_select=True,
         border_on=False,
         ok_color=None,
+        preserve_rows=False,
     ):
         allowed = []
         if allow_select:
@@ -330,10 +331,11 @@ class Profiles:
             allowed.append(10)
         if ok_color is None:
             ok_color = RED if has_back else BLACK
+        bottom = preserve_rows
         self._apply(
             border_on,
             True,
-            False,
+            bottom,
             True,
             True,
             allowed,
@@ -1868,6 +1870,7 @@ def _handle_menu_paged(_msg, *, ok_color=None):
         allow_select=allow_select,
         border_on=st.in_game,
         ok_color=ok_color,
+        preserve_rows=st.in_game,
     )
     cp.disable_hint_irq()
     cp.reset_edges()
