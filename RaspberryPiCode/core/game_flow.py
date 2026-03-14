@@ -104,7 +104,7 @@ def wait_for_ok_or_skip_setup(link: BoardLink, display: Display):
         if m in OK_MSGS:
             return "ok"
 
-        if (m or "").strip().lower() == "1":
+        if (m or "").strip().lower() == "8":
             return "skip"
 
         if m.startswith("typing_") or m.startswith("capq_") or m in HINT_MSGS:
@@ -741,7 +741,7 @@ def guide_board_setup(
     link.send_to_board("hint_disable")
     link.send_to_board("puzzle_setup_begin")
     try:
-        display.send(f"{label}\nSetup position\nOK=setup 1=skip")
+        display.send(f"{label}\nSetup position\nOK=setup 8=skip")
         time.sleep(0.3)
         link.send_to_board("setup_clear")
 

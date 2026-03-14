@@ -871,7 +871,7 @@ class PuzzleController:
                     )
                 ),
             )
-            display.send(f"{label}\nSetup position\nOK=setup 1=skip")
+            display.send(f"{label}\nSetup position\nOK=setup 8=skip")
             time.sleep(0.3)
             link.send_to_board("setup_clear")
 

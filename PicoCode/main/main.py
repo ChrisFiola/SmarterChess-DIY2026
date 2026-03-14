@@ -1860,7 +1860,7 @@ def _handle_wait_for_ok_or_skip_setup(_msg=None):
     cp.border(st.in_game or st.puzzle_setup_active, force=True, apply_now=False)
     cp._set_cp_buttons(True, False, True, False, ok_color=GREEN)
     cp.apply(force=True)
-    cp.set_allowed([1, Config.Buttons.OK_INDEX + 1])
+    cp.set_allowed([8, Config.Buttons.OK_INDEX + 1])
     while True:
         if cp.shutdown_held():
             _shutdown_pico()
@@ -1868,10 +1868,10 @@ def _handle_wait_for_ok_or_skip_setup(_msg=None):
         if not b:
             time.sleep_ms(Config.Timing.FAST_POLL_MS)
             continue
-        if b == 1:
+        if b == 8:
             cp.set_allowed(None)
             cp.reset_edges()
-            link.send("1")
+            link.send("8")
             return
         if b == (Config.Buttons.OK_INDEX + 1):
             while cp.BTN_OK.value() == 0:
