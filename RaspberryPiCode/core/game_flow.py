@@ -1791,9 +1791,25 @@ def run_selected_mode(
 
 def shutdown_raspberry_pi(link: BoardLink, display: Display) -> None:
     if display:
-        display.send("Shutting down...\nWait 20s then\ndisconnect power.")
-    time.sleep(2)
-    try:
-        subprocess.call("sudo nohup shutdown -h now", shell=True)
-    except Exception as e:
-        print(f"[Shutdown] {e}", file=sys.stderr)
+        display.send("Shutting Down...", force=True)
+    time.sleep(0.5)
+
+    commands = [
+        ["sudo", "systemctl", "poweroff", "--no-wall"],
+        ["sudo", "shutdown", "-h", "now"],
+    ]
+
+    for cmd in commands:
+        try:
+            subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            raise SystemExit(0)
+        except SystemExit:
+            raise
+        except Exception as e:
+            print(f"[Shutdown] {' '.join(cmd)} failed: {e}", file=sys.stderr)
+
+    raise SystemExit(1)
