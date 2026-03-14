@@ -192,7 +192,6 @@ class OnlineController:
         link, display = self.link, self.display
 
         link.send_to_board("SetupComplete")
-        link.send_to_board("GameStart")
         link.send_to_board("ok_cancel_enable")
         display.send("Lichess\nConnecting...\nOK = cancel")
 

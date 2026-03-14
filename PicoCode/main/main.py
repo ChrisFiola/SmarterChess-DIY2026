@@ -1670,7 +1670,6 @@ def _run_game_setup_loop():
                 continue
 
             if msg.startswith("heyArduinoSetupComplete"):
-                st.in_game = True
                 st.game_state = Game.RUNNING
                 st.in_setup = False
                 st.suspend_until_new_game = False
