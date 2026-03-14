@@ -271,6 +271,9 @@ class Screen:
         return False, ok_seen
 
 
+# Give the Pico rails and the Pi UART a moment to settle on cold power-up.
+time.sleep_ms(500)
+
 link = UARTLink()
 screen = Screen(link, st)
 
