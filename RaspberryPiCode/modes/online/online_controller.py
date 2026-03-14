@@ -656,15 +656,11 @@ class OnlineController:
 
         awaiting_ok_ack = False
         in_move_entry = False
-        waiting_exit_ui = False
         pending_check_sq: Optional[str] = None
 
         def set_waiting_exit_ui(enabled: bool) -> None:
-            nonlocal waiting_exit_ui
-            if waiting_exit_ui == enabled:
-                return
-            link.send_to_board("wait_exit_enable" if enabled else "wait_exit_disable")
-            waiting_exit_ui = enabled
+            if not enabled:
+                link.send_to_board("wait_exit_disable")
 
         def apply_new_moves(move_list, announce_new: bool = True):
             nonlocal last_move_count, awaiting_ok_ack, in_move_entry, pending_check_sq
@@ -750,9 +746,6 @@ class OnlineController:
                     if peek.startswith("typing_"):
                         awaiting_ok_ack = False
                         in_move_entry = True
-                elif peek in OK_MSGS and board.turn != your_color:
-                    set_waiting_exit_ui(False)
-                    self._confirm_resign_or_exit(game_id)
                 elif peek in NEW_GAME_MSGS:
                     set_waiting_exit_ui(False)
                     self._confirm_resign_or_exit(game_id)
@@ -768,10 +761,10 @@ class OnlineController:
 
             # ── Opponent's turn — poll stream in background ───────────────────
             if board.turn != your_color:
-                set_waiting_exit_ui(True)
+                set_waiting_exit_ui(False)
                 now = int(time.time() * 1000)
                 if now - last_wait_banner_ms > 1500:
-                    display.send("Waiting for\nopponent...\nOK = exit menu")
+                    display.send("Waiting for\nopponent...\nOK+Hint = menu")
                     last_wait_banner_ms = now
 
                 # Read ONE stream event in a background thread so the main
@@ -799,7 +792,7 @@ class OnlineController:
                             set_waiting_exit_ui(False)
                             shutdown_raspberry_pi(link, display)
                             raise ReturnToMenu()
-                        if smsg in OK_MSGS | NEW_GAME_MSGS:
+                        if smsg in NEW_GAME_MSGS:
                             set_waiting_exit_ui(False)
                             self._confirm_resign_or_exit(game_id)
                             last_wait_banner_ms = 0  # re-show banner immediately
