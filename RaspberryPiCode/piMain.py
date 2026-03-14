@@ -55,6 +55,10 @@ def main():
                 run_selected_mode(link, display, ctx, state, cfg)
 
             except ReturnToMenu:
+                try:
+                    link.send_to_board("GameEnd")
+                except Exception:
+                    pass
                 state.board = chess.Board()
                 display.send("SMARTCHESS")
                 continue

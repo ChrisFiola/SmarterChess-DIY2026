@@ -147,6 +147,7 @@ class State:
     def __init__(self):
         self.game_state = Game.IDLE
         self.current_turn = "W"
+        self.in_game = False
 
         self.default_strength = 5
         self.default_move_time = 2000
@@ -314,7 +315,15 @@ class Profiles:
     def vs_color(self):
         self._apply(False, True, False, True, False, [1, 2, 3, 9], ok_color=RED)
 
-    def menu_paged(self, has_next=True, has_back=True, *, allow_select=True):
+    def menu_paged(
+        self,
+        has_next=True,
+        has_back=True,
+        *,
+        allow_select=True,
+        border_on=False,
+        ok_color=None,
+    ):
         allowed = []
         if allow_select:
             allowed.extend([1, 2, 3])
@@ -322,14 +331,16 @@ class Profiles:
             allowed.append(9)
         if has_next:
             allowed.append(10)
+        if ok_color is None:
+            ok_color = RED if has_back else BLACK
         self._apply(
-            False,
+            border_on,
             True,
             False,
             True,
             True,
             allowed,
-            ok_color=GREEN if has_back else BLACK,
+            ok_color=ok_color,
             hint_color=YELLOW if has_next else BLACK,
         )
 
@@ -454,8 +465,8 @@ class ControlPanel:
         )
         self.apply()
 
-    def show_coords_top(self, color=WHITE):
-        self.border(False)
+    def show_coords_top(self, color=WHITE, keep_border=False):
+        self.border(keep_border)
         self._panel[0] = color
         self._panel[1] = color
         self._panel[2] = BLACK
@@ -998,15 +1009,12 @@ def _handle_hint_irq():
         st.pending_gameover_result = None
         st.buffered_turn_msg = None
         link.send("n")
-
-        cp.show_coords_top(WHITE)
-        board.off()
-        v = 0
-        while v < (board.w * board.h):
-            v = board.loading_step(v)
-            time.sleep_ms(Config.Timing.LOADING_STEP_MS)
-        time.sleep_ms(Config.Timing.LOADING_POST_MS)
         board.markings()
+        if st.in_game:
+            cp.only_ok(False)
+            cp.border(True, force=True)
+        else:
+            cp.show_coords_top(WHITE)
         cp.suppress_hints_until_ms = time.ticks_add(
             now, Config.Timing.NEW_GAME_SUPPRESS_MS
         )
@@ -1537,11 +1545,28 @@ def _run_startup_sequence():
             return
 
 
+def _play_exit_to_menu_animation():
+    cp.show_coords_top(WHITE)
+    board.off()
+    v = 0
+    while v < (board.w * board.h):
+        if cp.shutdown_held():
+            _shutdown_pico()
+        v = board.loading_step(v)
+        time.sleep_ms(Config.Timing.LOADING_STEP_MS)
+    time.sleep_ms(Config.Timing.LOADING_POST_MS)
+    board.markings()
+
+
 def _enter_setup_mode():
     cp.disable_hint_irq()
     cp.reset_edges()
     board.markings()
-    cp.show_coords_top(WHITE)
+    if st.in_game:
+        cp.only_ok(False)
+        cp.border(True, force=True)
+    else:
+        cp.show_coords_top(WHITE)
     st.game_state = Game.SETUP
     st.suspend_until_new_game = False
 
@@ -1645,10 +1670,20 @@ def _run_game_setup_loop():
                 continue
 
             if msg.startswith("heyArduinoSetupComplete"):
+                st.in_game = True
                 st.game_state = Game.RUNNING
                 st.in_setup = False
                 st.suspend_until_new_game = False
                 return
+
+            if msg.startswith("heyArduinoGameEnd"):
+                _handle_game_end(msg)
+                continue
+
+            if msg.startswith("heyArduinoMenuConfirm"):
+                _enter_setup_mode()
+                _handle_menu_paged(msg, ok_color=GREEN)
+                continue
 
             if msg.startswith("heyArduinoMenuPaged"):
                 _enter_setup_mode()
@@ -1693,7 +1728,7 @@ def _run_game_setup_loop():
 
 def _handle_promotion_choice():
     board.scene_promotion()
-    cp.show_coords_top(MAGENTA)
+    cp.show_coords_top(MAGENTA, keep_border=True)
     cp.reset_edges()
     try:
         while True:
@@ -1733,6 +1768,7 @@ def _handle_puzzle_setup_message(msg):
 
     if msg.startswith("heyArduinopuzzle_setup_done"):
         st.puzzle_setup_active = False
+        st.in_game = True
         st.game_state = Game.RUNNING
         st.in_setup = False
         st.suspend_until_new_game = False
@@ -1821,7 +1857,7 @@ def _handle_choose_mode(_msg):
         _run_game_setup_loop()
 
 
-def _handle_menu_paged(_msg):
+def _handle_menu_paged(_msg, *, ok_color=None):
     allow_select = False
     has_next = False
     has_back = True
@@ -1837,6 +1873,8 @@ def _handle_menu_paged(_msg):
         has_next=has_next,
         has_back=has_back,
         allow_select=allow_select,
+        border_on=st.in_game,
+        ok_color=ok_color,
     )
     cp.disable_hint_irq()
     cp.reset_edges()
@@ -1860,6 +1898,32 @@ def _handle_menu_paged(_msg):
             break
     board.markings()
     cp.enable_hint_irq()
+
+
+def _handle_game_start(_msg):
+    st.in_game = True
+
+
+def _handle_game_end(_msg):
+    was_in_game = st.in_game or st.game_state == Game.RUNNING or st.puzzle_setup_active
+    st.in_game = False
+    st.in_input = False
+    st.in_setup = False
+    st.puzzle_setup_active = False
+    st.engine_ack_pending = False
+    st.pending_gameover_result = None
+    st.buffered_turn_msg = None
+    st.ok_back_enabled = False
+    st.wait_exit_enabled = False
+    st.suspend_until_new_game = False
+    st.game_state = Game.SETUP
+    cp.disable_hint_irq()
+    cp.reset_edges()
+    if was_in_game:
+        _play_exit_to_menu_animation()
+    else:
+        board.markings()
+        cp.show_coords_top(WHITE)
 
 
 def _handle_engine_move(msg):
@@ -1979,6 +2043,9 @@ def _handle_update_mode(_msg):
 
 
 ROUTES = [
+    ("heyArduinoGameStart", _handle_game_start),
+    ("heyArduinoGameEnd", _handle_game_end),
+    ("heyArduinoonly_ok_cancel", lambda _: cp.only_ok(True, RED)),
     ("heyArduinook_back_enable", lambda _: (_set_ok_back_enabled(True))),
     ("heyArduinook_cancel_enable", lambda _: (_set_ok_back_enabled(True, RED))),
     ("heyArduinook_back_disable", lambda _: (_set_ok_back_enabled(False))),
@@ -1997,6 +2064,7 @@ ROUTES = [
     ("heyArduinoGameOver", _handle_gameover),
     ("heyArduinoResetBoard", _handle_reset_board),
     ("heyArduinoChooseMode", _handle_choose_mode),
+    ("heyArduinoMenuConfirm", lambda m: _handle_menu_paged(m, ok_color=GREEN)),
     ("heyArduinoMenuPaged", _handle_menu_paged),
     ("heyArduinom", _handle_engine_move),
     ("heyArduinopromotion_choice_needed", lambda _: _handle_promotion_choice()),
@@ -2062,11 +2130,13 @@ def _main_loop():
 
         if _handle_hint_irq() == "new":
             cp.disable_hint_irq()
-            cp.off()
-            # Don't play board.opening() here — the Pi will immediately send
-            # ChooseMode + MenuPaged for the exit-confirmation menu. Playing
-            # the full startup animation first makes it look like the Pico
-            # already exited to the main menu before the user confirms.
+            cp.only_ok(False)
+            if st.in_game:
+                cp.border(True, force=True)
+            else:
+                cp.off()
+            # The actual exit animation now runs on GameEnd after the user
+            # confirms they want to leave the game.
             st.engine_ack_pending = False
             st.pending_gameover_result = None
             st.buffered_turn_msg = None
@@ -2142,6 +2212,7 @@ def _main_loop():
         if st.suspend_until_new_game or st.game_state != Game.RUNNING:
             if not (
                 msg.startswith("heyArduinoChooseMode")
+                or msg.startswith("heyArduinoGameEnd")
                 or msg.startswith("heyArduinoResetBoard")
                 or msg.startswith("heyArduinoUpdateMode")
             ):
