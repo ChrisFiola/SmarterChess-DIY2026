@@ -990,9 +990,7 @@ def _handle_hint_irq():
         st.buffered_turn_msg = None
         link.send("n")
         board.markings()
-        if st.in_game:
-            cp.only_ok(False, border_on=True, force=True)
-        else:
+        if not st.in_game:
             cp.show_coords_top(WHITE)
         cp.suppress_hints_until_ms = time.ticks_add(
             now, Config.Timing.NEW_GAME_SUPPRESS_MS
@@ -1532,9 +1530,7 @@ def _enter_setup_mode():
     cp.disable_hint_irq()
     cp.reset_edges()
     board.markings()
-    if st.in_game:
-        cp.only_ok(False, border_on=True, force=True)
-    else:
+    if not st.in_game:
         cp.show_coords_top(WHITE)
     st.game_state = Game.SETUP
     st.suspend_until_new_game = False
@@ -2137,10 +2133,7 @@ def _main_loop():
 
         if _handle_hint_irq() == "new":
             cp.disable_hint_irq()
-            cp.only_ok(False)
-            if st.in_game:
-                cp.border(True, force=True)
-            else:
+            if not st.in_game:
                 cp.off()
             # The actual exit animation now runs on GameEnd after the user
             # confirms they want to leave the game.
