@@ -448,6 +448,10 @@ class ControlPanel:
         self._set_cp_buttons(False, False, ok=on, hint=False, ok_color=color)
         self.apply()
 
+    def set_ok_led(self, on=True, color=GREEN):
+        self._panel[Config.LEDs.CP_OK_PIX] = color if on else BLACK
+        self.apply()
+
     def only_input(self):
         self.border(True)
         self._set_cp_buttons(
@@ -1197,7 +1201,7 @@ def _confirm_move(move):
 
     if ok_seen_during_ack or cp.consume_confirm_ok(window_ms=300):
         cp.disarm_confirm_ok()
-        cp.only_ok(False)
+        cp.set_ok_led(False)
         screen.clear("confirm")
         cp.wait_for_ok_release()
         cp.reset_edges()
@@ -1257,13 +1261,11 @@ def _confirm_move(move):
             cp.disarm_confirm_ok()
 
             if fired:
-                cp.only_ok(False)
-                cp.reset_edges()
                 screen.clear("confirm")
                 return ("backspace_confirm", move[:-1])
 
             if held_ms < Config.Buttons.OK_LONG_PRESS_MS:
-                cp.only_ok(False)
+                cp.set_ok_led(False)
                 screen.clear("confirm")
                 return "ok"
 
@@ -1278,14 +1280,14 @@ def _confirm_move(move):
             # it 0 (LOW) a few µs later — a falling edge is detected and
             # the button is misrouted as "redo". Treat it as a confirm.
             cp.disarm_confirm_ok()
-            cp.only_ok(False)
+            cp.set_ok_led(False)
             screen.clear("confirm")
             cp.wait_for_ok_release()
             cp.reset_edges()
             return "ok"
         if b:
             cp.disarm_confirm_ok()
-            cp.only_ok(False)
+            cp.set_ok_led(False)
             screen.clear("confirm")
             return ("redo", b)
 
@@ -1832,14 +1834,14 @@ def _handle_wait_for_ok_confirm(_msg=None):
         if cp.shutdown_held():
             _shutdown_pico()
         if _handle_hint_irq() == "new":
-            cp.only_ok(False)
+            cp.set_ok_led(False)
             return
         b = cp.detect_press_raw()
         if b == (Config.Buttons.OK_INDEX + 1):
             while cp.BTN_OK.value() == 0:
                 time.sleep_ms(Config.Timing.POLL_MS)
             cp.disarm_confirm_ok()
-            cp.only_ok(False)
+            cp.set_ok_led(False)
             cp.reset_edges()
             link.send("btn_ok")
             return
@@ -1956,7 +1958,6 @@ def _handle_puzzle_wrong(msg):
             link.send("btn_ok")
             break
         time.sleep_ms(Config.Timing.POLL_MS)
-    cp.only_ok(False)
     _clear_persistent_trail()
     board.markings()
     if st.game_state == Game.RUNNING:
@@ -2186,7 +2187,7 @@ def _main_loop():
             if b == (Config.Buttons.OK_INDEX + 1):
                 link.send("btn_ok")
                 st.engine_ack_pending = False
-                cp.only_ok(False)
+                cp.set_ok_led(False)
                 _clear_persistent_trail()
 
                 if st.buffered_turn_msg:
