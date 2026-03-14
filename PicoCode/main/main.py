@@ -1887,6 +1887,9 @@ def _handle_menu_paged(_msg, *, ok_color=None):
             time.sleep_ms(Config.Timing.FAST_POLL_MS)
             continue
         if b == (Config.Buttons.OK_INDEX + 1):
+            while cp.BTN_OK.value() == 0:
+                time.sleep_ms(Config.Timing.POLL_MS)
+            cp.reset_edges()
             link.send("btn_ok")
             break
         if b == (Config.Buttons.HINT_INDEX + 1):
@@ -1955,12 +1958,19 @@ def _handle_puzzle_wrong(msg):
             break
         b = cp.detect_press_raw()
         if b == (Config.Buttons.OK_INDEX + 1):
+            while cp.BTN_OK.value() == 0:
+                time.sleep_ms(Config.Timing.POLL_MS)
+            cp.disarm_confirm_ok()
+            cp.reset_edges()
             link.send("btn_ok")
             break
         time.sleep_ms(Config.Timing.POLL_MS)
     cp.only_ok(False)
     _clear_persistent_trail()
     board.markings()
+    if st.game_state == Game.RUNNING:
+        cp.only_input()
+        cp.reset_edges()
 
 
 def _handle_turn(msg):
