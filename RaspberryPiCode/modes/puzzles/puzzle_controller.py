@@ -871,7 +871,7 @@ class PuzzleController:
                     )
                 ),
             )
-            display.send(f"{label}\nSetup position\nOK=setup 8=skip")
+            display.send(f"{label}\nSetup position\nOK=setup 1=skip")
             time.sleep(0.3)
             link.send_to_board("setup_clear")
 
@@ -881,18 +881,17 @@ class PuzzleController:
             if choice == "skip":
                 display.send(f"{label}\nPuzzle begins")
                 time.sleep(0.3)
-                return
+            else:
+                for side, sq, sym in steps:
+                    display.send(
+                        f"PLACE {('WHITE' if side=='w' else 'BLACK')}\n{piece_name(sym)} {sq}\nOK = next"
+                    )
+                    link.send_to_board(f"setup_place_{sq}_{side}")
+                    if not wait_for_ok(link, display):
+                        return
 
-            for side, sq, sym in steps:
-                display.send(
-                    f"PLACE {('WHITE' if side=='w' else 'BLACK')}\n{piece_name(sym)} {sq}\nOK = next"
-                )
-                link.send_to_board(f"setup_place_{sq}_{side}")
-                if not wait_for_ok(link, display):
-                    return
-
-            display.send(f"{label}\nSetup done\nPuzzle begins")
-            time.sleep(0.3)
+                display.send(f"{label}\nSetup done\nPuzzle begins")
+                time.sleep(0.3)
         finally:
             link.send_to_board("hint_enable")
             link.send_to_board("puzzle_setup_done")
