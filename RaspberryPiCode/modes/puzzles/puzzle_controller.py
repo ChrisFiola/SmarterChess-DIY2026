@@ -41,6 +41,7 @@ from core.game_flow import (
     shutdown_raspberry_pi,
     run_in_bg,
     wait_for_ok,
+    wait_for_ok_or_skip_setup,
     confirm_exit_game,
     handle_illegal_move,
     handle_typing_message,
@@ -870,11 +871,16 @@ class PuzzleController:
                     )
                 ),
             )
-            display.send(f"{label}\nSetup position\nOK = next")
+            display.send(f"{label}\nSetup position\nOK=setup 1=skip")
             time.sleep(0.3)
             link.send_to_board("setup_clear")
 
-            if not wait_for_ok(link, display):
+            choice = wait_for_ok_or_skip_setup(link, display)
+            if choice is None:
+                return
+            if choice == "skip":
+                display.send(f"{label}\nPuzzle begins")
+                time.sleep(0.3)
                 return
 
             for side, sq, sym in steps:

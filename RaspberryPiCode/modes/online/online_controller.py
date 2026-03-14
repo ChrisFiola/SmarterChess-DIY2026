@@ -570,8 +570,10 @@ class OnlineController:
             return board
 
         # Guide user through physical board setup
-        ok = guide_board_setup(link, display, board.fen(), label="Current position")
-        if not ok:
+        setup_choice = guide_board_setup(
+            link, display, board.fen(), label="Current position"
+        )
+        if setup_choice is None:
             return None
         return board
 

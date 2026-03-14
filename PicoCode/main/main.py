@@ -320,7 +320,6 @@ class Profiles:
         allow_select=True,
         border_on=False,
         ok_color=None,
-        preserve_rows=False,
     ):
         allowed = []
         if allow_select:
@@ -331,11 +330,10 @@ class Profiles:
             allowed.append(10)
         if ok_color is None:
             ok_color = RED if has_back else BLACK
-        bottom = preserve_rows
         self._apply(
             border_on,
             True,
-            bottom,
+            False,
             True,
             True,
             allowed,
@@ -1747,6 +1745,10 @@ def _handle_puzzle_setup_message(msg):
         cp.enable_hint_irq()
         return True
 
+    if msg.startswith("heyArduinoWaitForOkOrSkipSetup"):
+        _handle_wait_for_ok_or_skip_setup(msg)
+        return True
+
     if not st.puzzle_setup_active:
         return False
 
@@ -1852,6 +1854,34 @@ def _handle_wait_for_ok_confirm(_msg=None):
         time.sleep_ms(Config.Timing.FAST_POLL_MS)
 
 
+def _handle_wait_for_ok_or_skip_setup(_msg=None):
+    cp.reset_edges()
+    board.markings()
+    cp.border(st.in_game or st.puzzle_setup_active, force=True, apply_now=False)
+    cp._set_cp_buttons(True, False, True, False, ok_color=GREEN)
+    cp.apply(force=True)
+    cp.set_allowed([1, Config.Buttons.OK_INDEX + 1])
+    while True:
+        if cp.shutdown_held():
+            _shutdown_pico()
+        b = cp.detect_press_allowed()
+        if not b:
+            time.sleep_ms(Config.Timing.FAST_POLL_MS)
+            continue
+        if b == 1:
+            cp.set_allowed(None)
+            cp.reset_edges()
+            link.send("1")
+            return
+        if b == (Config.Buttons.OK_INDEX + 1):
+            while cp.BTN_OK.value() == 0:
+                time.sleep_ms(Config.Timing.POLL_MS)
+            cp.set_allowed(None)
+            cp.reset_edges()
+            link.send("btn_ok")
+            return
+
+
 def _handle_menu_paged(_msg, *, ok_color=None):
     allow_select = False
     has_next = False
@@ -1870,7 +1900,6 @@ def _handle_menu_paged(_msg, *, ok_color=None):
         allow_select=allow_select,
         border_on=st.in_game,
         ok_color=ok_color,
-        preserve_rows=st.in_game,
     )
     cp.disable_hint_irq()
     cp.reset_edges()
@@ -2051,6 +2080,7 @@ ROUTES = [
     ("heyArduinoGameStart", _handle_game_start),
     ("heyArduinoGameEnd", _handle_game_end),
     ("heyArduinoWaitForOkConfirm", _handle_wait_for_ok_confirm),
+    ("heyArduinoWaitForOkOrSkipSetup", _handle_wait_for_ok_or_skip_setup),
     ("heyArduinoonly_ok_cancel", lambda _: cp.only_ok(True, RED)),
     ("heyArduinook_back_enable", lambda _: (_set_ok_back_enabled(True))),
     ("heyArduinook_cancel_enable", lambda _: (_set_ok_back_enabled(True, RED))),

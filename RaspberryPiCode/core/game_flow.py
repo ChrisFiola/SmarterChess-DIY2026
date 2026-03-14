@@ -85,6 +85,32 @@ def wait_for_ok(link: BoardLink, display: Display, *, send_prompt: bool = True) 
             continue
 
 
+def wait_for_ok_or_skip_setup(link: BoardLink, display: Display):
+    """Wait for setup-entry confirmation."""
+    link.send_to_board("WaitForOkOrSkipSetup")
+
+    while True:
+        m = link.read_from_board()
+        if m is None:
+            continue
+
+        if m == "shutdown":
+            shutdown_raspberry_pi(link, display)
+            return None
+
+        if m in NEW_GAME_MSGS:
+            return None
+
+        if m in OK_MSGS:
+            return "ok"
+
+        if (m or "").strip().lower() == "1":
+            return "skip"
+
+        if m.startswith("typing_") or m.startswith("capq_") or m in HINT_MSGS:
+            continue
+
+
 def confirm_exit_game(
     link: BoardLink,
     display: Display,
@@ -697,11 +723,11 @@ def guide_board_setup(
     display: Display,
     fen: str,
     label: str = "Position",
-) -> bool:
+) -> str | None:
     """Guide the user through placing pieces for a given FEN position.
 
     Sends puzzle_setup_begin/done and LED square hints to the Pico.
-    Returns True if setup completed, False if user backed out.
+    Returns "ok" if setup completed, "skip" if skipped, or None if user backed out.
     The caller is responsible for confirming the board is EMPTY before calling.
     """
     from core.protocol import piece_name  # local import to avoid circular
@@ -715,12 +741,15 @@ def guide_board_setup(
     link.send_to_board("hint_disable")
     link.send_to_board("puzzle_setup_begin")
     try:
-        display.send(f"{label}\nSetup position\nOK = next")
+        display.send(f"{label}\nSetup position\nOK=setup 1=skip")
         time.sleep(0.3)
         link.send_to_board("setup_clear")
 
-        if not wait_for_ok(link, display):
-            return False
+        choice = wait_for_ok_or_skip_setup(link, display)
+        if choice is None:
+            return None
+        if choice == "skip":
+            return "skip"
 
         for side, sq, sym in steps:
             display.send(
@@ -729,11 +758,11 @@ def guide_board_setup(
             )
             link.send_to_board(f"setup_place_{sq}_{side}")
             if not wait_for_ok(link, display):
-                return False
+                return None
 
         display.send(f"{label}\nSetup done!")
         time.sleep(0.5)
-        return True
+        return "ok"
     finally:
         link.send_to_board("hint_enable")
         link.send_to_board("puzzle_setup_done")
