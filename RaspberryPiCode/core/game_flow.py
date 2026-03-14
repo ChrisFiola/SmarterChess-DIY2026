@@ -53,16 +53,17 @@ class GameState:
 # -------------------- Parsing & helpers --------------------
 
 
-def wait_for_ok(link: BoardLink, display: Display) -> bool:
+def wait_for_ok(link: BoardLink, display: Display, *, send_prompt: bool = True) -> bool:
     """Wait for Pico OK acknowledgement (btn_ok/ok).
 
     Sends WaitForOkConfirm so the Pico enters a dedicated OK-confirm state
     regardless of whether it is in SETUP (setup loop) or RUNNING (main loop)
-    state.
+    state, unless the caller already put the Pico into an OK-waiting state.
 
     Returns False if the user exits to menu (new game) or shutdown is triggered.
     """
-    link.send_to_board("WaitForOkConfirm")
+    if send_prompt:
+        link.send_to_board("WaitForOkConfirm")
 
     while True:
         m = link.read_from_board()
@@ -324,7 +325,7 @@ def handle_illegal_move(
     else:
         display.send(f"{side_prefix}\n{label} move\nPress OK")
 
-    ok = wait_for_ok(link, display)
+    ok = wait_for_ok(link, display, send_prompt=False)
     if not ok:
         return False
 

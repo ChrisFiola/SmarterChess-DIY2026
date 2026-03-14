@@ -90,7 +90,6 @@ def _load_brightness():
 
 
 def _save_and_reset_brightness(val):
-    """Persist brightness to flash then reboot so scaling takes effect."""
     val = max(1, min(8, int(val)))
     try:
         with open("/brightness.txt", "w") as _f:
@@ -234,7 +233,6 @@ class Screen:
     def wait_for_lcd_ack(
         self, expected_ack="heyArduinolcd_ack_confirm", timeout_ms=300
     ):
-        print("[PICO ACK] waiting for:", expected_ack, "timeout_ms=", timeout_ms)
         deadline = time.ticks_add(time.ticks_ms(), timeout_ms)
         ok_seen = False
 
@@ -249,14 +247,10 @@ class Screen:
                 time.sleep_ms(Config.Timing.FAST_POLL_MS)
                 continue
 
-            print("[PICO ACK] got:", msg)
-
             if msg == expected_ack:
-                print("[PICO ACK] matched, ok_seen =", ok_seen)
                 return True, ok_seen
 
             if msg.startswith("heyArduinoGameOver"):
-                print("[PICO ACK] interrupted by gameover")
                 _handle_gameover(msg)
                 return False, ok_seen
 
@@ -267,7 +261,6 @@ class Screen:
                 _handle_overlay_or_gameover(msg)
                 continue
 
-        print("[PICO ACK] timeout waiting for:", expected_ack, "ok_seen =", ok_seen)
         return False, ok_seen
 
 
@@ -366,7 +359,6 @@ class ControlPanel:
         self._panel = neopixel.NeoPixel(
             Pin(Config.LEDs.PANEL_PIN, Pin.OUT), Config.LEDs.PANEL_COUNT
         )
-        self._panel_last = None
 
         self.pins = [Pin(g, Pin.IN, Pin.PULL_UP) for g in Config.Buttons.PINS]
         self.BTN_OK = self.pins[Config.Buttons.OK_INDEX]
@@ -425,14 +417,8 @@ class ControlPanel:
 
     # ── LED panel ─────────────────────────────────────────────────────────────
 
-    def _snapshot(self):
-        return [tuple(self._panel[i]) for i in range(Config.LEDs.PANEL_COUNT)]
-
     def apply(self, force=False):
-        cur = self._snapshot()
-        if force or self._panel_last is None or cur != self._panel_last:
-            self._panel.write()
-            self._panel_last = cur
+        self._panel.write()
 
     def off(self, force=False):
         for i in range(Config.LEDs.PANEL_COUNT):
@@ -878,11 +864,6 @@ def _map_range(x, in_min, in_max, out_min, out_max):
 
 
 def _show_overlay(payload, color, trail_type):
-    """Parse payload, record persistent trail state, and render on the board.
-
-    Replaces the old parse_overlay_payload → show_overlay_from_payload →
-    show_persistent_trail chain.
-    """
     cap = payload.endswith("_cap")
     uci = payload[:-4] if cap else payload
     end_color = MAGENTA if cap else None
@@ -914,15 +895,6 @@ def _clear_persistent_trail():
 
 
 def _tick_input_loop():
-    """Single iteration of the standard input-loop guard.
-
-    Returns one of:
-      ('new_game',)   – hint+OK combo triggered a new game
-      ('gameover',)   – game-over message received
-      ('overlay',)    – hint/engine overlay received (input loop should restart)
-      ('btn', n)      – a button edge was detected
-      None            – nothing happened this tick
-    """
     if cp.shutdown_held():
         _shutdown_pico()
     irq = _handle_hint_irq()
@@ -944,15 +916,6 @@ def _tick_input_loop():
 
 
 def _wait_for_trail_clear():
-    """Block until any button is pressed while a persistent trail is displayed,
-    then clear it.
-
-    Returns:
-      None         – no trail was active (caller should proceed normally)
-      'gameover'   – game ended while waiting
-      int (1-8)    – coord button that dismissed the trail (usable as seed)
-      0            – non-coord button dismissed the trail
-    """
     if not st.persistent_trail_active:
         return None
     while True:
@@ -1215,12 +1178,10 @@ def _confirm_move(move):
     cp.reset_edges()
     cp.arm_confirm_ok()
 
-    print("[PICO CONFIRM] send typing_confirm:", move)
     screen.typing_confirm(move)
     acked, ok_seen_during_ack = screen.wait_for_lcd_ack(
         "heyArduinolcd_ack_confirm", timeout_ms=300
     )
-    print("[PICO CONFIRM] acked =", acked, "ok_seen_during_ack =", ok_seen_during_ack)
 
     if not acked:
         cp.disarm_confirm_ok()
@@ -1234,7 +1195,6 @@ def _confirm_move(move):
     time.sleep_ms(30)
 
     if ok_seen_during_ack or cp.consume_confirm_ok(window_ms=300):
-        print("[PICO CONFIRM] consuming armed confirm OK")
         cp.disarm_confirm_ok()
         cp.only_ok(False)
         screen.clear("confirm")
@@ -1332,10 +1292,6 @@ def _confirm_move(move):
 
 
 def _retry_to_square(frm, preset_to_col=None):
-    """Re-enter the to-square with optional column preset, handling the full
-    back-chain.  Returns ('restart_from', col_or_None) or a valid to-square
-    string, or None on abort.
-    """
     while True:
         cp.only_input()
         cp.reset_edges()
@@ -2045,7 +2001,6 @@ def _handle_set_brightness(msg):
 
 
 def _handle_update_mode(_msg):
-    """Receive a new main.py from the Pi in base64 chunks and flash it."""
     _TEMP = "/main_new.py"
     board.off()
     cp.off(force=True)
