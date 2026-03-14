@@ -1636,6 +1636,14 @@ def _run_game_setup_loop():
                         return
                     time.sleep_ms(Config.Timing.FAST_POLL_MS)
 
+            if msg.startswith("heyArduinohint_enable"):
+                st.hint_enabled = True
+                continue
+
+            if msg.startswith("heyArduinohint_disable"):
+                st.hint_enabled = False
+                continue
+
             if msg.startswith("heyArduinoSetupComplete"):
                 st.game_state = Game.RUNNING
                 st.in_setup = False

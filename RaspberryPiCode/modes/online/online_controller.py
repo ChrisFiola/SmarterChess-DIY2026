@@ -618,7 +618,12 @@ class OnlineController:
             display.send("Lichess\nLoading game...")
             link.send_to_board("ok_back_disable")
             link.send_to_board("GameStart")
-            self._play_game(game_id, username, pre_loaded_board=pre_loaded_board)
+            link.send_to_board("hint_disable")
+            try:
+                self._play_game(game_id, username, pre_loaded_board=pre_loaded_board)
+            finally:
+                link.send_to_board("wait_exit_disable")
+                link.send_to_board("hint_enable")
             # _play_game raises ReturnToMenu when the game ends
 
     # ── Active game loop ──────────────────────────────────────────────────────

@@ -742,6 +742,7 @@ def guide_board_setup(
             link.clear_input()
         except Exception:
             pass
+        link.send_to_board("hint_enable")
 
 
 # -------------------- Setup & mode selection --------------------
@@ -1430,7 +1431,7 @@ def _paged_menu(
         nonlocal last_sync, menu_ready
         if wake_command:
             link.send_to_board(wake_command)
-        has_hint = 1 if (page + 1) < pages else 0
+        has_hint = 1 if pages > 1 else 0
         has_back = 1 if can_back else 0
         link.send_to_board(f"MenuPaged_{has_hint}_{has_back}")
         last_sync = time.monotonic()
