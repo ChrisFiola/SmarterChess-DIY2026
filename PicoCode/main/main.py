@@ -970,7 +970,7 @@ def _check_if_move_captures(uci, timeout_ms=150):
 
 
 def _handle_hint_irq():
-    if not st.hint_enabled or not cp.hint_irq_flag:
+    if not cp.hint_irq_flag:
         return None
     cp.hint_irq_flag = False
 
@@ -996,6 +996,9 @@ def _handle_hint_irq():
             now, Config.Timing.NEW_GAME_SUPPRESS_MS
         )
         return "new"
+
+    if not st.hint_enabled:
+        return None
 
     if st.game_state != Game.RUNNING:
         return None
