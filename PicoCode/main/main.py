@@ -147,6 +147,7 @@ class State:
         self.game_state = Game.IDLE
         self.current_turn = "W"
         self.in_game = False
+        self.skip_next_wait_ok_confirm = False
 
         self.default_strength = 5
         self.default_move_time = 2000
@@ -1820,6 +1821,9 @@ def _handle_choose_mode(_msg):
 
 
 def _handle_wait_for_ok_confirm(_msg=None):
+    if st.skip_next_wait_ok_confirm:
+        st.skip_next_wait_ok_confirm = False
+        return
     cp.reset_edges()
     board.markings()
     cp.border(st.in_game, force=True)
@@ -1948,6 +1952,7 @@ def _handle_puzzle_wrong(msg):
                 time.sleep_ms(Config.Timing.POLL_MS)
             cp.disarm_confirm_ok()
             cp.reset_edges()
+            st.skip_next_wait_ok_confirm = True
             link.send("btn_ok")
             break
         time.sleep_ms(Config.Timing.POLL_MS)
