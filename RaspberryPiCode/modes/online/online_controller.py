@@ -802,6 +802,10 @@ class OnlineController:
 
                 display.send("Lichess\nLoading game...")
                 link.send_to_board("ok_back_disable")
+                # Menus run the Pico in SETUP mode. Put it back into RUNNING
+                # before the online game starts so engine/turn messages and
+                # board input are accepted normally.
+                link.send_to_board("SetupComplete")
                 link.send_to_board("GameStart")
                 link.send_to_board("hint_disable")
                 try:
