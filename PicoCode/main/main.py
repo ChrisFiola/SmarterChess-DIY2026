@@ -2048,56 +2048,6 @@ def _set_ok_indicator(enabled, color=GREEN):
     cp.only_ok(enabled, color)
 
 
-def _route_only_ok_cancel(_msg):
-    cp.only_ok(True, RED)
-
-
-def _route_ok_back_enable(_msg):
-    _set_ok_back_enabled(True)
-
-
-def _route_ok_cancel_enable(_msg):
-    _set_ok_back_enabled(True, RED)
-
-
-def _route_ok_back_disable(_msg):
-    _set_ok_back_enabled(False)
-
-
-def _route_wait_exit_enable(_msg):
-    _set_ok_indicator(True, RED)
-
-
-def _route_wait_exit_disable(_msg):
-    _set_ok_indicator(False)
-
-
-def _route_hint_disable(_msg):
-    st.hint_enabled = False
-
-
-def _route_hint_enable(_msg):
-    st.hint_enabled = True
-
-
-def _route_check(msg):
-    sq = msg.split("_", 1)[1].strip() if "_" in msg else ""
-    board.blink_square_keep(sq, RED)
-
-
-def _route_menu_confirm(msg):
-    _handle_menu_paged(msg, ok_color=GREEN)
-
-
-def _route_promotion_choice(_msg):
-    _handle_promotion_choice()
-
-
-def _route_error(_msg):
-    board.illegal_flash()
-    cp.only_ok(False)
-
-
 def _handle_set_brightness(msg):
     try:
         _save_and_reset_brightness(int(msg.split("_")[-1]))
@@ -2141,46 +2091,93 @@ def _handle_update_mode(_msg):
         link.send("UpdateError")
 
 
-ROUTES = [
-    ("heyArduinoGameStart", _handle_game_start),
-    ("heyArduinoGameEnd", _handle_game_end),
-    ("heyArduinoWaitForOkConfirm", _handle_wait_for_ok_confirm),
-    ("heyArduinoWaitForOkOrSkipSetup", _handle_wait_for_ok_or_skip_setup),
-    ("heyArduinoonly_ok_cancel", _route_only_ok_cancel),
-    ("heyArduinook_back_enable", _route_ok_back_enable),
-    ("heyArduinook_cancel_enable", _route_ok_cancel_enable),
-    ("heyArduinook_back_disable", _route_ok_back_disable),
-    ("heyArduinowait_exit_enable", _route_wait_exit_enable),
-    ("heyArduinowait_exit_disable", _route_wait_exit_disable),
-    ("heyArduinohint_disable", _route_hint_disable),
-    ("heyArduinohint_enable", _route_hint_enable),
-    ("heyArduinocheck_", _route_check),
-    ("heyArduinoSetBrightness_", _handle_set_brightness),
-    ("heyArduinoUpdateMode", _handle_update_mode),
-    ("heyArduinoGameOver", _handle_gameover),
-    ("heyArduinoResetBoard", _handle_reset_board),
-    ("heyArduinoChooseMode", _handle_choose_mode),
-    ("heyArduinoMenuConfirm", _route_menu_confirm),
-    ("heyArduinoMenuPaged", _handle_menu_paged),
-    ("heyArduinom", _handle_engine_move),
-    ("heyArduinopromotion_choice_needed", _route_promotion_choice),
-    ("heyArduinohint_", _handle_hint_move),
-    ("heyArduinopuzzle_wrong_", _handle_puzzle_wrong),
-    ("heyArduinoerror", _route_error),
-    ("heyArduinoturn_", _handle_turn),
-]
-
-
 def _route_incoming_message(msg):
     try:
         if _handle_puzzle_setup_message(msg):
             return True
     except Exception:
         pass
-    for prefix, fn in ROUTES:
-        if msg.startswith(prefix):
-            fn(msg)
-            return True
+
+    if msg.startswith("heyArduinoGameStart"):
+        _handle_game_start(msg)
+        return True
+    if msg.startswith("heyArduinoGameEnd"):
+        _handle_game_end(msg)
+        return True
+    if msg.startswith("heyArduinoWaitForOkConfirm"):
+        _handle_wait_for_ok_confirm(msg)
+        return True
+    if msg.startswith("heyArduinoWaitForOkOrSkipSetup"):
+        _handle_wait_for_ok_or_skip_setup(msg)
+        return True
+    if msg.startswith("heyArduinoonly_ok_cancel"):
+        cp.only_ok(True, RED)
+        return True
+    if msg.startswith("heyArduinook_back_enable"):
+        _set_ok_back_enabled(True)
+        return True
+    if msg.startswith("heyArduinook_cancel_enable"):
+        _set_ok_back_enabled(True, RED)
+        return True
+    if msg.startswith("heyArduinook_back_disable"):
+        _set_ok_back_enabled(False)
+        return True
+    if msg.startswith("heyArduinowait_exit_enable"):
+        _set_ok_indicator(True, RED)
+        return True
+    if msg.startswith("heyArduinowait_exit_disable"):
+        _set_ok_indicator(False)
+        return True
+    if msg.startswith("heyArduinohint_disable"):
+        st.hint_enabled = False
+        return True
+    if msg.startswith("heyArduinohint_enable"):
+        st.hint_enabled = True
+        return True
+    if msg.startswith("heyArduinocheck_"):
+        sq = msg.split("_", 1)[1].strip() if "_" in msg else ""
+        board.blink_square_keep(sq, RED)
+        return True
+    if msg.startswith("heyArduinoSetBrightness_"):
+        _handle_set_brightness(msg)
+        return True
+    if msg.startswith("heyArduinoUpdateMode"):
+        _handle_update_mode(msg)
+        return True
+    if msg.startswith("heyArduinoGameOver"):
+        _handle_gameover(msg)
+        return True
+    if msg.startswith("heyArduinoResetBoard"):
+        _handle_reset_board(msg)
+        return True
+    if msg.startswith("heyArduinoChooseMode"):
+        _handle_choose_mode(msg)
+        return True
+    if msg.startswith("heyArduinoMenuConfirm"):
+        _handle_menu_paged(msg, ok_color=GREEN)
+        return True
+    if msg.startswith("heyArduinoMenuPaged"):
+        _handle_menu_paged(msg)
+        return True
+    if msg.startswith("heyArduinom"):
+        _handle_engine_move(msg)
+        return True
+    if msg.startswith("heyArduinopromotion_choice_needed"):
+        _handle_promotion_choice()
+        return True
+    if msg.startswith("heyArduinohint_"):
+        _handle_hint_move(msg)
+        return True
+    if msg.startswith("heyArduinopuzzle_wrong_"):
+        _handle_puzzle_wrong(msg)
+        return True
+    if msg.startswith("heyArduinoerror"):
+        board.illegal_flash()
+        cp.only_ok(False)
+        return True
+    if msg.startswith("heyArduinoturn_"):
+        _handle_turn(msg)
+        return True
     return False
 
 
