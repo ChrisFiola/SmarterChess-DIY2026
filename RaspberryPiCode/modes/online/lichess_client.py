@@ -246,17 +246,49 @@ class LichessClient:
         rated: bool = False,
         color: str = "random",
     ) -> Dict[str, Any]:
-        """Challenge a specific Lichess user to a game."""
+        """Challenge a specific Lichess user to a real-time game."""
+        data = {
+            "rated": "true" if rated else "false",
+            "clock.limit": str(limit_seconds),
+            "clock.increment": str(increment_seconds),
+            "color": color,
+        }
+
         try:
             r = requests.post(
                 f"{LICHESS_BASE}/api/challenge/{username}",
                 headers=self.headers,
-                data={
-                    "rated": "true" if rated else "false",
-                    "clock.limit": str(limit_seconds),
-                    "clock.increment": str(increment_seconds),
-                    "color": color,
-                },
+                data=data,
+                timeout=15,
+            )
+            if r.status_code in (200, 201):
+                return r.json()
+            return {"_error": f"HTTP {r.status_code}: {r.text[:120]}"}
+        except RequestException as e:
+            return {"_error": str(e)}
+
+    def challenge_user_correspondence(
+        self,
+        username: str,
+        days: int = 3,
+        rated: bool = False,
+        color: str = "random",
+    ) -> Dict[str, Any]:
+        """Challenge a specific Lichess user to a correspondence game."""
+        if days <= 0:
+            return {"_error": "Days per turn must be > 0"}
+
+        data = {
+            "rated": "true" if rated else "false",
+            "days": str(days),
+            "color": color,
+        }
+
+        try:
+            r = requests.post(
+                f"{LICHESS_BASE}/api/challenge/{username}",
+                headers=self.headers,
+                data=data,
                 timeout=15,
             )
             if r.status_code in (200, 201):
