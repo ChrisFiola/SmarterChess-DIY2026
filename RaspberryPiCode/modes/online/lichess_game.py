@@ -60,6 +60,23 @@ def extract_clocks(payload: Dict[str, Any]) -> Tuple[Optional[int], Optional[int
     return (None, None)
 
 
+def extract_draw_offer_side(payload: Dict[str, Any]) -> Optional[str]:
+    if not payload:
+        return None
+    if payload.get("type") == "gameFull":
+        st = payload.get("state") or {}
+    elif payload.get("type") == "gameState":
+        st = payload
+    else:
+        return None
+
+    if st.get("wdraw"):
+        return "white"
+    if st.get("bdraw"):
+        return "black"
+    return None
+
+
 def extract_winner(payload: Dict[str, Any]) -> Optional[str]:
     if (payload or {}).get("type") == "gameState":
         return payload.get("winner")

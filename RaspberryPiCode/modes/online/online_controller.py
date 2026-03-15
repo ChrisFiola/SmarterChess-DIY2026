@@ -27,9 +27,10 @@ import chess
 
 from core.boardlink import BoardLink
 from screen.display import Display
-from modes.online.lichess_client import LichessClient, LICHESS_BASE
+from modes.online.lichess_client import LichessClient
 from modes.online.lichess_game import (
     extract_clocks,
+    extract_draw_offer_side,
     extract_moves,
     extract_players,
     extract_status,
@@ -215,6 +216,14 @@ class OnlineController:
         except Exception:
             pass
 
+    def _decline_draw(self, game_id: str) -> None:
+        """Decline an incoming draw offer on Lichess."""
+        self.display.send("Declining draw...")
+        try:
+            self.client.decline_draw(game_id)
+        except Exception:
+            pass
+
     def _cancel_to_menu(self) -> None:
         """Show 'Cancelling...', disable back button, raise ReturnToMenu."""
         self.display.send("Cancelling...")
@@ -222,7 +231,7 @@ class OnlineController:
         time.sleep(1.0)
         raise ReturnToMenu()
 
-    def _confirm_resign_or_exit(self, game_id: str) -> None:
+    def _confirm_resign_or_exit(self, game_id: str, *, incoming_draw_offer: bool = False) -> None:
         """Show 'Leave game?' menu after OK+Hint is pressed during active play.
 
         Uses the paged-menu mechanism (wake Pico via ChooseMode then MenuPaged)
@@ -232,13 +241,30 @@ class OnlineController:
         Returns normally (without raising) if the user presses Back to continue.
         In that case the Pico is re-armed via SetupComplete.
         """
+        options = (
+            ["Accept draw", "Decline draw", "Resign", "Exit to menu"]
+            if incoming_draw_offer
+            else ["Offer draw", "Resign", "Exit to menu"]
+        )
         choice = _paged_menu(
             self.link,
             self.display,
-            ["Resign", "Exit to menu"],
+            options,
             wake_command="ChooseMode",
             resend_timeout=3.0,
         )
+        if choice == "Offer draw":
+            self._offer_draw(game_id)
+            self.link.send_to_board("SetupComplete")
+            return
+        if choice == "Accept draw":
+            self._offer_draw(game_id)
+            self.link.send_to_board("SetupComplete")
+            return
+        if choice == "Decline draw":
+            self._decline_draw(game_id)
+            self.link.send_to_board("SetupComplete")
+            return
         if choice == "Resign":
             self._resign_and_exit(game_id)  # raises ReturnToMenu
         if choice == "Exit to menu":
@@ -910,6 +936,22 @@ class OnlineController:
         awaiting_ok_ack = False
         in_move_entry = False
         pending_check_sq: Optional[str] = None
+        incoming_draw_offer = False
+        incoming_draw_offer_dismissed = False
+
+        def sync_draw_offer_state(payload) -> None:
+            nonlocal incoming_draw_offer, incoming_draw_offer_dismissed
+            offered_side = extract_draw_offer_side(payload)
+            opponent_side = "black" if your_color == chess.WHITE else "white"
+            opponent_offered = offered_side == opponent_side
+            if opponent_offered and not incoming_draw_offer:
+                incoming_draw_offer = True
+                incoming_draw_offer_dismissed = False
+                display.send("Opponent offers\na draw\nOK+Hint = menu", force=True)
+                return
+            if not opponent_offered:
+                incoming_draw_offer = False
+                incoming_draw_offer_dismissed = False
 
         def set_waiting_exit_ui(enabled: bool) -> None:
             nonlocal wait_exit_ui_enabled
@@ -929,17 +971,7 @@ class OnlineController:
 
             display.clear_online_clock()
             link.send_to_board(f"GameOver:{result}")
-            display.send(f"GAME OVER\n{winner_text}")
-            time.sleep(1.5)
-
-            display.send("Press OK\nto view analysis")
-            link.send_to_board("ChooseMode")
-            link.send_to_board("only_ok_cancel")
-            if not wait_for_ok(link, display):
-                raise ReturnToMenu()
-
-            display.show_qr(f"{LICHESS_BASE}/{game_id}#analysis")
-            link.send_to_board("MenuPaged")
+            display.send(f"GAME OVER\n{winner_text}\nOK = menu")
             wait_for_ok(link, display)
             raise ReturnToMenu()
 
@@ -1058,6 +1090,7 @@ class OnlineController:
             apply_new_moves(extract_moves(first), announce_new=False)
 
         sync_clock_from_payload(first)
+        sync_draw_offer_state(first)
         self._active_clock_stop = clock_stop
         start_clock_worker()
         send_turn_if_human()
@@ -1075,7 +1108,12 @@ class OnlineController:
                         in_move_entry = True
                 elif peek in NEW_GAME_MSGS:
                     set_waiting_exit_ui(False)
-                    self._confirm_resign_or_exit(game_id)
+                    self._confirm_resign_or_exit(
+                        game_id,
+                        incoming_draw_offer=incoming_draw_offer and not incoming_draw_offer_dismissed,
+                    )
+                    if incoming_draw_offer:
+                        incoming_draw_offer_dismissed = True
                     # Returned → user pressed Back; game continues
                 elif peek in ("draw", "btn_draw"):
                     set_waiting_exit_ui(False)
@@ -1120,7 +1158,12 @@ class OnlineController:
                             raise ReturnToMenu()
                         if smsg in NEW_GAME_MSGS:
                             set_waiting_exit_ui(False)
-                            self._confirm_resign_or_exit(game_id)
+                            self._confirm_resign_or_exit(
+                                game_id,
+                                incoming_draw_offer=incoming_draw_offer and not incoming_draw_offer_dismissed,
+                            )
+                            if incoming_draw_offer:
+                                incoming_draw_offer_dismissed = True
                             last_wait_banner_ms = 0  # re-show banner immediately
                         elif smsg in ("draw", "btn_draw"):
                             set_waiting_exit_ui(False)
@@ -1140,6 +1183,7 @@ class OnlineController:
 
                 payload = payload_box[0]
                 sync_clock_from_payload(payload)
+                sync_draw_offer_state(payload)
                 move_list = extract_moves(payload)
                 if len(move_list) > last_move_count:
                     apply_new_moves(move_list, announce_new=True)
@@ -1178,7 +1222,12 @@ class OnlineController:
                 continue
 
             if msg in NEW_GAME_MSGS:
-                self._confirm_resign_or_exit(game_id)
+                self._confirm_resign_or_exit(
+                    game_id,
+                    incoming_draw_offer=incoming_draw_offer and not incoming_draw_offer_dismissed,
+                )
+                if incoming_draw_offer:
+                    incoming_draw_offer_dismissed = True
                 # Returned → user pressed Back; re-prompt and continue
                 prompted_for_this_turn = False
                 continue
@@ -1226,6 +1275,7 @@ class OnlineController:
                 continue
 
             # Submit to Lichess before pushing locally
+            display.send("Sending move...", force=True)
             resp = self.client.make_move(game_id, uci)
             if not resp.get("ok"):
                 display.send("Move rejected\nOK = retry")

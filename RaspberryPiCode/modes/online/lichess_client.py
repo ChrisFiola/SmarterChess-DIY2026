@@ -164,6 +164,20 @@ class LichessClient:
         except RequestException as e:
             return {"ok": False, "error": str(e)}
 
+    def decline_draw(self, game_id: str) -> Dict[str, Any]:
+        """Decline an incoming draw offer in a running board game."""
+        try:
+            r = requests.post(
+                f"{LICHESS_BASE}/api/board/game/{game_id}/draw/no",
+                headers=self.headers,
+                timeout=15,
+            )
+            if r.status_code == 200:
+                return {"ok": True}
+            return {"ok": False, "status": r.status_code, "text": r.text[:200]}
+        except RequestException as e:
+            return {"ok": False, "error": str(e)}
+
     # -------------------- Online game creation --------------------
 
     def get_incoming_challenges(self) -> list:
