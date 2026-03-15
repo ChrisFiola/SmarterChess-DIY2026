@@ -216,6 +216,56 @@ def _draw_menu(lines):
     disp.ShowImage(FRAME)
 
 
+def _draw_online(lines):
+    """Draw two persistent clock lines plus centered body content below them."""
+    DRAW.rectangle((0, 0, W, H), fill="BLACK")
+
+    clock_lines = list(lines[:2])
+    body_lines = list(lines[2:]) if len(lines) > 2 else []
+
+    clock_size = 16
+    clock_font = _get_font(clock_size)
+    clock_spacing = 2
+    y = 4
+    for ln in clock_lines[:2]:
+        if not ln:
+            y += clock_size + clock_spacing
+            continue
+        w, h = _measure(clock_size, ln, clock_font)
+        DRAW.text(((W - w) // 2, y), ln, font=clock_font, fill="WHITE")
+        y += h + clock_spacing
+
+    divider_y = y + 2
+    DRAW.line((10, divider_y, W - 10, divider_y), fill="WHITE", width=1)
+
+    body_lines = body_lines or [""]
+    avail_top = divider_y + 8
+    avail_h = max(24, H - avail_top - 8)
+    spacing = 5
+    vpad = 4
+
+    visible = [ln for ln in body_lines if ln]
+    body_size = 14
+    for s in range(26, 13, -1):
+        fnt = _get_font(s)
+        sizes = [_measure(s, ln, fnt) for ln in visible]
+        total = sum(h for _, h in sizes) + spacing * (len(sizes) - 1) if sizes else 0
+        max_w = max((w for w, _ in sizes), default=0)
+        if total <= (avail_h - 2 * vpad) and max_w <= (W - 12):
+            body_size = s
+            break
+
+    body_font = _get_font(body_size)
+    visible = [(ln, _measure(body_size, ln, body_font)) for ln in visible]
+    total_h = sum(h for _, (_, h) in visible) + spacing * (len(visible) - 1) if visible else 0
+    y = avail_top + max(vpad, (avail_h - total_h) // 2)
+    for ln, (w, h) in visible:
+        DRAW.text(((W - w) // 2, y), ln, font=body_font, fill="WHITE")
+        y += h + spacing
+
+    disp.ShowImage(FRAME)
+
+
 # ------------------------------------------------------
 # QR rendering
 # ------------------------------------------------------
@@ -390,6 +440,8 @@ while True:
             qr_data = (lines[0] if lines else "").strip()
             captions = [ln.strip() for ln in lines[1:]] if len(lines) > 1 else []
             _draw_qr(qr_data, captions)
+        elif raw_size.lower() == "online":
+            _draw_online(lines)
         elif raw_size.lower() == "menu":
             _draw_menu(lines)
         elif raw_size.lower() == "auto":

@@ -22,12 +22,60 @@ class Display:
         self.pipe_path = pipe_path
         self.ready_flag = ready_flag
         self._last_payload = None
+        self._last_message = ""
+        self._last_size = "auto"
         self._last_send_t = 0.0
         # Simple "UI lock" to prevent important prompts (typing / confirmations)
         # from being immediately overwritten by background/status messages.
         self._lock_until = 0.0
         self._locked_category = None
         self._pipe = None
+        self._online_clock = None
+
+    def _format_clock_ms(self, ms: int) -> str:
+        ms = max(0, int(ms or 0))
+        total_s = ms // 1000
+        days, rem = divmod(total_s, 86400)
+        hours, rem = divmod(rem, 3600)
+        minutes, seconds = divmod(rem, 60)
+
+        if days:
+            return f"{days}d {hours:02}h"
+        if hours:
+            return f"{hours}:{minutes:02}:{seconds:02}"
+        return f"{minutes}:{seconds:02}"
+
+    def _clock_overlay_lines(self):
+        if not self._online_clock:
+            return []
+
+        white_ms = self._online_clock["white_ms"]
+        black_ms = self._online_clock["black_ms"]
+        you_are_white = self._online_clock["you_are_white"]
+        active_color = self._online_clock["active_color"]
+
+        if you_are_white is None:
+            white_label = "W"
+            black_label = "B"
+        else:
+            white_label = "YOU" if you_are_white else "OPP"
+            black_label = "OPP" if you_are_white else "YOU"
+
+        white_active = "*" if active_color == "white" else " "
+        black_active = "*" if active_color == "black" else " "
+
+        return [
+            f"{white_active}{white_label} {self._format_clock_ms(white_ms)}",
+            f"{black_active}{black_label} {self._format_clock_ms(black_ms)}",
+        ]
+
+    def _compose_payload(self, message: str, size: str) -> str:
+        parts = message.split("\n")
+        render_size = size
+        if self._online_clock and size == "auto":
+            parts = self._clock_overlay_lines() + parts
+            render_size = "online"
+        return "|".join(parts) + f"|{render_size}\n"
 
     def _classify(self, message: str) -> str:
         m = (message or "").lower()
@@ -110,8 +158,9 @@ class Display:
             time.sleep(0.05)
 
     def send(self, message: str, size: str = "auto", force: bool = False) -> None:
-        parts = message.split("\n")
-        payload = "|".join(parts) + f"|{size}\n"
+        self._last_message = message
+        self._last_size = size
+        payload = self._compose_payload(message, size)
 
         now = time.monotonic()
         cat = self._classify(message)
@@ -167,6 +216,41 @@ class Display:
         """
         lines = [data] + [ln for ln in caption_lines if ln]
         self.send("\n".join(lines), size="qr")
+
+    def set_online_clock(
+        self,
+        *,
+        white_ms: int,
+        black_ms: int,
+        you_are_white=None,
+        active_color=None,
+    ) -> None:
+        active = None
+        if active_color in (True, False):
+            active = "white" if active_color else "black"
+        elif isinstance(active_color, str):
+            low = active_color.strip().lower()
+            if low in ("white", "black"):
+                active = low
+
+        state = {
+            "white_ms": int(max(0, white_ms or 0)),
+            "black_ms": int(max(0, black_ms or 0)),
+            "you_are_white": you_are_white,
+            "active_color": active,
+        }
+        if state == self._online_clock:
+            return
+        self._online_clock = state
+        if self._last_message:
+            self.send(self._last_message, size=self._last_size, force=True)
+
+    def clear_online_clock(self) -> None:
+        if self._online_clock is None:
+            return
+        self._online_clock = None
+        if self._last_message:
+            self.send(self._last_message, size=self._last_size, force=True)
 
     # Convenience UI helpers
     def banner(self, text: str, delay_s: float = 0.0) -> None:

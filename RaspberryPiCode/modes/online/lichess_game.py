@@ -49,6 +49,17 @@ def extract_status(payload: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+def extract_clocks(payload: Dict[str, Any]) -> Tuple[Optional[int], Optional[int]]:
+    if not payload:
+        return (None, None)
+    if payload.get("type") == "gameFull":
+        st = payload.get("state") or {}
+        return (st.get("wtime"), st.get("btime"))
+    if payload.get("type") == "gameState":
+        return (payload.get("wtime"), payload.get("btime"))
+    return (None, None)
+
+
 def extract_winner(payload: Dict[str, Any]) -> Optional[str]:
     if (payload or {}).get("type") == "gameState":
         return payload.get("winner")
