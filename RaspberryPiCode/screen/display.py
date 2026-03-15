@@ -250,8 +250,6 @@ class Display:
         self._write_payload(self._compose_clock_payload())
 
     def clear_online_clock(self) -> None:
-        if self._online_clock is None:
-            return
         self._online_clock = None
         self._write_payload(self._compose_clock_clear_payload())
 

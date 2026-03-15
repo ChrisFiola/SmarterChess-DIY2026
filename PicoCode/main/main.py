@@ -995,8 +995,17 @@ def _handle_hint_irq():
     if time.ticks_diff(cp.suppress_hints_until_ms, now) > 0:
         return None
 
-    # Both buttons held → new game
-    if cp.BTN_OK.value() == 0 and cp.BTN_HINT.value() == 0:
+    # Both buttons held → leave-game/new-game only during active play.
+    # Menu/confirm screens should not suspend the Pico into a "waiting for
+    # new game" state, otherwise the Pi menu can no longer talk to it.
+    if (
+        cp.BTN_OK.value() == 0
+        and cp.BTN_HINT.value() == 0
+        and st.in_game
+        and st.game_state == Game.RUNNING
+        and not st.ok_back_enabled
+        and not st.puzzle_setup_active
+    ):
         return _trigger_new_game_request(now)
 
     if not cp.hint_irq_flag:
@@ -1848,9 +1857,6 @@ def _handle_wait_for_ok_confirm(_msg=None):
     while True:
         if cp.shutdown_held():
             _shutdown_pico()
-        if _handle_hint_irq() == "new":
-            cp.set_ok_led(False)
-            return
         b = cp.detect_press_raw()
         if b == (Config.Buttons.OK_INDEX + 1):
             while cp.BTN_OK.value() == 0:

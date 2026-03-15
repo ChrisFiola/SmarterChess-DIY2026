@@ -385,7 +385,13 @@ class OnlineController:
         link, display = self.link, self.display
 
         labels = [opt["label"] for opt in _QUICK_PAIRING_OPTIONS]
-        choice = _paged_menu(link, display, labels)
+        choice = _paged_menu(
+            link,
+            display,
+            labels,
+            wake_command="ChooseMode",
+            resend_timeout=3.0,
+        )
         if choice is None:
             return None
 
@@ -433,7 +439,13 @@ class OnlineController:
 
         # Time control selection
         tc_labels = [o[0] for o in _CHALLENGE_TIME_OPTIONS]
-        chosen_tc = _paged_menu(link, display, tc_labels)
+        chosen_tc = _paged_menu(
+            link,
+            display,
+            tc_labels,
+            wake_command="ChooseMode",
+            resend_timeout=3.0,
+        )
         if not chosen_tc:
             return None
 
@@ -519,7 +531,13 @@ class OnlineController:
             labels.append(label)
             label_to_full[label] = name
 
-        chosen_label = _paged_menu(link, display, labels)
+        chosen_label = _paged_menu(
+            link,
+            display,
+            labels,
+            wake_command="ChooseMode",
+            resend_timeout=3.0,
+        )
         if not chosen_label:
             return None
 
@@ -568,7 +586,13 @@ class OnlineController:
             labels.append(f"{challenger[:12]} {tc}")
             challenge_ids.append(c.get("id") or "")
 
-        choice = _paged_menu(link, display, labels)
+        choice = _paged_menu(
+            link,
+            display,
+            labels,
+            wake_command="ChooseMode",
+            resend_timeout=3.0,
+        )
         if choice is None:
             return None
 
@@ -603,6 +627,8 @@ class OnlineController:
         choice = _paged_menu(
             link, display,
             ["Challenge Friend", "Quick Pairing", "Correspondence"],
+            wake_command="ChooseMode",
+            resend_timeout=3.0,
         )
         if choice is None:
             return None
@@ -734,6 +760,7 @@ class OnlineController:
         link, display = self.link, self.display
 
         try:
+            display.clear_online_clock()
             username = self._connect_and_get_account()
             if not username:
                 raise ReturnToMenu()
@@ -746,6 +773,8 @@ class OnlineController:
                 choice = _paged_menu(
                     link, display,
                     ["New Game", "Ongoing Games", "Challenge Received"],
+                    wake_command="ChooseMode",
+                    resend_timeout=3.0,
                 )
                 if choice is None:
                     raise ReturnToMenu()
