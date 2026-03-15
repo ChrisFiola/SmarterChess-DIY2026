@@ -243,14 +243,14 @@ class Display:
             return
         self._online_clock = state
         if self._last_message:
-            self.send(self._last_message, size=self._last_size, force=True)
+            self.send(self._last_message, size=self._last_size)
 
     def clear_online_clock(self) -> None:
         if self._online_clock is None:
             return
         self._online_clock = None
         if self._last_message:
-            self.send(self._last_message, size=self._last_size, force=True)
+            self.send(self._last_message, size=self._last_size)
 
     # Convenience UI helpers
     def banner(self, text: str, delay_s: float = 0.0) -> None:

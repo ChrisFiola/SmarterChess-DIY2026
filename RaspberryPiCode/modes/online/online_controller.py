@@ -833,7 +833,7 @@ class OnlineController:
             if clock_white_ms is None or clock_black_ms is None:
                 return
             now = time.monotonic()
-            if not force and now - last_clock_refresh < 0.2:
+            if not force and now - last_clock_refresh < 1.0:
                 return
 
             white_ms = clock_white_ms
@@ -1094,7 +1094,8 @@ class OnlineController:
             # ── Your turn ─────────────────────────────────────────────────────
             set_waiting_exit_ui(False)
             send_turn_if_human()
-            refresh_clock_display()
+            if not in_move_entry and not awaiting_ok_ack:
+                refresh_clock_display()
             if not prompted_for_this_turn and not awaiting_ok_ack and not in_move_entry:
                 side = "WHITE" if your_color == chess.WHITE else "BLACK"
                 display.prompt_move(side)
