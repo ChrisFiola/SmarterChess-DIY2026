@@ -2048,6 +2048,56 @@ def _set_ok_indicator(enabled, color=GREEN):
     cp.only_ok(enabled, color)
 
 
+def _route_only_ok_cancel(_msg):
+    cp.only_ok(True, RED)
+
+
+def _route_ok_back_enable(_msg):
+    _set_ok_back_enabled(True)
+
+
+def _route_ok_cancel_enable(_msg):
+    _set_ok_back_enabled(True, RED)
+
+
+def _route_ok_back_disable(_msg):
+    _set_ok_back_enabled(False)
+
+
+def _route_wait_exit_enable(_msg):
+    _set_ok_indicator(True, RED)
+
+
+def _route_wait_exit_disable(_msg):
+    _set_ok_indicator(False)
+
+
+def _route_hint_disable(_msg):
+    st.hint_enabled = False
+
+
+def _route_hint_enable(_msg):
+    st.hint_enabled = True
+
+
+def _route_check(msg):
+    sq = msg.split("_", 1)[1].strip() if "_" in msg else ""
+    board.blink_square_keep(sq, RED)
+
+
+def _route_menu_confirm(msg):
+    _handle_menu_paged(msg, ok_color=GREEN)
+
+
+def _route_promotion_choice(_msg):
+    _handle_promotion_choice()
+
+
+def _route_error(_msg):
+    board.illegal_flash()
+    cp.only_ok(False)
+
+
 def _handle_set_brightness(msg):
     try:
         _save_and_reset_brightness(int(msg.split("_")[-1]))
@@ -2096,32 +2146,27 @@ ROUTES = [
     ("heyArduinoGameEnd", _handle_game_end),
     ("heyArduinoWaitForOkConfirm", _handle_wait_for_ok_confirm),
     ("heyArduinoWaitForOkOrSkipSetup", _handle_wait_for_ok_or_skip_setup),
-    ("heyArduinoonly_ok_cancel", lambda _: cp.only_ok(True, RED)),
-    ("heyArduinook_back_enable", lambda _: (_set_ok_back_enabled(True))),
-    ("heyArduinook_cancel_enable", lambda _: (_set_ok_back_enabled(True, RED))),
-    ("heyArduinook_back_disable", lambda _: (_set_ok_back_enabled(False))),
-    ("heyArduinowait_exit_enable", lambda _: (_set_ok_indicator(True, RED))),
-    ("heyArduinowait_exit_disable", lambda _: (_set_ok_indicator(False))),
-    ("heyArduinohint_disable", lambda _: setattr(st, "hint_enabled", False)),
-    ("heyArduinohint_enable", lambda _: setattr(st, "hint_enabled", True)),
-    (
-        "heyArduinocheck_",
-        lambda m: board.blink_square_keep(
-            m.split("_", 1)[1].strip() if "_" in m else "", RED
-        ),
-    ),
+    ("heyArduinoonly_ok_cancel", _route_only_ok_cancel),
+    ("heyArduinook_back_enable", _route_ok_back_enable),
+    ("heyArduinook_cancel_enable", _route_ok_cancel_enable),
+    ("heyArduinook_back_disable", _route_ok_back_disable),
+    ("heyArduinowait_exit_enable", _route_wait_exit_enable),
+    ("heyArduinowait_exit_disable", _route_wait_exit_disable),
+    ("heyArduinohint_disable", _route_hint_disable),
+    ("heyArduinohint_enable", _route_hint_enable),
+    ("heyArduinocheck_", _route_check),
     ("heyArduinoSetBrightness_", _handle_set_brightness),
     ("heyArduinoUpdateMode", _handle_update_mode),
     ("heyArduinoGameOver", _handle_gameover),
     ("heyArduinoResetBoard", _handle_reset_board),
     ("heyArduinoChooseMode", _handle_choose_mode),
-    ("heyArduinoMenuConfirm", lambda m: _handle_menu_paged(m, ok_color=GREEN)),
+    ("heyArduinoMenuConfirm", _route_menu_confirm),
     ("heyArduinoMenuPaged", _handle_menu_paged),
     ("heyArduinom", _handle_engine_move),
-    ("heyArduinopromotion_choice_needed", lambda _: _handle_promotion_choice()),
+    ("heyArduinopromotion_choice_needed", _route_promotion_choice),
     ("heyArduinohint_", _handle_hint_move),
     ("heyArduinopuzzle_wrong_", _handle_puzzle_wrong),
-    ("heyArduinoerror", lambda _: (board.illegal_flash(), cp.only_ok(False))),
+    ("heyArduinoerror", _route_error),
     ("heyArduinoturn_", _handle_turn),
 ]
 
