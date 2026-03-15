@@ -228,8 +228,23 @@ class OnlineController:
         """Show 'Cancelling...', disable back button, raise ReturnToMenu."""
         self.display.send("Cancelling...")
         self.link.send_to_board("ok_back_disable")
+        self.link.send_to_board("wait_exit_disable")
         time.sleep(1.0)
         raise ReturnToMenu()
+
+    def _confirm_cancel_waiting_for_start(self) -> None:
+        """Show a small exit menu while waiting for a pairing/challenge to start."""
+        choice = _paged_menu(
+            self.link,
+            self.display,
+            ["Cancel pairing"],
+            wake_command="ChooseMode",
+            resend_timeout=3.0,
+        )
+        if choice == "Cancel pairing":
+            self._cancel_to_menu()
+        self.link.send_to_board("SetupComplete")
+        self.link.send_to_board("wait_exit_enable")
 
     def _confirm_resign_or_exit(self, game_id: str, *, incoming_draw_offer: bool = False) -> None:
         """Show 'Leave game?' menu after OK+Hint is pressed during active play.
@@ -377,32 +392,37 @@ class OnlineController:
         self._ensure_event_stream()
         exclude = {gid for gid in (exclude_game_ids or set()) if gid}
 
-        last_banner_ms = 0
-        next_ongoing_poll = time.monotonic()
-        while True:
-            game_id = self._consume_pending_game_start(exclude_game_ids=exclude)
-            if game_id:
-                return game_id
-
-            msg = link.try_read_from_board()
-            if msg == "shutdown":
-                shutdown_raspberry_pi(link, display)
-                return None
-            if msg and msg in OK_MSGS | NEW_GAME_MSGS:
-                self._cancel_to_menu()
-
-            now_monotonic = time.monotonic()
-            if now_monotonic >= next_ongoing_poll:
-                game_id = self._find_new_ongoing_game(exclude_game_ids=exclude)
+        link.send_to_board("ok_back_disable")
+        link.send_to_board("wait_exit_enable")
+        try:
+            last_banner_ms = 0
+            next_ongoing_poll = time.monotonic()
+            while True:
+                game_id = self._consume_pending_game_start(exclude_game_ids=exclude)
                 if game_id:
                     return game_id
-                next_ongoing_poll = now_monotonic + 3.0
 
-            now = int(time.time() * 1000)
-            if now - last_banner_ms > 1500:
-                display.send("Waiting for\ngame to start...\nOK = cancel")
-                last_banner_ms = now
-            time.sleep(0.05)
+                msg = link.try_read_from_board()
+                if msg == "shutdown":
+                    shutdown_raspberry_pi(link, display)
+                    return None
+                if msg and msg in NEW_GAME_MSGS:
+                    self._confirm_cancel_waiting_for_start()
+
+                now_monotonic = time.monotonic()
+                if now_monotonic >= next_ongoing_poll:
+                    game_id = self._find_new_ongoing_game(exclude_game_ids=exclude)
+                    if game_id:
+                        return game_id
+                    next_ongoing_poll = now_monotonic + 3.0
+
+                now = int(time.time() * 1000)
+                if now - last_banner_ms > 1500:
+                    display.send("Waiting for\ngame to start...\nOK+Hint = menu")
+                    last_banner_ms = now
+                time.sleep(0.05)
+        finally:
+            link.send_to_board("wait_exit_disable")
 
     # ── New game flows ────────────────────────────────────────────────────────
 
