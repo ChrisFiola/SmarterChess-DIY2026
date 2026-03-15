@@ -14,7 +14,7 @@ class Config:
         TIMEOUT_MS = 10
 
     class Buttons:
-        PINS = [2, 3, 4, 5, 10, 8, 7, 6, 9, 11]  # 1..8 coords, 9=OK, 10=HINT test
+        PINS = [2, 3, 4, 5, 10, 8, 7, 6, 9, 11]  # 1..8 coords, 9=OK, 10=HINT
         OK_INDEX = 8
         HINT_INDEX = 9
         SHUTDOWN_INDEX = 7  # button "8"/H
