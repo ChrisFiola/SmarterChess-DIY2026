@@ -7,7 +7,7 @@ Menu tree:
   ├── New Game
   │   ├── Challenge Friend  (select from following list, then time control)
   │   ├── Quick Pairing     (10+0 / 10+5 / 15+10 / 30+0 / 30+20)
-  │   └── Correspondence    (open challenge, casual, 3-day clock)
+  │   └── Correspondence    (challenge a friend, casual, 3-day clock)
   ├── Ongoing Games         (resume any active game; board setup if needed)
   └── Challenge Received    (accept a pending incoming challenge)
 
@@ -322,28 +322,7 @@ class OnlineController:
         """Fetch friends list, let user pick one, select time control, challenge."""
         link, display = self.link, self.display
 
-        display.send("Loading friends...")
-        friends = run_in_bg(
-            self.client.get_following, link, display,
-            on_cancel=self._cancel_to_menu,
-        ) or []
-
-        if not friends:
-            display.send("No friends found\nOK = back")
-            wait_for_ok(link, display)
-            return None
-
-        names = [
-            (f.get("username") or f.get("id") or "")[:18]
-            for f in friends
-            if f.get("username") or f.get("id")
-        ]
-        if not names:
-            display.send("No friends found\nOK = back")
-            wait_for_ok(link, display)
-            return None
-
-        chosen_name = _paged_menu(link, display, names)
+        chosen_name = self._pick_friend_name()
         if not chosen_name:
             return None
 
@@ -375,14 +354,18 @@ class OnlineController:
         return self._wait_for_game_start()
 
     def _run_correspondence(self) -> Optional[str]:
-        """Create an open correspondence challenge and wait for an opponent."""
+        """Challenge a friend to a 3-day correspondence game."""
         link, display = self.link, self.display
 
-        display.send("Creating\ncorrespondence...\nOK = cancel")
+        chosen_name = self._pick_friend_name()
+        if not chosen_name:
+            return None
+
+        display.send(f"Challenging\n{chosen_name}...\nOK = cancel")
         link.send_to_board("ok_cancel_enable")
 
         resp = run_in_bg(
-            lambda: self.client.create_open_challenge(days=3),
+            lambda: self.client.challenge_user_correspondence(chosen_name, days=3),
             link, display,
             on_cancel=self._cancel_to_menu,
         )
@@ -392,15 +375,48 @@ class OnlineController:
             wait_for_ok(link, display)
             return None
 
-        # Show challenge URL via QR if possible
-        url = ((resp.get("challenge") or {}).get("url") or "").strip()
-        if url:
-            if hasattr(display, "show_qr"):
-                display.show_qr(url, "Share link:", "OK = cancel")
-            else:
-                display.send(f"Challenge ready\n{url[:18]}\nOK = cancel")
-
         return self._wait_for_game_start()
+
+    def _pick_friend_name(self) -> Optional[str]:
+        """Load followed users and return one selected username/id."""
+        link, display = self.link, self.display
+
+        display.send("Loading friends...")
+        friends = run_in_bg(
+            self.client.get_following, link, display,
+            on_cancel=self._cancel_to_menu,
+        ) or []
+
+        full_names = [
+            (f.get("username") or f.get("id") or "")
+            for f in friends
+            if f.get("username") or f.get("id")
+        ]
+        if not full_names:
+            display.send("No friends found\nOK = back")
+            wait_for_ok(link, display)
+            return None
+
+        # Keep a label -> full username mapping so long usernames can still be
+        # challenged correctly via API while menu labels stay LCD-friendly.
+        labels = []
+        label_to_full = {}
+        for name in full_names:
+            base = name[:18]
+            label = base
+            n = 2
+            while label in label_to_full and label_to_full[label] != name:
+                suffix = f"~{n}"
+                label = f"{base[:max(0, 18 - len(suffix))]}{suffix}"
+                n += 1
+            labels.append(label)
+            label_to_full[label] = name
+
+        chosen_label = _paged_menu(link, display, labels)
+        if not chosen_label:
+            return None
+
+        return label_to_full.get(chosen_label)
 
     def _run_challenge_received(self) -> Optional[str]:
         """Fetch pending incoming challenges, let user accept one, return game ID."""

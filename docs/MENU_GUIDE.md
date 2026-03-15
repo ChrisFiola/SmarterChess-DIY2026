@@ -391,15 +391,15 @@ Page 2 of 2:
 
 ### Correspondence
 
-This is not a menu. Selecting it starts challenge creation and may then show a
-share QR code for the challenge URL.
+Selecting this opens your friend list, then challenges the selected friend to a
+casual 3-day correspondence game.
 
 Typical screen:
 
 ```text
 +--------------------+
-|Creating            |
-|correspondence...   |
+|Challenging         |
+|<friend_name>...    |
 |OK = cancel         |
 |                    |
 +--------------------+
