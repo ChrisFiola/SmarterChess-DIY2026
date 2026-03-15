@@ -5,6 +5,8 @@ import ubinascii
 import os as _uos
 from pico_hw import configure as _configure_hw, ControlPanel, ChessBoard
 
+# trigger
+
 
 class Config:
     class UART:
