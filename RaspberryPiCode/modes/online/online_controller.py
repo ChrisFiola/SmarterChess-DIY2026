@@ -937,21 +937,18 @@ class OnlineController:
         in_move_entry = False
         pending_check_sq: Optional[str] = None
         incoming_draw_offer = False
-        incoming_draw_offer_dismissed = False
 
         def sync_draw_offer_state(payload) -> None:
-            nonlocal incoming_draw_offer, incoming_draw_offer_dismissed
+            nonlocal incoming_draw_offer
             offered_side = extract_draw_offer_side(payload)
             opponent_side = "black" if your_color == chess.WHITE else "white"
             opponent_offered = offered_side == opponent_side
             if opponent_offered and not incoming_draw_offer:
                 incoming_draw_offer = True
-                incoming_draw_offer_dismissed = False
                 display.send("Opponent offers\na draw\nOK+Hint = menu", force=True)
                 return
             if not opponent_offered:
                 incoming_draw_offer = False
-                incoming_draw_offer_dismissed = False
 
         def set_waiting_exit_ui(enabled: bool) -> None:
             nonlocal wait_exit_ui_enabled
@@ -1110,10 +1107,8 @@ class OnlineController:
                     set_waiting_exit_ui(False)
                     self._confirm_resign_or_exit(
                         game_id,
-                        incoming_draw_offer=incoming_draw_offer and not incoming_draw_offer_dismissed,
+                        incoming_draw_offer=incoming_draw_offer,
                     )
-                    if incoming_draw_offer:
-                        incoming_draw_offer_dismissed = True
                     # Returned → user pressed Back; game continues
                 elif peek in ("draw", "btn_draw"):
                     set_waiting_exit_ui(False)
@@ -1128,7 +1123,10 @@ class OnlineController:
                 set_waiting_exit_ui(True)
                 now = int(time.time() * 1000)
                 if now - last_wait_banner_ms > 1500:
-                    display.send("Waiting for\nopponent...\nOK+Hint = menu")
+                    if incoming_draw_offer:
+                        display.send("Opponent offers\na draw\nOK+Hint = menu")
+                    else:
+                        display.send("Waiting for\nopponent...\nOK+Hint = menu")
                     last_wait_banner_ms = now
 
                 # Read ONE stream event in a background thread so the main
@@ -1160,10 +1158,8 @@ class OnlineController:
                             set_waiting_exit_ui(False)
                             self._confirm_resign_or_exit(
                                 game_id,
-                                incoming_draw_offer=incoming_draw_offer and not incoming_draw_offer_dismissed,
+                                incoming_draw_offer=incoming_draw_offer,
                             )
-                            if incoming_draw_offer:
-                                incoming_draw_offer_dismissed = True
                             last_wait_banner_ms = 0  # re-show banner immediately
                         elif smsg in ("draw", "btn_draw"):
                             set_waiting_exit_ui(False)
@@ -1207,8 +1203,11 @@ class OnlineController:
             set_waiting_exit_ui(False)
             send_turn_if_human()
             if not prompted_for_this_turn and not awaiting_ok_ack and not in_move_entry:
-                side = "WHITE" if your_color == chess.WHITE else "BLACK"
-                display.prompt_move(side)
+                if incoming_draw_offer:
+                    display.send("Draw offered\nYour move\nOK+Hint = menu")
+                else:
+                    side = "WHITE" if your_color == chess.WHITE else "BLACK"
+                    display.prompt_move(side)
                 prompted_for_this_turn = True
 
             msg = link.read_from_board()
@@ -1224,10 +1223,8 @@ class OnlineController:
             if msg in NEW_GAME_MSGS:
                 self._confirm_resign_or_exit(
                     game_id,
-                    incoming_draw_offer=incoming_draw_offer and not incoming_draw_offer_dismissed,
+                    incoming_draw_offer=incoming_draw_offer,
                 )
-                if incoming_draw_offer:
-                    incoming_draw_offer_dismissed = True
                 # Returned → user pressed Back; re-prompt and continue
                 prompted_for_this_turn = False
                 continue
@@ -1292,15 +1289,18 @@ class OnlineController:
             send_check_signal(link, board)
             send_turn_if_human()
             side_to_move = "WHITE" if board.turn == chess.WHITE else "BLACK"
-            display.show_arrow(
-                uci,
-                suffix=(
-                    f"{promo_line}\n{side_to_move} to move"
-                    if promo_line
-                    else f"{side_to_move} to move"
-                ),
-                force=True,
-            )
+            if board.turn != your_color:
+                display.send("Waiting for\nopponent...\nOK+Hint = menu", force=True)
+            else:
+                display.show_arrow(
+                    uci,
+                    suffix=(
+                        f"{promo_line}\n{side_to_move} to move"
+                        if promo_line
+                        else f"{side_to_move} to move"
+                    ),
+                    force=True,
+                )
             refresh_clock_display()
             prompted_for_this_turn = False
             in_move_entry = False
