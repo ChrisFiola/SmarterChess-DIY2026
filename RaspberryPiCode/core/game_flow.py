@@ -1679,7 +1679,7 @@ def _run_update(link: BoardLink, display: Display) -> None:
             time.sleep(2)
             return
 
-    chunk_size = 128
+    chunk_size = 64
     for pico_file in [path for path in pico_files if path.exists()]:
         encoded = base64.b64encode(pico_file.read_bytes()).decode()
         link.send_to_board(f"UpdateFile_{pico_file.name}")

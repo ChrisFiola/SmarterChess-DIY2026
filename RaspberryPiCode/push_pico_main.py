@@ -138,7 +138,7 @@ def main() -> int:
     parser.add_argument(
         "--chunk-size",
         type=int,
-        default=128,
+        default=64,
         help="Base64 chunk size to send per UART message.",
     )
     parser.add_argument(

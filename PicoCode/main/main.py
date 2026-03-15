@@ -1315,6 +1315,7 @@ def _handle_update_mode(_msg):
     board.off()
     cp.off(force=True)
     cp.disable_hint_irq()
+    gc.collect()
     link.send("UpdateReady")
     temp_paths = {}
     current_name = None
@@ -1326,6 +1327,7 @@ def _handle_update_mode(_msg):
         if current_file is not None:
             current_file.close()
             current_file = None
+            gc.collect()
         current_name = None
         current_temp = None
 
@@ -1361,6 +1363,7 @@ def _handle_update_mode(_msg):
                 current_file.write(
                     ubinascii.a2b_base64(msg[len("heyArduinoUpdateChunk_") :])
                 )
+                gc.collect()
                 continue
             if msg.startswith("heyArduinoUpdateFileDone"):
                 _close_current()
@@ -1380,6 +1383,7 @@ def _handle_update_mode(_msg):
             except Exception:
                 pass
             _uos.rename(temp_path, target_path)
+            gc.collect()
         link.send("UpdateComplete")
         time.sleep_ms(300)
         reset()
