@@ -1587,11 +1587,20 @@ def _run_update(link: BoardLink, display: Display) -> None:
     import base64
 
     repo = Path(__file__).resolve().parent.parent.parent
-    pico_main = repo / "PicoCode" / "main" / "main.py"
+    pico_dir = repo / "PicoCode" / "main"
+    pico_files = [
+        pico_dir / "main.py",
+        pico_dir / "pico_hw.py",
+    ]
+
+    def _pico_signature() -> tuple[tuple[str, Optional[str]], ...]:
+        return tuple(
+            (path.name, _file_sha256(path) if path.exists() else None) for path in pico_files
+        )
 
     try:
         before_head = _git_head(repo)
-        before_pico_hash = _file_sha256(pico_main)
+        before_pico_hash = _pico_signature()
     except Exception as exc:
         display.send(f"Update error\n{exc.__class__.__name__}")
         time.sleep(3)
@@ -1621,7 +1630,7 @@ def _run_update(link: BoardLink, display: Display) -> None:
 
     try:
         after_head = _git_head(repo)
-        after_pico_hash = _file_sha256(pico_main)
+        after_pico_hash = _pico_signature()
     except Exception as exc:
         display.send(f"Update error\n{exc.__class__.__name__}")
         time.sleep(3)
@@ -1670,10 +1679,15 @@ def _run_update(link: BoardLink, display: Display) -> None:
             time.sleep(2)
             return
 
-    encoded = base64.b64encode(pico_main.read_bytes()).decode()
     chunk_size = 128
-    for i in range(0, len(encoded), chunk_size):
-        link.send_to_board(f"UpdateChunk_{encoded[i:i + chunk_size]}")
+    for pico_file in [path for path in pico_files if path.exists()]:
+        encoded = base64.b64encode(pico_file.read_bytes()).decode()
+        link.send_to_board(f"UpdateFile_{pico_file.name}")
+        time.sleep(0.02)
+        for i in range(0, len(encoded), chunk_size):
+            link.send_to_board(f"UpdateChunk_{encoded[i:i + chunk_size]}")
+            time.sleep(0.02)
+        link.send_to_board("UpdateFileDone")
         time.sleep(0.02)
 
     link.send_to_board("UpdateDone")

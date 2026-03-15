@@ -10,7 +10,11 @@ from pathlib import Path
 from core.boardlink import BAUD, SERIAL_PORT, SERIAL_TIMEOUT, BoardLink
 
 
-DEFAULT_MAIN = Path(__file__).resolve().parents[1] / "PicoCode" / "main" / "main.py"
+DEFAULT_PICO_DIR = Path(__file__).resolve().parents[1] / "PicoCode" / "main"
+DEFAULT_SOURCES = [
+    DEFAULT_PICO_DIR / "main.py",
+    DEFAULT_PICO_DIR / "pico_hw.py",
+]
 
 
 def _wait_for_update_ready(
@@ -52,7 +56,7 @@ def _wait_for_update_complete(link: BoardLink, *, timeout_s: float) -> bool:
 
 
 def push_main(
-    source: Path,
+    sources: list[Path],
     *,
     port: str,
     baud: int,
@@ -62,11 +66,17 @@ def push_main(
     ready_timeout_s: float,
     complete_timeout_s: float,
 ) -> int:
-    if not source.is_file():
-        print(f"File not found: {source}", file=sys.stderr)
-        return 2
+    unique_sources = []
+    seen_names = set()
+    for source in sources:
+        if not source.is_file():
+            print(f"File not found: {source}", file=sys.stderr)
+            return 2
+        if source.name in seen_names:
+            continue
+        seen_names.add(source.name)
+        unique_sources.append(source)
 
-    payload = base64.b64encode(source.read_bytes()).decode("ascii")
     link = BoardLink(port=port, baud=baud, timeout=timeout)
     try:
         link.clear_input()
@@ -84,9 +94,15 @@ def push_main(
                 pass
             return 1
 
-        print(f"Uploading {source} in {chunk_size}-char chunks...")
-        for i in range(0, len(payload), chunk_size):
-            link.send_to_board(f"UpdateChunk_{payload[i:i + chunk_size]}")
+        for source in unique_sources:
+            payload = base64.b64encode(source.read_bytes()).decode("ascii")
+            print(f"Uploading {source.name} in {chunk_size}-char chunks...")
+            link.send_to_board(f"UpdateFile_{source.name}")
+            time.sleep(inter_chunk_delay_s)
+            for i in range(0, len(payload), chunk_size):
+                link.send_to_board(f"UpdateChunk_{payload[i:i + chunk_size]}")
+                time.sleep(inter_chunk_delay_s)
+            link.send_to_board("UpdateFileDone")
             time.sleep(inter_chunk_delay_s)
 
         link.send_to_board("UpdateDone")
@@ -103,13 +119,13 @@ def push_main(
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Push PicoCode/main/main.py to the Pico over the Pi UART link."
+        description="Push Pico firmware files to the Pico over the Pi UART link."
     )
     parser.add_argument(
-        "source",
-        nargs="?",
-        default=str(DEFAULT_MAIN),
-        help="Path to the Pico main.py to upload.",
+        "sources",
+        nargs="*",
+        default=[str(path) for path in DEFAULT_SOURCES if path.is_file()],
+        help="Path(s) to Pico files to upload.",
     )
     parser.add_argument("--port", default=SERIAL_PORT, help="UART device path.")
     parser.add_argument("--baud", type=int, default=BAUD, help="UART baud rate.")
@@ -146,7 +162,7 @@ def main() -> int:
     args = parser.parse_args()
 
     return push_main(
-        Path(args.source).resolve(),
+        [Path(source).resolve() for source in args.sources],
         port=args.port,
         baud=args.baud,
         timeout=args.timeout,
