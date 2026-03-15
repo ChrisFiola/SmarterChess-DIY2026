@@ -969,11 +969,25 @@ def _check_if_move_captures(uci, timeout_ms=150):
 # ── Hint / new-game IRQ ───────────────────────────────────────────────────────
 
 
-def _handle_hint_irq():
-    if not cp.hint_irq_flag:
-        return None
-    cp.hint_irq_flag = False
+def _trigger_new_game_request(now=None):
+    if now is None:
+        now = time.ticks_ms()
+    st.game_state = Game.SETUP
+    st.suspend_until_new_game = True
+    st.engine_ack_pending = False
+    st.pending_gameover_result = None
+    st.buffered_turn_msg = None
+    link.send("n")
+    board.markings()
+    if not st.in_game:
+        cp.show_coords_top(WHITE)
+    cp.suppress_hints_until_ms = time.ticks_add(
+        now, Config.Timing.NEW_GAME_SUPPRESS_MS
+    )
+    return "new"
 
+
+def _handle_hint_irq():
     if cp.shutdown_held():
         _shutdown_pico()
 
@@ -983,19 +997,11 @@ def _handle_hint_irq():
 
     # Both buttons held → new game
     if cp.BTN_OK.value() == 0 and cp.BTN_HINT.value() == 0:
-        st.game_state = Game.SETUP
-        st.suspend_until_new_game = True
-        st.engine_ack_pending = False
-        st.pending_gameover_result = None
-        st.buffered_turn_msg = None
-        link.send("n")
-        board.markings()
-        if not st.in_game:
-            cp.show_coords_top(WHITE)
-        cp.suppress_hints_until_ms = time.ticks_add(
-            now, Config.Timing.NEW_GAME_SUPPRESS_MS
-        )
-        return "new"
+        return _trigger_new_game_request(now)
+
+    if not cp.hint_irq_flag:
+        return None
+    cp.hint_irq_flag = False
 
     if not st.hint_enabled:
         return None
@@ -2186,11 +2192,7 @@ def _main_loop():
             and st.wait_exit_enabled
             and not st.puzzle_setup_active
         ):
-            b_idle = cp.detect_press_raw()
-            if b_idle == (Config.Buttons.OK_INDEX + 1):
-                link.send("btn_ok")
-                time.sleep_ms(Config.Timing.POLL_MS)
-                continue
+            time.sleep_ms(Config.Timing.POLL_MS)
 
         if st.engine_ack_pending:
             nxt = link.read()

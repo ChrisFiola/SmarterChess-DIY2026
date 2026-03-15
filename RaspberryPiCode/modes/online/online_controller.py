@@ -61,13 +61,14 @@ from core.game_flow import (
 
 # ── Time-control definitions ──────────────────────────────────────────────────
 
-# Quick pairing options (label, time_minutes, increment_seconds)
+# Quick pairing options.
 _QUICK_PAIRING_OPTIONS = [
-    ("10+0 Rapid",      10, 0),
-    ("10+5 Rapid",      10, 5),
-    ("15+10 Rapid",     15, 10),
-    ("30+0 Classical",  30, 0),
-    ("30+20 Classical", 30, 20),
+    {"label": "10+0 Rapid", "kind": "seek", "time": 10, "increment": 0},
+    {"label": "10+5 Rapid", "kind": "seek", "time": 10, "increment": 5},
+    {"label": "15+10 Rapid", "kind": "seek", "time": 15, "increment": 10},
+    {"label": "30+0 Classical", "kind": "seek", "time": 30, "increment": 0},
+    {"label": "30+20 Classical", "kind": "seek", "time": 30, "increment": 20},
+    {"label": "3d Corr Random", "kind": "open_correspondence", "days": 3},
 ]
 
 # Time controls offered when challenging a friend
@@ -103,6 +104,13 @@ class OnlineController:
         self._event_ready = threading.Condition()
         self._event_stop = threading.Event()
         self._event_thread: Optional[threading.Thread] = None
+        self._game_color_hints: Dict[str, str] = {}
+
+    def _remember_game_color(self, game_id: Optional[str], color: Optional[str]) -> None:
+        game_id = (game_id or "").strip()
+        color = (color or "").strip().lower()
+        if game_id and color in ("white", "black"):
+            self._game_color_hints[game_id] = color
 
     def _ensure_event_stream(self) -> None:
         """Keep a background Lichess event stream running for this session."""
@@ -151,6 +159,7 @@ class OnlineController:
                 game = ev.get("game") or {}
                 game_id = (game.get("id") or game.get("gameId") or "").strip()
                 if game_id and game_id not in exclude:
+                    self._remember_game_color(game_id, game.get("color"))
                     return game_id
 
         return None
@@ -170,6 +179,7 @@ class OnlineController:
         for game in data.get("nowPlaying") or []:
             game_id = (game.get("gameId") or game.get("id") or "").strip()
             if game_id:
+                self._remember_game_color(game_id, game.get("color"))
                 game_ids.add(game_id)
         return game_ids
 
@@ -373,28 +383,40 @@ class OnlineController:
         """Show time-control selector, create seek, return game ID or None."""
         link, display = self.link, self.display
 
-        labels = [opt[0] for opt in _QUICK_PAIRING_OPTIONS]
+        labels = [opt["label"] for opt in _QUICK_PAIRING_OPTIONS]
         choice = _paged_menu(link, display, labels)
         if choice is None:
             return None
 
-        selected = next((o for o in _QUICK_PAIRING_OPTIONS if o[0] == choice), None)
+        selected = next((o for o in _QUICK_PAIRING_OPTIONS if o["label"] == choice), None)
         if not selected:
             return None
-        _, time_min, inc_sec = selected
         existing_game_ids = self._current_ongoing_game_ids()
 
         display.send(f"Seeking {choice}\nOK = cancel")
         link.send_to_board("ok_cancel_enable")
 
-        # Start seek in background; game appears via event stream
         seek_done = threading.Event()
+        if selected["kind"] == "seek":
+            # Start seek in background; game appears via event stream.
+            def _do_seek():
+                self.client.create_seek(selected["time"], selected["increment"])
+                seek_done.set()
 
-        def _do_seek():
-            self.client.create_seek(time_min, inc_sec)
+            threading.Thread(target=_do_seek, daemon=True).start()
+        else:
+            resp = run_in_bg(
+                lambda: self.client.create_open_challenge(days=selected["days"]),
+                link,
+                display,
+                on_cancel=self._cancel_to_menu,
+            )
+            if not resp or resp.get("_error"):
+                err = (resp or {}).get("_error") or "Creation failed"
+                display.send(f"Challenge error\n{err[:18]}\nOK = back")
+                wait_for_ok(link, display)
+                return None
             seek_done.set()
-
-        threading.Thread(target=_do_seek, daemon=True).start()
 
         game_id = self._wait_for_game_start(exclude_game_ids=existing_game_ids)
         seek_done.set()  # signal seek thread to stop if still running
@@ -629,7 +651,10 @@ class OnlineController:
         except ValueError:
             return None
 
-        return (game_list[idx].get("gameId") or game_list[idx].get("id") or "").strip() or None
+        selected = game_list[idx]
+        game_id = (selected.get("gameId") or selected.get("id") or "").strip() or None
+        self._remember_game_color(game_id, selected.get("color"))
+        return game_id
 
     def _setup_ongoing_board(self, game_id: str) -> Optional[chess.Board]:
         """Open the game stream, replay moves, and guide board setup if needed.
@@ -742,6 +767,9 @@ class OnlineController:
                 if not game_id:
                     continue
 
+                if game_id not in self._game_color_hints:
+                    self._current_ongoing_game_ids()
+
                 display.send("Lichess\nLoading game...")
                 link.send_to_board("ok_back_disable")
                 link.send_to_board("GameStart")
@@ -776,6 +804,7 @@ class OnlineController:
         board = chess.Board()
         last_move_count = 0
         you_are_white: Optional[bool] = None
+        wait_exit_ui_enabled = False
 
         def send_turn_if_human():
             if board.turn != your_color:
@@ -787,8 +816,11 @@ class OnlineController:
         pending_check_sq: Optional[str] = None
 
         def set_waiting_exit_ui(enabled: bool) -> None:
-            if not enabled:
-                link.send_to_board("wait_exit_disable")
+            nonlocal wait_exit_ui_enabled
+            if wait_exit_ui_enabled == enabled:
+                return
+            wait_exit_ui_enabled = enabled
+            link.send_to_board("wait_exit_enable" if enabled else "wait_exit_disable")
 
         def apply_new_moves(move_list, announce_new: bool = True):
             nonlocal last_move_count, awaiting_ok_ack, in_move_entry, pending_check_sq
@@ -870,14 +902,20 @@ class OnlineController:
 
             first = payload_box[0] or {}
 
-        white_name, black_name = extract_players(first)
-        u = (username or "").strip().lower()
-        if u and (black_name or "").strip().lower() == u:
+        color_hint = self._game_color_hints.get(game_id)
+        if color_hint == "black":
             you_are_white = False
-        elif u and (white_name or "").strip().lower() == u:
+        elif color_hint == "white":
             you_are_white = True
         else:
-            you_are_white = True
+            white_name, black_name = extract_players(first)
+            u = (username or "").strip().lower()
+            if u and (black_name or "").strip().lower() == u:
+                you_are_white = False
+            elif u and (white_name or "").strip().lower() == u:
+                you_are_white = True
+            else:
+                you_are_white = True
         your_color = chess.WHITE if you_are_white else chess.BLACK
 
         # For ongoing game resumes: board state already set up physically.
@@ -924,7 +962,7 @@ class OnlineController:
 
             # ── Opponent's turn — poll stream in background ───────────────────
             if board.turn != your_color:
-                set_waiting_exit_ui(False)
+                set_waiting_exit_ui(True)
                 now = int(time.time() * 1000)
                 if now - last_wait_banner_ms > 1500:
                     display.send("Waiting for\nopponent...\nOK+Hint = menu")

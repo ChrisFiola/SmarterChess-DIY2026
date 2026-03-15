@@ -382,8 +382,8 @@ Page 2 of 2:
 
 ```text
 +--------------------+
-|Quick Pairing 2/2   |
-|1) 30+20 Classical  |
+|1) 30+20 Classi 2/2 |
+|2) 3d Corr Random   |
 |                    |
 |OK=back Hint=next   |
 +--------------------+

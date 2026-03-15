@@ -26,7 +26,14 @@ def extract_players(payload: Dict[str, Any]) -> Tuple[Optional[str], Optional[st
             return None
         # Sometimes fields are directly on side, sometimes under "user"
         u = side.get("user") or {}
-        return side.get("id") or side.get("name") or u.get("id") or u.get("name")
+        return (
+            side.get("id")
+            or side.get("username")
+            or side.get("name")
+            or u.get("id")
+            or u.get("username")
+            or u.get("name")
+        )
 
     w = payload.get("white") or {}
     b = payload.get("black") or {}
