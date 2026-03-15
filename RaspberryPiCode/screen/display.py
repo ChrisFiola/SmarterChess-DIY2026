@@ -71,11 +71,13 @@ class Display:
 
     def _compose_payload(self, message: str, size: str) -> str:
         parts = message.split("\n")
-        render_size = size
-        if self._online_clock and size == "auto":
-            parts = self._clock_overlay_lines() + parts
-            render_size = "online"
-        return "|".join(parts) + f"|{render_size}\n"
+        return "|".join(parts) + f"|{size}\n"
+
+    def _compose_clock_payload(self) -> str:
+        return "|".join(["__clock__"] + self._clock_overlay_lines()) + "|clock\n"
+
+    def _compose_clock_clear_payload(self) -> str:
+        return "__clock_clear__|clock\n"
 
     def _classify(self, message: str) -> str:
         m = (message or "").lower()
@@ -111,6 +113,26 @@ class Display:
                 except FileExistsError:
                     pass
             self._pipe = open(self.pipe_path, "w", buffering=1)
+
+    def _write_payload(self, payload: str) -> None:
+        try:
+            self._ensure_pipe()
+            self._pipe.write(payload)
+            self._last_payload = payload
+        except (BrokenPipeError, OSError, ValueError):
+            try:
+                if self._pipe:
+                    self._pipe.close()
+            except Exception:
+                pass
+            self._pipe = None
+            try:
+                self._ensure_pipe()
+                self._pipe.write(payload)
+                self._last_payload = payload
+            except Exception:
+                self._pipe = None
+                return
 
     def restart_server(self) -> None:
         # Close our writer end first
@@ -189,24 +211,7 @@ class Display:
         if payload == self._last_payload:
             return
 
-        try:
-            self._ensure_pipe()
-            self._pipe.write(payload)
-            self._last_payload = payload
-        except (BrokenPipeError, OSError, ValueError):
-            try:
-                if self._pipe:
-                    self._pipe.close()
-            except Exception:
-                pass
-            self._pipe = None
-            try:
-                self._ensure_pipe()
-                self._pipe.write(payload)
-                self._last_payload = payload
-            except Exception:
-                self._pipe = None
-                return
+        self._write_payload(payload)
 
     def show_qr(self, data: str, *caption_lines: str) -> None:
         """Render a QR code on the LCD.
@@ -242,15 +247,13 @@ class Display:
         if state == self._online_clock:
             return
         self._online_clock = state
-        if self._last_message:
-            self.send(self._last_message, size=self._last_size)
+        self._write_payload(self._compose_clock_payload())
 
     def clear_online_clock(self) -> None:
         if self._online_clock is None:
             return
         self._online_clock = None
-        if self._last_message:
-            self.send(self._last_message, size=self._last_size)
+        self._write_payload(self._compose_clock_clear_payload())
 
     # Convenience UI helpers
     def banner(self, text: str, delay_s: float = 0.0) -> None:

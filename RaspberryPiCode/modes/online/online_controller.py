@@ -106,6 +106,7 @@ class OnlineController:
         self._event_stop = threading.Event()
         self._event_thread: Optional[threading.Thread] = None
         self._game_color_hints: Dict[str, str] = {}
+        self._active_clock_stop: Optional[threading.Event] = None
 
     def _remember_game_color(self, game_id: Optional[str], color: Optional[str]) -> None:
         game_id = (game_id or "").strip()
@@ -778,6 +779,9 @@ class OnlineController:
                 try:
                     self._play_game(game_id, username, pre_loaded_board=pre_loaded_board)
                 finally:
+                    if self._active_clock_stop is not None:
+                        self._active_clock_stop.set()
+                        self._active_clock_stop = None
                     display.clear_online_clock()
                     link.send_to_board("wait_exit_disable")
                     link.send_to_board("hint_enable")
@@ -810,7 +814,8 @@ class OnlineController:
         clock_white_ms: Optional[int] = None
         clock_black_ms: Optional[int] = None
         clock_sync_t = time.monotonic()
-        last_clock_refresh = 0.0
+        clock_lock = threading.Lock()
+        clock_stop = threading.Event()
 
         def send_turn_if_human():
             if board.turn != your_color:
@@ -819,26 +824,26 @@ class OnlineController:
 
         def commit_elapsed(active_color: chess.Color) -> None:
             nonlocal clock_white_ms, clock_black_ms, clock_sync_t
-            if clock_white_ms is None or clock_black_ms is None:
-                return
-            elapsed_ms = max(0, int((time.monotonic() - clock_sync_t) * 1000))
-            if active_color == chess.WHITE:
-                clock_white_ms = max(0, clock_white_ms - elapsed_ms)
-            else:
-                clock_black_ms = max(0, clock_black_ms - elapsed_ms)
-            clock_sync_t = time.monotonic()
+            with clock_lock:
+                if clock_white_ms is None or clock_black_ms is None:
+                    return
+                elapsed_ms = max(0, int((time.monotonic() - clock_sync_t) * 1000))
+                if active_color == chess.WHITE:
+                    clock_white_ms = max(0, clock_white_ms - elapsed_ms)
+                else:
+                    clock_black_ms = max(0, clock_black_ms - elapsed_ms)
+                clock_sync_t = time.monotonic()
 
-        def refresh_clock_display(force: bool = False) -> None:
-            nonlocal last_clock_refresh
-            if clock_white_ms is None or clock_black_ms is None:
-                return
+        def refresh_clock_display() -> None:
+            with clock_lock:
+                if clock_white_ms is None or clock_black_ms is None:
+                    return
+                white_ms = clock_white_ms
+                black_ms = clock_black_ms
+                sync_t = clock_sync_t
+
             now = time.monotonic()
-            if not force and now - last_clock_refresh < 1.0:
-                return
-
-            white_ms = clock_white_ms
-            black_ms = clock_black_ms
-            elapsed_ms = max(0, int((now - clock_sync_t) * 1000))
+            elapsed_ms = max(0, int((now - sync_t) * 1000))
             if not board.is_game_over():
                 if board.turn == chess.WHITE:
                     white_ms = max(0, white_ms - elapsed_ms)
@@ -851,17 +856,24 @@ class OnlineController:
                 you_are_white=you_are_white,
                 active_color="white" if board.turn == chess.WHITE else "black",
             )
-            last_clock_refresh = now
 
         def sync_clock_from_payload(payload) -> None:
             nonlocal clock_white_ms, clock_black_ms, clock_sync_t
             white_ms, black_ms = extract_clocks(payload)
             if white_ms is None or black_ms is None:
                 return
-            clock_white_ms = int(white_ms)
-            clock_black_ms = int(black_ms)
-            clock_sync_t = time.monotonic()
-            refresh_clock_display(force=True)
+            with clock_lock:
+                clock_white_ms = int(white_ms)
+                clock_black_ms = int(black_ms)
+                clock_sync_t = time.monotonic()
+            refresh_clock_display()
+
+        def start_clock_worker() -> None:
+            def _clock_worker() -> None:
+                while not clock_stop.wait(0.25):
+                    refresh_clock_display()
+
+            threading.Thread(target=_clock_worker, daemon=True).start()
 
         awaiting_ok_ack = False
         in_move_entry = False
@@ -988,6 +1000,8 @@ class OnlineController:
             apply_new_moves(extract_moves(first), announce_new=False)
 
         sync_clock_from_payload(first)
+        self._active_clock_stop = clock_stop
+        start_clock_worker()
         send_turn_if_human()
 
         prompted_for_this_turn = False
@@ -995,7 +1009,7 @@ class OnlineController:
 
         while True:
             # ── Non-blocking peek for resign/draw/common events ───────────────
-            peek = link.try_read_from_board()
+            peek = link.try_read_from_board() if board.turn != your_color else None
             if peek:
                 if self._handle_common(peek, board):
                     if peek.startswith("typing_"):
@@ -1041,7 +1055,6 @@ class OnlineController:
                 threading.Thread(target=_fetch_one, daemon=True).start()
 
                 while not ready.wait(timeout=0.05):
-                    refresh_clock_display()
                     smsg = link.try_read_from_board()
                     if smsg:
                         if smsg == "shutdown":
@@ -1094,16 +1107,13 @@ class OnlineController:
             # ── Your turn ─────────────────────────────────────────────────────
             set_waiting_exit_ui(False)
             send_turn_if_human()
-            if not in_move_entry and not awaiting_ok_ack:
-                refresh_clock_display()
             if not prompted_for_this_turn and not awaiting_ok_ack and not in_move_entry:
                 side = "WHITE" if your_color == chess.WHITE else "BLACK"
                 display.prompt_move(side)
                 prompted_for_this_turn = True
 
-            msg = link.try_read_from_board()
+            msg = link.read_from_board()
             if not msg:
-                time.sleep(0.05)
                 continue
 
             if self._handle_common(msg, board):
@@ -1173,7 +1183,7 @@ class OnlineController:
             commit_elapsed(not board.turn)
             send_check_signal(link, board)
             send_turn_if_human()
-            refresh_clock_display(force=True)
+            refresh_clock_display()
             prompted_for_this_turn = False
             in_move_entry = False
             awaiting_ok_ack = False

@@ -375,6 +375,43 @@ MIN_DT = 1.0 / FPS_CAP
 last_draw_t = 0.0
 last_drawn = None  # last message actually drawn
 pending_msg = None  # newest message waiting to be drawn
+current_lines = []
+current_size = "auto"
+clock_lines = None
+
+
+def _render_current():
+    raw_size = (current_size or "auto").strip()
+    size_key = raw_size.lower()
+    lines = list(current_lines)
+
+    if size_key == "qr":
+        qr_data = (lines[0] if lines else "").strip()
+        captions = [ln.strip() for ln in lines[1:]] if len(lines) > 1 else []
+        _draw_qr(qr_data, captions)
+        return
+
+    if size_key == "menu":
+        _draw_menu(lines)
+        return
+
+    if size_key == "online":
+        _draw_online(lines)
+        return
+
+    if size_key == "auto" and clock_lines:
+        _draw_online(list(clock_lines) + lines)
+        return
+
+    if size_key == "auto":
+        _draw_centered_text_auto(lines)
+        return
+
+    try:
+        size = int(raw_size)
+        _draw_centered_text_with_size(lines, size=size, spacing=6)
+    except Exception:
+        _draw_centered_text_auto(lines)
 
 while True:
     # Wait for input, but wake periodically so we can draw pending messages
@@ -435,19 +472,21 @@ while True:
     raw_size = parts[-1].strip() if parts[-1] else "auto"
     lines = [p for p in parts[:-1]]
 
+    if raw_size.lower() == "clock":
+        if lines and lines[0] == "__clock__":
+            clock_lines = lines[1:3]
+        elif lines and lines[0] == "__clock_clear__":
+            clock_lines = None
+        try:
+            _render_current()
+        except Exception:
+            _draw_centered_text_auto(list(current_lines))
+        continue
+
+    current_lines = lines
+    current_size = raw_size
+
     try:
-        if raw_size.lower() == "qr":
-            qr_data = (lines[0] if lines else "").strip()
-            captions = [ln.strip() for ln in lines[1:]] if len(lines) > 1 else []
-            _draw_qr(qr_data, captions)
-        elif raw_size.lower() == "online":
-            _draw_online(lines)
-        elif raw_size.lower() == "menu":
-            _draw_menu(lines)
-        elif raw_size.lower() == "auto":
-            _draw_centered_text_auto(lines)
-        else:
-            size = int(raw_size)
-            _draw_centered_text_with_size(lines, size=size, spacing=6)
+        _render_current()
     except Exception:
         _draw_centered_text_auto(lines)
