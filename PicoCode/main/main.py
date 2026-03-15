@@ -1001,8 +1001,8 @@ def _handle_hint_irq():
     if (
         cp.BTN_OK.value() == 0
         and cp.BTN_HINT.value() == 0
-        and st.in_game
         and st.game_state == Game.RUNNING
+        and (st.in_game or st.wait_exit_enabled)
         and not st.ok_back_enabled
         and not st.puzzle_setup_active
     ):

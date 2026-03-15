@@ -217,7 +217,7 @@ def _draw_menu(lines):
 
 
 def _draw_online(lines):
-    """Draw two persistent clock lines plus centered body content below them."""
+    """Draw left/right clocks on the top row plus centered body content below."""
     DRAW.rectangle((0, 0, W, H), fill="BLACK")
 
     clock_lines = list(lines[:2])
@@ -225,17 +225,21 @@ def _draw_online(lines):
 
     clock_size = 16
     clock_font = _get_font(clock_size)
-    clock_spacing = 2
     y = 4
-    for ln in clock_lines[:2]:
-        if not ln:
-            y += clock_size + clock_spacing
-            continue
-        w, h = _measure(clock_size, ln, clock_font)
-        DRAW.text(((W - w) // 2, y), ln, font=clock_font, fill="WHITE")
-        y += h + clock_spacing
+    left = clock_lines[0] if len(clock_lines) > 0 else ""
+    right = clock_lines[1] if len(clock_lines) > 1 else ""
+    row_h = clock_size
 
-    divider_y = y + 2
+    if left:
+        _, lh = _measure(clock_size, left, clock_font)
+        row_h = max(row_h, lh)
+        DRAW.text((4, y), left, font=clock_font, fill="WHITE")
+    if right:
+        rw, rh = _measure(clock_size, right, clock_font)
+        row_h = max(row_h, rh)
+        DRAW.text((W - rw - 4, y), right, font=clock_font, fill="WHITE")
+
+    divider_y = y + row_h + 4
     DRAW.line((10, divider_y, W - 10, divider_y), fill="WHITE", width=1)
 
     body_lines = body_lines or [""]

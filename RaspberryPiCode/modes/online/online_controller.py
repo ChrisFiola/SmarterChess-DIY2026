@@ -933,6 +933,43 @@ class OnlineController:
 
             threading.Thread(target=_clock_worker, daemon=True).start()
 
+        pending_stream_ready: Optional[threading.Event] = None
+        pending_stream_payload = [None]
+        pending_stream_error = [None]
+
+        def ensure_stream_fetch() -> None:
+            nonlocal pending_stream_ready, pending_stream_payload, pending_stream_error
+            if pending_stream_ready is not None:
+                return
+
+            pending_stream_payload = [None]
+            pending_stream_error = [None]
+            pending_stream_ready = threading.Event()
+
+            def _fetch_one() -> None:
+                try:
+                    pending_stream_payload[0] = next(stream)
+                except StopIteration:
+                    pending_stream_error[0] = "stop"
+                except Exception as exc:
+                    pending_stream_error[0] = str(exc) or "error"
+                finally:
+                    pending_stream_ready.set()
+
+            threading.Thread(target=_fetch_one, daemon=True).start()
+
+        def take_stream_fetch():
+            nonlocal pending_stream_ready, pending_stream_payload, pending_stream_error
+            if pending_stream_ready is None or not pending_stream_ready.is_set():
+                return (False, None, None)
+
+            payload = pending_stream_payload[0]
+            error = pending_stream_error[0]
+            pending_stream_ready = None
+            pending_stream_payload = [None]
+            pending_stream_error = [None]
+            return (True, payload, error)
+
         awaiting_ok_ack = False
         in_move_entry = False
         pending_check_sq: Optional[str] = None
@@ -957,8 +994,9 @@ class OnlineController:
             wait_exit_ui_enabled = enabled
             link.send_to_board("wait_exit_enable" if enabled else "wait_exit_disable")
 
-        def show_online_post_game(result: str) -> None:
+        def show_online_post_game(result: str, status: Optional[str] = None) -> None:
             result = (result or "").strip() or "1/2-1/2"
+            status_key = (status or "").strip().lower()
             if result == "1-0":
                 winner_text = "White wins"
             elif result == "0-1":
@@ -966,9 +1004,30 @@ class OnlineController:
             else:
                 winner_text = "Draw"
 
+            if not status_key:
+                if board.is_checkmate():
+                    status_key = "mate"
+                elif board.is_stalemate():
+                    status_key = "stalemate"
+                elif result == "1/2-1/2":
+                    status_key = "draw"
+
+            reason = {
+                "mate": "Checkmate",
+                "resign": "Resignation",
+                "stalemate": "Stalemate",
+                "draw": "Draw agreed",
+                "timeout": "On time" if result != "1/2-1/2" else "Time out",
+                "outoftime": "On time" if result != "1/2-1/2" else "Time out",
+                "aborted": "Aborted",
+                "nostart": "No start",
+                "variantend": "Variant end",
+                "unknownfinish": "Finished",
+            }.get(status_key, "Game ended")
+
             display.clear_online_clock()
             link.send_to_board(f"GameOver:{result}")
-            display.send(f"GAME OVER\n{winner_text}\nOK = menu")
+            display.send(f"GAME OVER\n{winner_text}\n{reason}")
             wait_for_ok(link, display)
             raise ReturnToMenu()
 
@@ -1129,25 +1188,13 @@ class OnlineController:
                         display.send("Waiting for\nopponent...\nOK+Hint = menu")
                     last_wait_banner_ms = now
 
-                # Read ONE stream event in a background thread so the main
-                # thread can poll serial every 50 ms for resign/draw/etc.
-                payload_box: list = [None]
-                error_box: list = [None]
-                ready = threading.Event()
-
-                def _fetch_one():
-                    try:
-                        payload_box[0] = next(stream)
-                    except StopIteration:
-                        error_box[0] = "stop"
-                    except Exception as exc:
-                        error_box[0] = str(exc) or "error"
-                    finally:
-                        ready.set()
-
-                threading.Thread(target=_fetch_one, daemon=True).start()
-
-                while not ready.wait(timeout=0.05):
+                ensure_stream_fetch()
+                payload = None
+                error = None
+                while True:
+                    done, payload, error = take_stream_fetch()
+                    if done:
+                        break
                     smsg = link.try_read_from_board()
                     if smsg:
                         if smsg == "shutdown":
@@ -1165,19 +1212,19 @@ class OnlineController:
                             set_waiting_exit_ui(False)
                             self._offer_draw(game_id)
                         self._handle_common(smsg, board)
+                    time.sleep(0.05)
 
-                if error_box[0] == "stop":
+                if error == "stop":
                     set_waiting_exit_ui(False)
                     display.send("Lichess ended\nOK = menu")
                     wait_for_ok(link, display)
                     raise ReturnToMenu()
-                if error_box[0]:
+                if error:
                     set_waiting_exit_ui(False)
                     display.send("Lichess error\nStream lost\nOK = menu")
                     wait_for_ok(link, display)
                     raise ReturnToMenu()
 
-                payload = payload_box[0]
                 sync_clock_from_payload(payload)
                 sync_draw_offer_state(payload)
                 move_list = extract_moves(payload)
@@ -1195,12 +1242,42 @@ class OnlineController:
                         result = "1-0"
                     elif winner == "black":
                         result = "0-1"
-                    show_online_post_game(result)
+                    show_online_post_game(result, status=status)
 
                 continue  # keepalive or unrecognised event — loop back
 
             # ── Your turn ─────────────────────────────────────────────────────
             set_waiting_exit_ui(False)
+            ensure_stream_fetch()
+            done, payload, error = take_stream_fetch()
+            if done:
+                if error == "stop":
+                    display.send("Lichess ended\nOK = menu")
+                    wait_for_ok(link, display)
+                    raise ReturnToMenu()
+                if error:
+                    display.send("Lichess error\nStream lost\nOK = menu")
+                    wait_for_ok(link, display)
+                    raise ReturnToMenu()
+
+                sync_clock_from_payload(payload)
+                sync_draw_offer_state(payload)
+                move_list = extract_moves(payload)
+                if len(move_list) > last_move_count:
+                    apply_new_moves(move_list, announce_new=True)
+                    prompted_for_this_turn = False
+                    continue
+
+                status = extract_status(payload)
+                if status and status != "started":
+                    winner = extract_winner(payload)
+                    result = "1/2-1/2"
+                    if winner == "white":
+                        result = "1-0"
+                    elif winner == "black":
+                        result = "0-1"
+                    show_online_post_game(result, status=status)
+
             send_turn_if_human()
             if not prompted_for_this_turn and not awaiting_ok_ack and not in_move_entry:
                 if incoming_draw_offer:
@@ -1210,8 +1287,9 @@ class OnlineController:
                     display.prompt_move(side)
                 prompted_for_this_turn = True
 
-            msg = link.read_from_board()
+            msg = link.try_read_from_board()
             if not msg:
+                time.sleep(0.05)
                 continue
 
             if self._handle_common(msg, board):
