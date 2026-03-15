@@ -69,13 +69,13 @@ These prompts are used for:
 
 ```text
 Game Mode
-|- Play Chess!
-|  |- Against PC
+|- Game Modes
+|  |- Vs Computer
 |  |  |- Difficulty
 |  |  |- Move time
 |  |  `- Player color
 |  |- Local 2-player
-|  `- Lichess Online
+|  |- Lichess Online
 |     |- Online
 |     |  |- New Game
 |     |  |  |- Challenge Friend
@@ -85,18 +85,18 @@ Game Mode
 |     |  |  `- Correspondence
 |     |  |- Ongoing Games (dynamic)
 |     |  `- Leave game? (during an active online game)
-|- Puzzles
-|  |- Daily Puzzle
-|  |- Mix and match
-|  `- Themes
-|     |- Phases
-|     `- Openings
-|        |- A to E
-|        |- F to I
-|        |- K to N
-|        |- O to R
-|        |- S to V
-|        `- W to Z
+|  `- Puzzles
+|     |- Daily Puzzle
+|     |- Mix and match
+|     `- Themes
+|        |- Phases
+|        `- Openings
+|           |- A to E
+|           |- F to I
+|           |- K to N
+|           |- O to R
+|           |- S to V
+|           `- W to Z
 `- Settings
    |- Brightness
    `- Update
@@ -104,41 +104,51 @@ Game Mode
 
 ## Main menu
 
-`Game Mode` now opens on a single compact page.
+`Game Mode` now opens on a compact two-item page.
 
 ### Main page
 
 ```text
 +--------------------+
-|1) Play Chess!      |
-|2) Puzzles          |
-|3) Settings         |
-|OK=back Hint=next   |
+|1) Game Modes       |
+|2) Settings         |
+|                    |
+|                    |
 +--------------------+
 ```
 
-### Play Chess! submenu
+### Game Modes submenu
 
 ```text
 +--------------------+
-|1) Against PC       |
+|1) Vs Computer 1/2  |
 |2) Local 2-player   |
 |3) Lichess Online   |
 |OK=back Hint=next   |
 +--------------------+
 ```
 
+Second page:
+
+```text
++--------------------+
+|1) Puzzles 2/2      |
+|                    |
+|                    |
+|OK=back Hint=next   |
++--------------------+
+```
+
 Interaction:
 
-- Press `1` on the main page for `Play Chess!`, then `1` to `3` to choose a chess mode.
-- Press `2` on the main page for `Puzzles`.
-- Press `3` on the main page for `Settings`.
+- Press `1` on the main page for `Game Modes`, then choose the mode you want.
+- Press `2` on the main page for `Settings`.
 - Press `OK` to cancel/back, though the main loop will simply keep you in mode
   selection.
 
-## Against PC
+## Vs Computer
 
-Selecting `Against PC` does not open another paged menu. It enters a sequence
+Selecting `Vs Computer` does not open another paged menu. It enters a sequence
 of setup prompts.
 
 ### Intro screen
@@ -721,7 +731,7 @@ Pressing `OK` shows a full-screen QR code.
 ## Behavior details and quirks
 
 - Menus always use `HINT` for next page. There is no previous-page button.
-- The top-level menu and `Play Chess!` submenu use a compact 3-item layout with
+- The `Game Modes` submenu uses the compact 3-item layout with
   `OK=back Hint=next` on the fourth line.
 - Dynamic menus truncate names to fit the LCD width.
 - The online and puzzle systems also show non-menu status screens such as

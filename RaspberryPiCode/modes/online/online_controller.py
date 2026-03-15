@@ -19,7 +19,8 @@ During active play:
 
 from __future__ import annotations
 
-from typing import Optional
+from collections import deque
+from typing import Any, Deque, Dict, Optional, Set
 import threading
 import time
 import chess
@@ -40,7 +41,6 @@ from core.protocol import (
     NEW_GAME_MSGS,
     OK_MSGS,
     HINT_MSGS,
-    IGNORED_MSGS,
 )
 from core.game_flow import (
     GameConfig,
@@ -50,7 +50,6 @@ from core.game_flow import (
     wait_for_ok,
     handle_typing_message,
     handle_capq_message,
-    validate_and_push_move,
     notify_game_over,
     handle_illegal_move,
     resolve_uci_promotion,
@@ -100,6 +99,91 @@ class OnlineController:
         self.display = display
         self.cfg = cfg
         self.client = LichessClient()
+        self._event_queue: Deque[Dict[str, Any]] = deque()
+        self._event_ready = threading.Condition()
+        self._event_stop = threading.Event()
+        self._event_thread: Optional[threading.Thread] = None
+
+    def _ensure_event_stream(self) -> None:
+        """Keep a background Lichess event stream running for this session."""
+        if self._event_thread and self._event_thread.is_alive():
+            return
+
+        self._event_stop.clear()
+
+        def _watch_events() -> None:
+            while not self._event_stop.is_set():
+                try:
+                    for ev in self.client.stream_events(timeout_s=30):
+                        if self._event_stop.is_set():
+                            return
+                        if not ev:
+                            continue
+                        with self._event_ready:
+                            self._event_queue.append(ev)
+                            while len(self._event_queue) > 64:
+                                self._event_queue.popleft()
+                            self._event_ready.notify_all()
+                except Exception:
+                    if not self._event_stop.is_set():
+                        time.sleep(0.5)
+
+        self._event_thread = threading.Thread(target=_watch_events, daemon=True)
+        self._event_thread.start()
+
+    def _stop_event_stream(self) -> None:
+        """Request shutdown of the background Lichess event watcher."""
+        self._event_stop.set()
+
+    def _consume_pending_game_start(
+        self,
+        *,
+        exclude_game_ids: Optional[Set[str]] = None,
+    ) -> Optional[str]:
+        """Pop queued gameStart events and return the first unseen game ID."""
+        exclude = {gid for gid in (exclude_game_ids or set()) if gid}
+
+        with self._event_ready:
+            while self._event_queue:
+                ev = self._event_queue.popleft()
+                if ev.get("type") != "gameStart":
+                    continue
+                game = ev.get("game") or {}
+                game_id = (game.get("id") or game.get("gameId") or "").strip()
+                if game_id and game_id not in exclude:
+                    return game_id
+
+        return None
+
+    def _current_ongoing_game_ids(self) -> Set[str]:
+        """Fetch the set of currently active game IDs for this account."""
+        data = run_in_bg(
+            lambda: self.client.get_ongoing_games(timeout_s=3),
+            self.link,
+            self.display,
+            on_cancel=self._cancel_to_menu,
+        )
+        if not data or data.get("_error"):
+            return set()
+
+        game_ids: Set[str] = set()
+        for game in data.get("nowPlaying") or []:
+            game_id = (game.get("gameId") or game.get("id") or "").strip()
+            if game_id:
+                game_ids.add(game_id)
+        return game_ids
+
+    def _find_new_ongoing_game(
+        self,
+        *,
+        exclude_game_ids: Optional[Set[str]] = None,
+    ) -> Optional[str]:
+        """Fallback lookup when a game starts but the event was missed."""
+        exclude = {gid for gid in (exclude_game_ids or set()) if gid}
+        for game_id in self._current_ongoing_game_ids():
+            if game_id not in exclude:
+                return game_id
+        return None
 
     # ── Per-game actions ─────────────────────────────────────────────────────
 
@@ -242,49 +326,46 @@ class OnlineController:
 
     # ── Waiting for gameStart ─────────────────────────────────────────────────
 
-    def _wait_for_game_start(self) -> Optional[str]:
+    def _wait_for_game_start(
+        self,
+        *,
+        exclude_game_ids: Optional[Set[str]] = None,
+    ) -> Optional[str]:
         """Poll the Lichess event stream until a gameStart event arrives.
 
         Returns the game ID string, or None if cancelled / error.
         Raises ReturnToMenu on user cancel.
         """
         link, display = self.link, self.display
-        game_id_box = [None]
-        stream_done = threading.Event()
-
-        def _stream_watcher():
-            while not stream_done.is_set():
-                try:
-                    for ev in self.client.stream_events(timeout_s=5):
-                        if stream_done.is_set():
-                            return
-                        if ev.get("type") == "gameStart":
-                            game = ev.get("game") or {}
-                            game_id_box[0] = game.get("id") or game.get("gameId")
-                            stream_done.set()
-                            return
-                except Exception:
-                    if not stream_done.is_set():
-                        time.sleep(0.5)
-
-        threading.Thread(target=_stream_watcher, daemon=True).start()
+        self._ensure_event_stream()
+        exclude = {gid for gid in (exclude_game_ids or set()) if gid}
 
         last_banner_ms = 0
-        while not stream_done.wait(timeout=0.05):
+        next_ongoing_poll = time.monotonic()
+        while True:
+            game_id = self._consume_pending_game_start(exclude_game_ids=exclude)
+            if game_id:
+                return game_id
+
             msg = link.try_read_from_board()
             if msg == "shutdown":
-                stream_done.set()
                 shutdown_raspberry_pi(link, display)
                 return None
             if msg and msg in OK_MSGS | NEW_GAME_MSGS:
-                stream_done.set()
                 self._cancel_to_menu()
+
+            now_monotonic = time.monotonic()
+            if now_monotonic >= next_ongoing_poll:
+                game_id = self._find_new_ongoing_game(exclude_game_ids=exclude)
+                if game_id:
+                    return game_id
+                next_ongoing_poll = now_monotonic + 3.0
+
             now = int(time.time() * 1000)
             if now - last_banner_ms > 1500:
                 display.send("Waiting for\ngame to start...\nOK = cancel")
                 last_banner_ms = now
-
-        return game_id_box[0]
+            time.sleep(0.05)
 
     # ── New game flows ────────────────────────────────────────────────────────
 
@@ -301,6 +382,7 @@ class OnlineController:
         if not selected:
             return None
         _, time_min, inc_sec = selected
+        existing_game_ids = self._current_ongoing_game_ids()
 
         display.send(f"Seeking {choice}\nOK = cancel")
         link.send_to_board("ok_cancel_enable")
@@ -314,7 +396,7 @@ class OnlineController:
 
         threading.Thread(target=_do_seek, daemon=True).start()
 
-        game_id = self._wait_for_game_start()
+        game_id = self._wait_for_game_start(exclude_game_ids=existing_game_ids)
         seek_done.set()  # signal seek thread to stop if still running
         return game_id
 
@@ -336,6 +418,7 @@ class OnlineController:
         if not tc:
             return None
         _, limit_sec, inc_sec = tc
+        existing_game_ids = self._current_ongoing_game_ids()
 
         display.send(f"Challenging\n{chosen_name}...\nOK = cancel")
         link.send_to_board("ok_cancel_enable")
@@ -351,7 +434,7 @@ class OnlineController:
             wait_for_ok(link, display)
             return None
 
-        return self._wait_for_game_start()
+        return self._wait_for_game_start(exclude_game_ids=existing_game_ids)
 
     def _run_correspondence(self) -> Optional[str]:
         """Challenge a friend to a 3-day correspondence game."""
@@ -360,6 +443,7 @@ class OnlineController:
         chosen_name = self._pick_friend_name()
         if not chosen_name:
             return None
+        existing_game_ids = self._current_ongoing_game_ids()
 
         display.send(f"Challenging\n{chosen_name}...\nOK = cancel")
         link.send_to_board("ok_cancel_enable")
@@ -375,7 +459,7 @@ class OnlineController:
             wait_for_ok(link, display)
             return None
 
-        return self._wait_for_game_start()
+        return self._wait_for_game_start(exclude_game_ids=existing_game_ids)
 
     def _pick_friend_name(self) -> Optional[str]:
         """Load followed users and return one selected username/id."""
@@ -472,6 +556,7 @@ class OnlineController:
 
         challenge_id = challenge_ids[idx]
         challenger_name = labels[idx]
+        existing_game_ids = self._current_ongoing_game_ids()
 
         display.send(f"Accepting\n{challenger_name}...\nOK = cancel")
         link.send_to_board("ok_cancel_enable")
@@ -487,7 +572,7 @@ class OnlineController:
             wait_for_ok(link, display)
             return None
 
-        return self._wait_for_game_start()
+        return self._wait_for_game_start(exclude_game_ids=existing_game_ids)
 
     def _run_new_game(self) -> Optional[str]:
         """New Game submenu → returns game ID or None."""
@@ -558,11 +643,34 @@ class OnlineController:
         display.send("Loading game...")
         try:
             stream = self.client.stream_game(game_id)
-            first = next(stream)
         except Exception:
             display.send("Stream error\nOK = back")
             wait_for_ok(link, display)
             return None
+
+        first = {}
+        deadline = time.time() + 20.0
+        while not first:
+            try:
+                first = run_in_bg(
+                    lambda: next(stream),
+                    link,
+                    display,
+                    on_cancel=self._cancel_to_menu,
+                ) or {}
+            except StopIteration:
+                display.send("Lichess ended\nOK = back")
+                wait_for_ok(link, display)
+                return None
+            except Exception:
+                display.send("Stream error\nOK = back")
+                wait_for_ok(link, display)
+                return None
+
+            if not first and time.time() >= deadline:
+                display.send("Lichess error\nStream stalled\nOK = back")
+                wait_for_ok(link, display)
+                return None
 
         # Replay all past moves to get current position
         moves = extract_moves(first)
@@ -599,49 +707,53 @@ class OnlineController:
         """Connect to Lichess, show menus, launch game."""
         link, display = self.link, self.display
 
-        username = self._connect_and_get_account()
-        if not username:
-            raise ReturnToMenu()
-
-        # Disable cancel button before showing main menu
-        link.send_to_board("ok_back_disable")
-
-        while True:
-            choice = _paged_menu(
-                link, display,
-                ["New Game", "Ongoing Games", "Challenge Received"],
-            )
-            if choice is None:
+        try:
+            username = self._connect_and_get_account()
+            if not username:
                 raise ReturnToMenu()
+            self._ensure_event_stream()
 
-            pre_loaded_board: Optional[chess.Board] = None
-            game_id: Optional[str] = None
-
-            if choice == "New Game":
-                game_id = self._run_new_game()
-            elif choice == "Ongoing Games":
-                game_id = self._run_ongoing_games()
-                if game_id:
-                    pre_loaded_board = self._setup_ongoing_board(game_id)
-                    if pre_loaded_board is None:
-                        # User backed out of board setup
-                        continue
-            elif choice == "Challenge Received":
-                game_id = self._run_challenge_received()
-
-            if not game_id:
-                continue
-
-            display.send("Lichess\nLoading game...")
+            # Disable cancel button before showing main menu
             link.send_to_board("ok_back_disable")
-            link.send_to_board("GameStart")
-            link.send_to_board("hint_disable")
-            try:
-                self._play_game(game_id, username, pre_loaded_board=pre_loaded_board)
-            finally:
-                link.send_to_board("wait_exit_disable")
-                link.send_to_board("hint_enable")
-            # _play_game raises ReturnToMenu when the game ends
+
+            while True:
+                choice = _paged_menu(
+                    link, display,
+                    ["New Game", "Ongoing Games", "Challenge Received"],
+                )
+                if choice is None:
+                    raise ReturnToMenu()
+
+                pre_loaded_board: Optional[chess.Board] = None
+                game_id: Optional[str] = None
+
+                if choice == "New Game":
+                    game_id = self._run_new_game()
+                elif choice == "Ongoing Games":
+                    game_id = self._run_ongoing_games()
+                    if game_id:
+                        pre_loaded_board = self._setup_ongoing_board(game_id)
+                        if pre_loaded_board is None:
+                            # User backed out of board setup
+                            continue
+                elif choice == "Challenge Received":
+                    game_id = self._run_challenge_received()
+
+                if not game_id:
+                    continue
+
+                display.send("Lichess\nLoading game...")
+                link.send_to_board("ok_back_disable")
+                link.send_to_board("GameStart")
+                link.send_to_board("hint_disable")
+                try:
+                    self._play_game(game_id, username, pre_loaded_board=pre_loaded_board)
+                finally:
+                    link.send_to_board("wait_exit_disable")
+                    link.send_to_board("hint_enable")
+                # _play_game raises ReturnToMenu when the game ends
+        finally:
+            self._stop_event_stream()
 
     # ── Active game loop ──────────────────────────────────────────────────────
 

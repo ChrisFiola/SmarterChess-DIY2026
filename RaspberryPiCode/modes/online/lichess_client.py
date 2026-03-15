@@ -205,13 +205,13 @@ class LichessClient:
         except RequestException:
             pass
 
-    def get_ongoing_games(self) -> Dict[str, Any]:
+    def get_ongoing_games(self, timeout_s: float = 10) -> Dict[str, Any]:
         """Fetch the list of currently active games for this account."""
         try:
             r = requests.get(
                 f"{LICHESS_BASE}/api/account/playing",
                 headers=self.headers,
-                timeout=10,
+                timeout=timeout_s,
             )
             r.raise_for_status()
             return r.json()
