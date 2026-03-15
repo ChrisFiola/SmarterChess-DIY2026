@@ -717,18 +717,46 @@ class OnlineController:
 
         # Read the initial game state from the stream.
         #
-        # Lichess sends empty keepalive lines on stream connections. If we
-        # consume one of those first, color detection falls back to WHITE and
-        # can leave BLACK waiting forever for an opponent move that never comes.
-        # Wait for the first non-empty payload before determining sides.
-        try:
-            first = {}
-            while not first:
-                first = next(stream)
-        except Exception:
-            display.send("Lichess error\nGame stream\nOK = menu")
-            wait_for_ok(link, display)
-            raise ReturnToMenu()
+        # Lichess sends empty keepalive frames ({}) on stream connections.
+        # We need the first non-empty payload for reliable side detection, but
+        # this startup wait must stay cancellable and bounded.
+        first = {}
+        startup_deadline = time.time() + 20.0
+        while not first:
+            payload_box = [None]
+            error_box = [None]
+            ready = threading.Event()
+
+            def _fetch_initial_event():
+                try:
+                    payload_box[0] = next(stream)
+                except StopIteration:
+                    error_box[0] = "stop"
+                except Exception as exc:
+                    error_box[0] = str(exc) or "error"
+                finally:
+                    ready.set()
+
+            threading.Thread(target=_fetch_initial_event, daemon=True).start()
+
+            while not ready.wait(timeout=0.05):
+                smsg = link.try_read_from_board()
+                if smsg == "shutdown":
+                    shutdown_raspberry_pi(link, display)
+                    raise ReturnToMenu()
+                if smsg and smsg in OK_MSGS | NEW_GAME_MSGS:
+                    self._confirm_resign_or_exit(game_id)
+                if time.time() >= startup_deadline:
+                    display.send("Lichess error\nStream stalled\nOK = menu")
+                    wait_for_ok(link, display)
+                    raise ReturnToMenu()
+
+            if error_box[0]:
+                display.send("Lichess error\nGame stream\nOK = menu")
+                wait_for_ok(link, display)
+                raise ReturnToMenu()
+
+            first = payload_box[0] or {}
 
         white_name, black_name = extract_players(first)
         u = (username or "").strip().lower()
