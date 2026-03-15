@@ -27,7 +27,7 @@ import chess
 
 from core.boardlink import BoardLink
 from screen.display import Display
-from modes.online.lichess_client import LichessClient
+from modes.online.lichess_client import LichessClient, LICHESS_BASE
 from modes.online.lichess_game import (
     extract_clocks,
     extract_moves,
@@ -51,7 +51,6 @@ from core.game_flow import (
     wait_for_ok,
     handle_typing_message,
     handle_capq_message,
-    notify_game_over,
     handle_illegal_move,
     resolve_uci_promotion,
     send_check_signal,
@@ -886,6 +885,31 @@ class OnlineController:
             wait_exit_ui_enabled = enabled
             link.send_to_board("wait_exit_enable" if enabled else "wait_exit_disable")
 
+        def show_online_post_game(result: str) -> None:
+            result = (result or "").strip() or "1/2-1/2"
+            if result == "1-0":
+                winner_text = "White wins"
+            elif result == "0-1":
+                winner_text = "Black wins"
+            else:
+                winner_text = "Draw"
+
+            display.clear_online_clock()
+            link.send_to_board(f"GameOver:{result}")
+            display.send(f"GAME OVER\n{winner_text}")
+            time.sleep(1.5)
+
+            display.send("Press OK\nto view analysis")
+            link.send_to_board("ChooseMode")
+            link.send_to_board("only_ok_cancel")
+            if not wait_for_ok(link, display):
+                raise ReturnToMenu()
+
+            display.show_qr(f"{LICHESS_BASE}/{game_id}#analysis")
+            link.send_to_board("MenuPaged")
+            wait_for_ok(link, display)
+            raise ReturnToMenu()
+
         def apply_new_moves(move_list, announce_new: bool = True):
             nonlocal last_move_count, awaiting_ok_ack, in_move_entry, pending_check_sq
             set_waiting_exit_ui(False)
@@ -920,6 +944,7 @@ class OnlineController:
                             if promo_line
                             else f"{side_to_move} to move"
                         ),
+                        force=True,
                     )
                     awaiting_ok_ack = True
                     in_move_entry = False
@@ -1025,8 +1050,7 @@ class OnlineController:
 
             if board.is_game_over():
                 set_waiting_exit_ui(False)
-                notify_game_over(link, display, board)
-                raise ReturnToMenu()
+                show_online_post_game(board.result(claim_draw=True))
 
             # ── Opponent's turn — poll stream in background ───────────────────
             if board.turn != your_color:
@@ -1098,9 +1122,7 @@ class OnlineController:
                         result = "1-0"
                     elif winner == "black":
                         result = "0-1"
-                    link.send_to_board(f"GameOver:{result}")
-                    display.send(f"GAME OVER\n{result}\nOK = menu")
-                    raise ReturnToMenu()
+                    show_online_post_game(result)
 
                 continue  # keepalive or unrecognised event — loop back
 
@@ -1181,8 +1203,21 @@ class OnlineController:
             board.push(move)
             last_move_count += 1
             commit_elapsed(not board.turn)
+            promo_line = ""
+            if move.promotion:
+                promo_line = display.format_promo_line(chess.piece_symbol(move.promotion))
             send_check_signal(link, board)
             send_turn_if_human()
+            side_to_move = "WHITE" if board.turn == chess.WHITE else "BLACK"
+            display.show_arrow(
+                uci,
+                suffix=(
+                    f"{promo_line}\n{side_to_move} to move"
+                    if promo_line
+                    else f"{side_to_move} to move"
+                ),
+                force=True,
+            )
             refresh_clock_display()
             prompted_for_this_turn = False
             in_move_entry = False
