@@ -7,7 +7,7 @@ Menu tree:
   ├── New Game
   │   ├── Challenge Friend  (select from following list, then time control)
   │   ├── Quick Pairing     (10+0 / 10+5 / 15+10 / 30+0 / 30+20)
-  │   └── Correspondence    (open challenge, casual, 3-day clock)
+  │   └── Correspondence    (challenge a friend, casual, 3-day clock)
   ├── Ongoing Games         (resume any active game; board setup if needed)
   └── Challenge Received    (accept a pending incoming challenge)
 
@@ -375,14 +375,39 @@ class OnlineController:
         return self._wait_for_game_start()
 
     def _run_correspondence(self) -> Optional[str]:
-        """Create an open correspondence challenge and wait for an opponent."""
+        """Challenge a friend to a 3-day correspondence game."""
         link, display = self.link, self.display
 
-        display.send("Creating\ncorrespondence...\nOK = cancel")
+        display.send("Loading friends...")
+        friends = run_in_bg(
+            self.client.get_following, link, display,
+            on_cancel=self._cancel_to_menu,
+        ) or []
+
+        if not friends:
+            display.send("No friends found\nOK = back")
+            wait_for_ok(link, display)
+            return None
+
+        names = [
+            (f.get("username") or f.get("id") or "")[:18]
+            for f in friends
+            if f.get("username") or f.get("id")
+        ]
+        if not names:
+            display.send("No friends found\nOK = back")
+            wait_for_ok(link, display)
+            return None
+
+        chosen_name = _paged_menu(link, display, names)
+        if not chosen_name:
+            return None
+
+        display.send(f"Challenging\n{chosen_name}...\nOK = cancel")
         link.send_to_board("ok_cancel_enable")
 
         resp = run_in_bg(
-            lambda: self.client.create_open_challenge(days=3),
+            lambda: self.client.challenge_user(chosen_name, days=3),
             link, display,
             on_cancel=self._cancel_to_menu,
         )
@@ -391,14 +416,6 @@ class OnlineController:
             display.send(f"Challenge error\n{err[:18]}\nOK = back")
             wait_for_ok(link, display)
             return None
-
-        # Show challenge URL via QR if possible
-        url = ((resp.get("challenge") or {}).get("url") or "").strip()
-        if url:
-            if hasattr(display, "show_qr"):
-                display.show_qr(url, "Share link:", "OK = cancel")
-            else:
-                display.send(f"Challenge ready\n{url[:18]}\nOK = cancel")
 
         return self._wait_for_game_start()
 
