@@ -241,32 +241,48 @@ class LichessClient:
     def challenge_user(
         self,
         username: str,
-        limit_seconds: Optional[int] = None,
-        increment_seconds: Optional[int] = None,
-        days: Optional[int] = None,
+        limit_seconds: int,
+        increment_seconds: int,
         rated: bool = False,
         color: str = "random",
     ) -> Dict[str, Any]:
-        """Challenge a specific Lichess user to a game.
+        """Challenge a specific Lichess user to a real-time game."""
+        data = {
+            "rated": "true" if rated else "false",
+            "clock.limit": str(limit_seconds),
+            "clock.increment": str(increment_seconds),
+            "color": color,
+        }
 
-        Supports both real-time clock games and correspondence games.
-        - Real-time: provide ``limit_seconds`` and ``increment_seconds``.
-        - Correspondence: provide ``days``.
-        """
-        if days is None and (limit_seconds is None or increment_seconds is None):
-            return {
-                "_error": "Missing time control (clock limit/increment or days)",
-            }
+        try:
+            r = requests.post(
+                f"{LICHESS_BASE}/api/challenge/{username}",
+                headers=self.headers,
+                data=data,
+                timeout=15,
+            )
+            if r.status_code in (200, 201):
+                return r.json()
+            return {"_error": f"HTTP {r.status_code}: {r.text[:120]}"}
+        except RequestException as e:
+            return {"_error": str(e)}
+
+    def challenge_user_correspondence(
+        self,
+        username: str,
+        days: int = 3,
+        rated: bool = False,
+        color: str = "random",
+    ) -> Dict[str, Any]:
+        """Challenge a specific Lichess user to a correspondence game."""
+        if days <= 0:
+            return {"_error": "Days per turn must be > 0"}
 
         data = {
             "rated": "true" if rated else "false",
+            "days": str(days),
             "color": color,
         }
-        if days is not None:
-            data["days"] = str(days)
-        else:
-            data["clock.limit"] = str(limit_seconds)
-            data["clock.increment"] = str(increment_seconds)
 
         try:
             r = requests.post(

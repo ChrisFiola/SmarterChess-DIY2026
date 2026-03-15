@@ -322,28 +322,7 @@ class OnlineController:
         """Fetch friends list, let user pick one, select time control, challenge."""
         link, display = self.link, self.display
 
-        display.send("Loading friends...")
-        friends = run_in_bg(
-            self.client.get_following, link, display,
-            on_cancel=self._cancel_to_menu,
-        ) or []
-
-        if not friends:
-            display.send("No friends found\nOK = back")
-            wait_for_ok(link, display)
-            return None
-
-        names = [
-            (f.get("username") or f.get("id") or "")[:18]
-            for f in friends
-            if f.get("username") or f.get("id")
-        ]
-        if not names:
-            display.send("No friends found\nOK = back")
-            wait_for_ok(link, display)
-            return None
-
-        chosen_name = _paged_menu(link, display, names)
+        chosen_name = self._pick_friend_name()
         if not chosen_name:
             return None
 
@@ -378,16 +357,35 @@ class OnlineController:
         """Challenge a friend to a 3-day correspondence game."""
         link, display = self.link, self.display
 
+        chosen_name = self._pick_friend_name()
+        if not chosen_name:
+            return None
+
+        display.send(f"Challenging\n{chosen_name}...\nOK = cancel")
+        link.send_to_board("ok_cancel_enable")
+
+        resp = run_in_bg(
+            lambda: self.client.challenge_user_correspondence(chosen_name, days=3),
+            link, display,
+            on_cancel=self._cancel_to_menu,
+        )
+        if not resp or resp.get("_error"):
+            err = (resp or {}).get("_error") or "Creation failed"
+            display.send(f"Challenge error\n{err[:18]}\nOK = back")
+            wait_for_ok(link, display)
+            return None
+
+        return self._wait_for_game_start()
+
+    def _pick_friend_name(self) -> Optional[str]:
+        """Load followed users and return one selected username/id."""
+        link, display = self.link, self.display
+
         display.send("Loading friends...")
         friends = run_in_bg(
             self.client.get_following, link, display,
             on_cancel=self._cancel_to_menu,
         ) or []
-
-        if not friends:
-            display.send("No friends found\nOK = back")
-            wait_for_ok(link, display)
-            return None
 
         names = [
             (f.get("username") or f.get("id") or "")[:18]
@@ -399,25 +397,7 @@ class OnlineController:
             wait_for_ok(link, display)
             return None
 
-        chosen_name = _paged_menu(link, display, names)
-        if not chosen_name:
-            return None
-
-        display.send(f"Challenging\n{chosen_name}...\nOK = cancel")
-        link.send_to_board("ok_cancel_enable")
-
-        resp = run_in_bg(
-            lambda: self.client.challenge_user(chosen_name, days=3),
-            link, display,
-            on_cancel=self._cancel_to_menu,
-        )
-        if not resp or resp.get("_error"):
-            err = (resp or {}).get("_error") or "Creation failed"
-            display.send(f"Challenge error\n{err[:18]}\nOK = back")
-            wait_for_ok(link, display)
-            return None
-
-        return self._wait_for_game_start()
+        return _paged_menu(link, display, names)
 
     def _run_challenge_received(self) -> Optional[str]:
         """Fetch pending incoming challenges, let user accept one, return game ID."""
