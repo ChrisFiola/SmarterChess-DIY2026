@@ -230,7 +230,7 @@ def _draw_online(lines):
         ln = (ln or "").strip()
         if not ln:
             return "", ""
-        parts = ln.rsplit(" ", 1)
+        parts = ln.split(" ", 1)
         if len(parts) == 2:
             return parts[0], parts[1]
         return "", ln
