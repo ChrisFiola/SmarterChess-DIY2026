@@ -225,28 +225,56 @@ def _draw_online(lines):
 
     left = clock_lines[0] if len(clock_lines) > 0 else ""
     right = clock_lines[1] if len(clock_lines) > 1 else ""
-    clock_size = 16
-    clock_font = _get_font(clock_size)
-    for size in range(20, 15, -1):
+
+    def _split_clock(ln: str):
+        ln = (ln or "").strip()
+        if not ln:
+            return "", ""
+        parts = ln.rsplit(" ", 1)
+        if len(parts) == 2:
+            return parts[0], parts[1]
+        return "", ln
+
+    left_prefix, left_time = _split_clock(left)
+    right_prefix, right_time = _split_clock(right)
+
+    label_size = 10
+    label_font = _get_font(label_size)
+    left_prefix_w, left_prefix_h = _measure(label_size, left_prefix, label_font) if left_prefix else (0, 0)
+    right_prefix_w, right_prefix_h = _measure(label_size, right_prefix, label_font) if right_prefix else (0, 0)
+
+    time_size = 18
+    time_font = _get_font(time_size)
+    side_gap = 2
+    half_w = W // 2
+    left_time_space = max(24, half_w - left_prefix_w - 6 - side_gap)
+    right_time_space = max(24, half_w - right_prefix_w - 6 - side_gap)
+    for size in range(24, 17, -1):
         font = _get_font(size)
-        lw, _ = _measure(size, left, font) if left else (0, 0)
-        rw, _ = _measure(size, right, font) if right else (0, 0)
-        if max(lw, rw) <= ((W // 2) - 6):
-            clock_size = size
-            clock_font = font
+        left_time_w, _ = _measure(size, left_time, font) if left_time else (0, 0)
+        right_time_w, _ = _measure(size, right_time, font) if right_time else (0, 0)
+        if left_time_w <= left_time_space and right_time_w <= right_time_space:
+            time_size = size
+            time_font = font
             break
 
     y = 4
-    row_h = clock_size
+    row_h = time_size
 
     if left:
-        _, lh = _measure(clock_size, left, clock_font)
-        row_h = max(row_h, lh)
-        DRAW.text((4, y), left, font=clock_font, fill="WHITE")
+        if left_prefix:
+            DRAW.text((2, y + 2), left_prefix, font=label_font, fill="WHITE")
+        time_x = 2 + left_prefix_w + (side_gap if left_prefix else 0)
+        _, lh = _measure(time_size, left_time, time_font)
+        row_h = max(row_h, lh, left_prefix_h + 2)
+        DRAW.text((time_x, y), left_time, font=time_font, fill="WHITE")
     if right:
-        rw, rh = _measure(clock_size, right, clock_font)
-        row_h = max(row_h, rh)
-        DRAW.text((W - rw - 4, y), right, font=clock_font, fill="WHITE")
+        rw, rh = _measure(time_size, right_time, time_font)
+        prefix_x = W - rw - right_prefix_w - (side_gap if right_prefix else 0) - 2
+        row_h = max(row_h, rh, right_prefix_h + 2)
+        if right_prefix:
+            DRAW.text((prefix_x, y + 2), right_prefix, font=label_font, fill="WHITE")
+        DRAW.text((W - rw - 2, y), right_time, font=time_font, fill="WHITE")
 
     divider_y = y + row_h + 4
     DRAW.line((10, divider_y, W - 10, divider_y), fill="WHITE", width=1)
