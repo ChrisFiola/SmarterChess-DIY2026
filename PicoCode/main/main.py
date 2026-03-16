@@ -1313,6 +1313,16 @@ def _update_temp_path(name):
     return "/" + base + "_new.py"
 
 
+def _send_update_error(stage):
+    try:
+        link.send("UpdateError_" + str(stage))
+    except Exception:
+        try:
+            link.send("UpdateError")
+        except Exception:
+            pass
+
+
 def _handle_update_mode(_msg):
     board.off()
     cp.off(force=True)
@@ -1389,9 +1399,12 @@ def _handle_update_mode(_msg):
         link.send("UpdateComplete")
         time.sleep_ms(300)
         reset()
-    except Exception:
+    except MemoryError:
         _cleanup()
-        link.send("UpdateError")
+        _send_update_error("mem")
+    except Exception as exc:
+        _cleanup()
+        _send_update_error(exc.__class__.__name__)
 
 
 def _route_incoming_message(msg):

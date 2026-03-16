@@ -50,7 +50,8 @@ def _wait_for_update_complete(link: BoardLink, *, timeout_s: float) -> bool:
         msg = link.read_from_board()
         if msg == "updatecomplete":
             return True
-        if msg == "updateerror":
+        if msg and msg.startswith("updateerror"):
+            print(f"Pico reported {msg}.", file=sys.stderr)
             return False
     return False
 

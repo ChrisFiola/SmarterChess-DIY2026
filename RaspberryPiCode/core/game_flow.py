@@ -1698,8 +1698,11 @@ def _run_update(link: BoardLink, display: Display) -> None:
         msg = link.read_from_board()
         if msg == "updatecomplete":
             break
-        if msg == "updateerror":
-            display.send("Pico update\nfailed!")
+        if msg and msg.startswith("updateerror"):
+            reason = "failed"
+            if "_" in msg:
+                reason = msg.split("_", 1)[1] or reason
+            display.send(f"Pico update\n{reason[:16]}")
             time.sleep(3)
             return
         if time.time() > deadline:
