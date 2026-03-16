@@ -2,8 +2,6 @@ from machine import Pin
 import time
 import neopixel
 
-# trigger
-
 Config = None
 BLACK = None
 WHITE = None
