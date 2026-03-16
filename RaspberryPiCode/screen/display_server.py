@@ -223,11 +223,20 @@ def _draw_online(lines):
     clock_lines = list(lines[:2])
     body_lines = list(lines[2:]) if len(lines) > 2 else []
 
-    clock_size = 16
-    clock_font = _get_font(clock_size)
-    y = 4
     left = clock_lines[0] if len(clock_lines) > 0 else ""
     right = clock_lines[1] if len(clock_lines) > 1 else ""
+    clock_size = 16
+    clock_font = _get_font(clock_size)
+    for size in range(20, 15, -1):
+        font = _get_font(size)
+        lw, _ = _measure(size, left, font) if left else (0, 0)
+        rw, _ = _measure(size, right, font) if right else (0, 0)
+        if max(lw, rw) <= ((W // 2) - 6):
+            clock_size = size
+            clock_font = font
+            break
+
+    y = 4
     row_h = clock_size
 
     if left:
