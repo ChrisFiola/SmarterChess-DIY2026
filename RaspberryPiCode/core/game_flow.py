@@ -770,7 +770,6 @@ def guide_board_setup(
             link.clear_input()
         except Exception:
             pass
-        link.send_to_board("hint_enable")
 
 
 # -------------------- Setup & mode selection --------------------
@@ -931,7 +930,7 @@ def _configure_vs_computer(link: BoardLink, display: Display, cfg: GameConfig) -
         if msg in OK_MSGS or msg.startswith("n"):
             raise ReturnToMenu()
         if msg.isdigit():
-            cfg.skill_level = max(1, min(int(msg), 8))
+            cfg.skill_level = max(1, min(int(msg), 20))
             break
 
     # Move time
@@ -1386,12 +1385,6 @@ OPENING_GROUPS: List[Tuple[str, List[str]]] = [
 ]
 
 
-def _menu_truncate(s: str, n: int) -> str:
-    """Truncate a string to n characters, appending '…' if shortened."""
-    s = (s or "").strip()
-    return s if len(s) <= n else (s[: max(0, n - 1)] + "…")
-
-
 def _render_paged_menu(
     page: int,
     pages: int,
@@ -1400,20 +1393,18 @@ def _render_paged_menu(
     can_back: bool,
     per_page: int = 3,
 ) -> str:
-    """Format a title-free paged menu for a 20-char wide 4-line LCD display."""
+    """Format a paged menu for the graphical LCD display.
+
+    The display server handles uppercase and word-wrap, so we just pass
+    clean text without character-count constraints.
+    """
 
     def _fmt(i: int, s: str) -> str:
-        return f"{i}) {_menu_truncate(s or '', 17)}"[:20].rstrip()
+        return f"{i}) {(s or '').strip()}"
 
     lines = [_fmt(i + 1, opt) for i, opt in enumerate(items[:per_page])]
     if lines and pages > 1:
-        line1 = lines[0]
-        suffix = f" {page + 1}/{pages}"
-        if len(line1) + len(suffix) <= 20:
-            line1 = line1 + suffix
-        else:
-            line1 = line1[: max(0, 20 - len(suffix))] + suffix
-        lines[0] = line1
+        lines[0] = f"{lines[0]} {page + 1}/{pages}"
 
     while len(lines) < 3:
         lines.append("")
@@ -1424,11 +1415,11 @@ def _render_paged_menu(
     elif can_back:
         footer = "OK=Back"
     elif has_next:
-        footer = "         Hint=Next"
+        footer = "Hint=Next"
     else:
         footer = ""
-    lines.append(footer[:20])
-    return "\n".join(x[:20] for x in lines)
+    lines.append(footer)
+    return "\n".join(lines)
 
 
 def _paged_menu(

@@ -300,7 +300,7 @@ def _format_puzzle_label(
         )
     if rating is not None:
         label = f"{label} • {int(rating)}"
-    return label[:20]
+    return label
 
 
 # -------------------- PGN alignment helpers --------------------
@@ -899,7 +899,6 @@ class PuzzleController:
                 link.clear_input()
             except Exception:
                 pass
-            link.send_to_board("hint_enable")
 
         # 3) Load board state
         board = chess.Board(st.fen_start)

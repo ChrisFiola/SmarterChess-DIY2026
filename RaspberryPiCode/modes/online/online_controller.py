@@ -1298,7 +1298,8 @@ class OnlineController:
                         result = "0-1"
                     show_online_post_game(result, status=status)
 
-            send_turn_if_human()
+            if not prompted_for_this_turn:
+                send_turn_if_human()
             if not prompted_for_this_turn and not awaiting_ok_ack and not in_move_entry:
                 if incoming_draw_offer:
                     display.send("Draw offered\nYour move\nOK+Hint = menu")
@@ -1376,6 +1377,8 @@ class OnlineController:
                 display.send("Move rejected\nOK = retry")
                 if not wait_for_ok(link, display):
                     self._resign_and_exit(game_id)
+                prompted_for_this_turn = False
+                in_move_entry = False
                 continue
 
             board.push(move)
