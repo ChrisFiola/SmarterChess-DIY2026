@@ -43,7 +43,7 @@ MEASURE_CACHE = {}  # (size, text) -> (w,h)
 # Font cache
 FONTS = {}
 
-FOOTER_SIZE = 12
+FOOTER_SIZE = 15
 
 
 def _word_wrap(text, size, max_w):
