@@ -2,3 +2,6 @@
 # Format: study_id  Display Name
 # Example:
 # i7hMEq7h  My Opening Study
+i7hMEq7h  Fried Liver
+XYDNJi1R  The London System
+jtlLwUvh  Caro-Kann
