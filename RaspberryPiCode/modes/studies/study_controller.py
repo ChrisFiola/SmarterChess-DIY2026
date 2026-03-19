@@ -38,7 +38,6 @@ from core.protocol import (
     HINT_MSGS,
     NEW_GAME_MSGS,
     OK_MSGS,
-    format_engine_move,
     parse_uci_move,
 )
 from modes.online.lichess_client import LichessClient
@@ -443,10 +442,14 @@ class StudyController:
                 node = chosen
             else:
                 # Watch or opponent's turn — auto-play main line
+                # Use hint_ instead of engine move format so the Pico stays in
+                # the normal message loop (engine format triggers engine_ack_pending
+                # which auto-calls _collect_and_submit_move on OK, causing a deadlock
+                # when we then send WaitForOkConfirm for annotations).
                 display.send(
                     f"{side_label} plays\n{uci[:2]}→{uci[2:4]}\nOK = continue"
                 )
-                link.send_to_board(format_engine_move(uci, cap))
+                link.send_to_board(f"study_move_{uci}")
                 board.push(move)
                 send_check_signal(link, board)
                 node = main_var

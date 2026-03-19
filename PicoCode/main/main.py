@@ -413,6 +413,9 @@ def _handle_overlay_or_gameover(msg):
     if msg.startswith("heyArduinohint_"):
         _show_overlay(msg[len("heyArduinohint_") :], YELLOW, "hint")
         return "hint"
+    if msg.startswith("heyArduinostudy_move_"):
+        _show_overlay(msg[len("heyArduinostudy_move_") :], ENGINE_COLOR, "engine")
+        return "engine"
     if msg.startswith("heyArduinom"):
         _show_overlay(msg[len("heyArduinom") :], ENGINE_COLOR, "engine")
         return "engine"
@@ -1228,6 +1231,12 @@ def _handle_hint_move(msg):
     cp.reset_edges()
 
 
+def _handle_study_move(msg):
+    _show_overlay(msg[len("heyArduinostudy_move_") :], ENGINE_COLOR, "engine")
+    cp.only_ok(True)
+    cp.reset_edges()
+
+
 def _handle_puzzle_wrong(msg):
     raw = msg[len("heyArduinopuzzle_wrong_") :].strip()
     mv = "".join(ch for ch in raw if _is_alphanumeric(ch))[:4]
@@ -1480,6 +1489,9 @@ def _route_incoming_message(msg):
         return True
     if msg.startswith("heyArduinohint_"):
         _handle_hint_move(msg)
+        return True
+    if msg.startswith("heyArduinostudy_move_"):
+        _handle_study_move(msg)
         return True
     if msg.startswith("heyArduinopuzzle_wrong_"):
         _handle_puzzle_wrong(msg)
