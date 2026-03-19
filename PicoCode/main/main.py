@@ -1358,6 +1358,7 @@ def _handle_update_mode(_msg):
             except Exception:
                 pass
 
+    chunk_count = 0
     try:
         while True:
             time.sleep_ms(20)
@@ -1372,6 +1373,7 @@ def _handle_update_mode(_msg):
                 current_temp = _update_temp_path(current_name)
                 temp_paths[current_name] = current_temp
                 current_file = open(current_temp, "wb")
+                chunk_count = 0
                 continue
             if msg.startswith("heyArduinoUpdateChunk_"):
                 if current_file is None:
@@ -1382,7 +1384,9 @@ def _handle_update_mode(_msg):
                 current_file.write(
                     ubinascii.a2b_base64(msg[len("heyArduinoUpdateChunk_") :])
                 )
-                gc.collect()
+                chunk_count += 1
+                if chunk_count % 16 == 0:
+                    gc.collect()
                 continue
             if msg.startswith("heyArduinoUpdateFileDone"):
                 _close_current()
