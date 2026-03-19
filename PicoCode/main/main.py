@@ -1137,6 +1137,7 @@ def _handle_wait_for_annotation_page(_msg=None):
         if cp.BTN_HINT.value() == 0:
             while cp.BTN_HINT.value() == 0:
                 time.sleep_ms(Config.Timing.POLL_MS)
+            cp.hint_irq_flag = False  # consume IRQ so main loop doesn't double-fire
             cp.reset_edges()
             link.send("btn_hint")
             return
