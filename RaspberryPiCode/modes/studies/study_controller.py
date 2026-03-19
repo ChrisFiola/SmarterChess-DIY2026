@@ -241,7 +241,7 @@ class StudyController:
                 page_lines = page_lines + [""]
             footer = "OK=continue" if is_last else "Hint=next  OK=skip"
             display.send("\n".join(page_lines) + "\n" + footer, size="menu")
-            link.send_to_board("WaitForOkConfirm")
+            link.send_to_board("WaitForAnnotationPage")
 
             while True:
                 msg = link.read_from_board()
