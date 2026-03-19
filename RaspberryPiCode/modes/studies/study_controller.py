@@ -140,15 +140,24 @@ class StudyController:
             wait_for_ok(link, display)
             return
 
+        # Build truncated display names (menu prefix "N) " takes ~3 chars,
+        # page indicator " 1/4" takes ~4 — leave ~18 chars for the name itself)
+        MAX_NAME = 18
+        display_names = []
+        for name, _ in chapters:
+            s = name.strip()
+            display_names.append(s if len(s) <= MAX_NAME else s[: MAX_NAME - 1] + "…")
+
         # Chapter selection loop — pressing Back returns to study list
         while True:
-            chapter_names = [name for name, _ in chapters]
-            choice = _paged_menu(link, display, chapter_names)
+            choice = _paged_menu(link, display, display_names)
             if choice is None:
                 return  # user pressed Back → back to study selection
 
-            chapter_game = next((g for n, g in chapters if n == choice), None)
-            if chapter_game is None:
+            try:
+                idx = display_names.index(choice)
+                chapter_name, chapter_game = chapters[idx]
+            except (ValueError, IndexError):
                 continue
 
             # Play mode selection
@@ -165,7 +174,7 @@ class StudyController:
             else:
                 play_as = None  # Watch mode
 
-            self._play_chapter(link, display, chapter_game, play_as, choice)
+            self._play_chapter(link, display, chapter_game, play_as, chapter_name)
             # After chapter finishes, loop back to chapter selection
 
     # ----------------------------------------------------------------- private
