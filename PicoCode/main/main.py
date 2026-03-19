@@ -1117,6 +1117,9 @@ def _handle_wait_for_ok_confirm(_msg=None):
             cp.disarm_confirm_ok()
             cp.set_ok_led(False)
             cp.reset_edges()
+            if st.persistent_trail_active:
+                _clear_persistent_trail()
+                board.markings()
             link.send("btn_ok")
             return
         time.sleep_ms(Config.Timing.FAST_POLL_MS)
