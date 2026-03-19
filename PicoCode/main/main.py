@@ -1101,7 +1101,8 @@ def _handle_wait_for_ok_confirm(_msg=None):
         st.skip_next_wait_ok_confirm = False
         return
     cp.reset_edges()
-    board.markings()
+    if not st.persistent_trail_active:
+        board.markings()
     cp.only_ok(True, GREEN, border_on=st.in_game, force=True)
     while True:
         if cp.shutdown_held():
