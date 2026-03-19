@@ -144,6 +144,7 @@ class State:
         self.wait_exit_enabled = False
         self.hint_enabled = True
         self.puzzle_setup_active = False
+        self.setup_highlight = None  # (sq, color) kept across WaitForOkConfirm
         self.persistent_trail_active = False
         self.persistent_trail_type = None
         self.persistent_trail_move = None
@@ -1004,6 +1005,7 @@ def _handle_puzzle_setup_message(msg):
         return False
     if msg.startswith("heyArduinopuzzle_setup_begin"):
         st.puzzle_setup_active = True
+        st.setup_highlight = None
         cp.disable_hint_irq()
         cp.reset_edges()
         cp.border(True, force=True)
@@ -1012,6 +1014,7 @@ def _handle_puzzle_setup_message(msg):
         return True
     if msg.startswith("heyArduinopuzzle_setup_done"):
         st.puzzle_setup_active = False
+        st.setup_highlight = None
         st.in_game = True
         st.game_state = Game.RUNNING
         st.in_setup = False
@@ -1026,6 +1029,7 @@ def _handle_puzzle_setup_message(msg):
     if not st.puzzle_setup_active:
         return False
     if msg.startswith("heyArduinosetup_clear"):
+        st.setup_highlight = None
         board.markings()
         return True
     if msg.startswith("heyArduinosetup_place_"):
@@ -1035,12 +1039,14 @@ def _handle_puzzle_setup_message(msg):
         side = parts[1].strip().lower() if len(parts) > 1 else "w"
         color = GREEN if side.startswith("w") else ENGINE_COLOR
         board.markings()
-        board.puzzle_blink(sq, color, times=2)
+        board.puzzle_blink(sq, color, times=3)
+        st.setup_highlight = (sq, color)
         return True
     if msg.startswith("heyArduinosetup_remove_"):
         sq = msg.split("_")[-1].strip()
         board.markings()
         board.puzzle_blink(sq, RED, times=3)
+        st.setup_highlight = (sq, RED)
         return True
     if msg.startswith("heyArduinosetup_move_"):
         tail = msg[len("heyArduinosetup_move_") :].strip()
@@ -1092,12 +1098,24 @@ def _handle_choose_mode(_msg):
         _run_game_setup_loop()
 
 
+def _apply_setup_highlight():
+    """Re-apply the stored setup highlight square on top of board markings."""
+    if st.setup_highlight:
+        sq, color = st.setup_highlight
+        xy = board.algebraic_to_xy(sq)
+        if xy:
+            board.set_square(xy[0], xy[1], color)
+            board.write()
+
+
 def _handle_wait_for_ok_confirm(_msg=None):
     if st.skip_next_wait_ok_confirm:
         st.skip_next_wait_ok_confirm = False
         return
     cp.reset_edges()
     board.markings()
+    if st.puzzle_setup_active:
+        _apply_setup_highlight()
     cp.only_ok(True, GREEN, border_on=st.in_game, force=True)
     while True:
         if cp.shutdown_held():
@@ -1117,6 +1135,8 @@ def _handle_wait_for_ok_confirm(_msg=None):
 def _handle_wait_for_ok_or_skip_setup(_msg=None):
     cp.reset_edges()
     board.markings()
+    if st.puzzle_setup_active:
+        _apply_setup_highlight()
     cp.border(st.in_game or st.puzzle_setup_active, force=True, apply_now=False)
     cp._set_cp_buttons(True, False, True, False, ok_color=GREEN)
     cp.apply(force=True)

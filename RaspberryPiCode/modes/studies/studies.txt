@@ -1,0 +1,4 @@
+# Lichess Studies
+# Format: study_id  Display Name
+# Example:
+# i7hMEq7h  My Opening Study

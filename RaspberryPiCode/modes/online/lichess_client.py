@@ -393,6 +393,22 @@ class LichessClient:
         except RequestException as e:
             return {"_error": str(e)}
 
+    def get_study_pgn(self, study_id: str, timeout_s: float = 30) -> str:
+        """Fetch all chapters of a Lichess study as combined PGN text.
+
+        Returns an empty string on error so callers can check truthiness.
+        """
+        try:
+            r = requests.get(
+                f"{LICHESS_BASE}/api/study/{study_id}.pgn",
+                headers={**self.headers, "Accept": "application/x-chess-pgn"},
+                timeout=timeout_s,
+            )
+            r.raise_for_status()
+            return r.text or ""
+        except RequestException:
+            return ""
+
     def get_next_puzzle(
         self,
         *,

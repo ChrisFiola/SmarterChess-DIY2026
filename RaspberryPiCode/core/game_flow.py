@@ -778,6 +778,7 @@ def guide_board_setup(
 _TOP_MENU_OPTIONS: List[Tuple[str, Optional[str]]] = [
     ("Play Chess!", "play"),
     ("Puzzles", "puzzle"),
+    ("Studies", "studies"),
     ("Settings", "settings"),
 ]
 
@@ -1530,6 +1531,8 @@ def wait_for_mode_selection(
         )
         if top_action == "puzzle":
             return "puzzle"
+        if top_action == "studies":
+            return "studies"
         if top_action != "play":
             continue
 
@@ -1704,6 +1707,40 @@ def _run_update(link: BoardLink, display: Display) -> None:
     _restart_smartchess_service(display, "Update done!\nRestarting...")
 
 
+def _run_study_mode(link: BoardLink, display: Display) -> None:
+    """Study mode: select a Lichess study and play through its chapters."""
+    from modes.online.lichess_client import LichessClient
+    from modes.studies.study_controller import StudyController, load_studies
+
+    try:
+        client = LichessClient()
+    except RuntimeError as e:
+        display.send(f"Lichess error\n{str(e)[:20]}\nOK = back")
+        wait_for_ok(link, display)
+        raise ReturnToMenu()
+
+    studies = load_studies()
+    if not studies:
+        display.send("No studies found\nAdd IDs to\nstudies.txt\nOK = back")
+        wait_for_ok(link, display)
+        raise ReturnToMenu()
+
+    while True:
+        study_names = [name for _, name in studies]
+        choice = _paged_menu(link, display, study_names)
+        if choice is None:
+            raise ReturnToMenu()
+
+        study = next((s for s in studies if s[1] == choice), None)
+        if not study:
+            continue
+
+        study_id, study_name = study
+        ctrl = StudyController(client, study_id, study_name)
+        ctrl.run(link, display)
+        # After run() returns (user pressed Back from chapter list), loop to study selection
+
+
 def _run_puzzle_game(link: BoardLink, display: Display) -> None:
     """Puzzle mode: show a submenu then launch the selected puzzle type."""
     display.send("Loading...")
@@ -1801,6 +1838,11 @@ def run_selected_mode(
     elif state.mode in ("puzzle", "puzzles", "btn_mode_puzzle", "btn_mode_puzzles"):
         link.send_to_board("SetupComplete")
         _run_puzzle_game(link, display)
+        raise ReturnToMenu()
+
+    elif state.mode in ("studies", "study"):
+        link.send_to_board("SetupComplete")
+        _run_study_mode(link, display)
         raise ReturnToMenu()
 
     elif state.mode == "online":
