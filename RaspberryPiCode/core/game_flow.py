@@ -1704,41 +1704,6 @@ def _run_update(link: BoardLink, display: Display) -> None:
     _restart_smartchess_service(display, "Update done!\nRestarting...")
 
 
-def _prettify_theme(slug: str) -> str:
-    """Convert a Lichess theme slug like 'rookEndgame' to 'Rook endgame'."""
-    result = []
-    for ch in slug:
-        if ch.isupper() and result:
-            result.append(" ")
-        result.append(ch.lower())
-    return "".join(result).capitalize()
-
-
-def _fetch_improvement_areas(client, min_played: int = 3, max_areas: int = 15):
-    """Return (areas, error) where areas is a list of (slug, label) sorted worst-first.
-
-    Fetches the puzzle dashboard for the last 30 days and ranks themes by the
-    ratio of first-attempt solves to total played — lowest ratio = most room to improve.
-    """
-    data = client.get_puzzle_dashboard(days=30)
-    if not isinstance(data, dict) or data.get("_error"):
-        return None, str(data.get("_error") or "Dashboard unavailable")
-
-    themes = data.get("themes") or {}
-    areas = []
-    for slug, info in themes.items():
-        results = (info or {}).get("results") or {}
-        nb = int(results.get("nb") or 0)
-        first_wins = int(results.get("firstWins") or 0)
-        if nb < min_played:
-            continue
-        ratio = first_wins / nb
-        areas.append((ratio, slug, _prettify_theme(slug)))
-
-    areas.sort(key=lambda x: x[0])  # worst ratio first
-    return [(slug, label) for _, slug, label in areas[:max_areas]], None
-
-
 def _run_puzzle_game(link: BoardLink, display: Display) -> None:
     """Puzzle mode: show a submenu then launch the selected puzzle type."""
     display.send("Loading...")
@@ -1751,7 +1716,7 @@ def _run_puzzle_game(link: BoardLink, display: Display) -> None:
         return _paged_menu(link, display, options)
 
     while True:
-        top = menu(["Daily Puzzle", "Mix and match", "Improvement Areas", "Themes"])
+        top = menu(["Daily Puzzle", "Mix and match", "Themes"])
         if top is None:
             raise ReturnToMenu()
 
@@ -1761,26 +1726,6 @@ def _run_puzzle_game(link: BoardLink, display: Display) -> None:
 
         if top.startswith("Mix"):
             PuzzleController(client, mode="mix").run(link, display)
-            return
-
-        if top.startswith("Improvement"):
-            display.send("Loading your\nweak areas...")
-            result = run_in_bg(lambda: _fetch_improvement_areas(client), link, display)
-            if result is None:
-                continue  # user cancelled during fetch
-            areas, err = result
-            if err or not areas:
-                display.send("No data yet\nPlay more puzzles\nOK = back")
-                wait_for_ok(link, display)
-                continue
-            labels = [label for _, label in areas]
-            chosen_label = menu(labels)
-            if chosen_label is None:
-                continue
-            slug = next((s for s, l in areas if l == chosen_label), chosen_label)
-            PuzzleController(client, mode="theme", theme=slug, theme_label=chosen_label).run(
-                link, display
-            )
             return
 
         if not top.startswith("Themes"):

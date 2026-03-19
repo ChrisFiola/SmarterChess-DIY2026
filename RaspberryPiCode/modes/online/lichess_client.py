@@ -393,23 +393,6 @@ class LichessClient:
         except RequestException as e:
             return {"_error": str(e)}
 
-    def get_puzzle_dashboard(self, days: int = 30) -> Dict[str, Any]:
-        """Fetch the puzzle dashboard for the last N days.
-
-        Returns theme-level performance data including results.nb (played)
-        and results.firstWins (solved on first attempt).
-        """
-        try:
-            r = requests.get(
-                f"{LICHESS_BASE}/api/puzzle/dashboard/{days}",
-                headers=self.headers,
-                timeout=15,
-            )
-            r.raise_for_status()
-            return r.json()
-        except RequestException as e:
-            return {"_error": str(e)}
-
     def get_next_puzzle(
         self,
         *,
