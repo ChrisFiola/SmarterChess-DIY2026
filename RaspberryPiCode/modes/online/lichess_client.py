@@ -404,9 +404,15 @@ class LichessClient:
                 headers={**self.headers, "Accept": "application/x-chess-pgn"},
                 timeout=timeout_s,
             )
-            r.raise_for_status()
+            if not r.ok:
+                print(
+                    f"[STUDY] HTTP {r.status_code} fetching study {study_id!r}: {r.text[:200]}",
+                    flush=True,
+                )
+                return ""
             return r.text or ""
-        except RequestException:
+        except RequestException as e:
+            print(f"[STUDY] Network error fetching study {study_id!r}: {e}", flush=True)
             return ""
 
     def get_next_puzzle(

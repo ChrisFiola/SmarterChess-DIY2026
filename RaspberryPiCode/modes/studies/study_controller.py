@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import io
 import os
+import re
 import time
 from typing import List, Optional, Tuple
 
@@ -87,6 +88,18 @@ def _parse_chapters(pgn_text: str) -> List[Tuple[str, chess.pgn.Game]]:
         )
         chapters.append((name, game))
     return chapters
+
+
+def _clean_comment(text: str) -> str:
+    """Strip Lichess command annotations and emoji from comment text.
+
+    Removes [%cal ...], [%csl ...], and any other [%...] Lichess markup.
+    Strips characters outside basic ASCII + Latin Extended (emoji, symbols, etc.).
+    """
+    text = re.sub(r"\[%[^\]]*\]", "", text)
+    return "".join(
+        ch for ch in text if ord(ch) < 0x0250  # ASCII + Latin Extended A/B
+    ).strip()
 
 
 def _wrap_text(text: str, max_chars: int = 20) -> List[str]:
@@ -228,7 +241,7 @@ class StudyController:
         Hint = next page (cycles back from last), OK = done.
         Returns False if user backs out to menu.
         """
-        lines = _wrap_text(text, max_chars=20)
+        lines = _wrap_text(_clean_comment(text), max_chars=20)
         if not lines or lines == [""]:
             return True
 
