@@ -225,7 +225,7 @@ class StudyController:
     ) -> bool:
         """Show paginated annotation text (3 lines/page).
 
-        Hint = next page, OK = skip remaining pages.
+        Hint = next page (cycles back from last), OK = done.
         Returns False if user backs out to menu.
         """
         lines = _wrap_text(text, max_chars=20)
@@ -234,12 +234,14 @@ class StudyController:
 
         per_page = 3
         pages = [lines[i : i + per_page] for i in range(0, len(lines), per_page)]
+        page_idx = 0
 
-        for page_idx, page_lines in enumerate(pages):
+        while True:
             is_last = page_idx == len(pages) - 1
+            page_lines = list(pages[page_idx])
             while len(page_lines) < per_page:
-                page_lines = page_lines + [""]
-            footer = "OK=continue" if is_last else "Hint=next  OK=skip"
+                page_lines.append("")
+            footer = "Hint=back  OK=done" if is_last else "Hint=next  OK=skip"
             display.send("\n".join(page_lines) + "\n" + footer, size="menu")
             link.send_to_board("WaitForAnnotationPage")
 
@@ -253,13 +255,10 @@ class StudyController:
                 if msg in NEW_GAME_MSGS:
                     return False
                 if msg in OK_MSGS:
-                    return True  # OK always skips to end of annotation
+                    return True
                 if msg in HINT_MSGS:
-                    if is_last:
-                        return True
-                    break  # next page
-
-        return True
+                    page_idx = 0 if is_last else page_idx + 1
+                    break  # redisplay
 
     def _collect_move(
         self,
