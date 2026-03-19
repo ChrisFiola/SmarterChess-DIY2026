@@ -14,6 +14,7 @@ YELLOW = None
 ENGINE_COLOR = None
 
 
+# trigger
 def configure(config, colors):
     global Config, BLACK, WHITE, RED, GREEN, BLUE, CYAN, MAGENTA, YELLOW, ENGINE_COLOR
     Config = config
