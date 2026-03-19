@@ -448,7 +448,7 @@ def _prompt_promotion_choice(link: BoardLink, display: Display) -> str:
 
 
 def _show_new_game_banner(display: Display):
-    display.banner("NEW GAME", delay_s=1.0)
+    display.banner("New Game", delay_s=1.0)
 
 
 # -------------------- Hints & game-over --------------------
@@ -463,10 +463,10 @@ def send_move_hint(
 ) -> None:
     if state.board.is_game_over():
         link.send_to_board("hint_gameover")
-        display.send("Game Over\nNo hints\nPress n to start over")
+        display.send("Game over\nNo hints available\nOK = menu")
         return
 
-    display.send("Engine Thinking...")
+    display.send("Engine thinking...")
     best = ctx.hint(state.board, cfg.move_time_ms)
     if not best:
         link.send_to_board("hint_none")
@@ -562,7 +562,7 @@ def notify_game_over(link: BoardLink, display: Display, brd: chess.Board) -> str
     result = brd.result(claim_draw=True)
     winner = _result_to_winner_text(result)
     link.send_to_board(f"GameOver:{result}")
-    display.send(f"GAME OVER\n{winner}")
+    display.send(f"Game over\n{winner}")
     return result
 
 
@@ -916,7 +916,7 @@ def _configure_vs_computer(link: BoardLink, display: Display, cfg: GameConfig) -
       - Player color
     All values sent back to Pico unchanged (protocol preserved).
     """
-    display.send("VS Computer\nHints enabled")
+    display.send("vs Computer\nHints enabled")
     time.sleep(0.5)
 
     # Difficulty
@@ -963,7 +963,7 @@ def _configure_vs_computer(link: BoardLink, display: Display, cfg: GameConfig) -
 
 
 def _configure_local_game(link: BoardLink, display: Display, cfg: GameConfig) -> None:
-    display.send("Local 2-Player\nHints enabled")
+    display.send("Local 2-player\nHints enabled")
     time.sleep(0.5)
     cfg.skill_level = 8  # max hint skill for local
     cfg.move_time_ms = 1  # fastest think time for local
@@ -1012,7 +1012,7 @@ def prompt_next_turn(
             force=True,
         )
     else:
-        display.show_arrow(last_uci, suffix="ENGINE thinking", force=True)
+        display.show_arrow(last_uci, suffix="Engine thinking", force=True)
 
 
 # -------------------- Typing preview --------------------

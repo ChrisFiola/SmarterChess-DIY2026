@@ -1047,7 +1047,7 @@ class OnlineController:
 
             display.clear_online_clock()
             link.send_to_board(f"GameOver:{result}")
-            display.send(f"GAME OVER\n{winner_text}\n{reason}")
+            display.send(f"Game over\n{winner_text}\n{reason}")
             wait_for_ok(link, display)
             raise ReturnToMenu()
 
@@ -1152,7 +1152,7 @@ class OnlineController:
         # For ongoing game resumes: board state already set up physically.
         # Replay past moves silently (no LED) to sync the Python board object.
         if pre_loaded_board is not None:
-            display.send(f"You are {'WHITE' if you_are_white else 'BLACK'}")
+            display.send(f"You are {'White' if you_are_white else 'Black'}")
             # Use pre_loaded_board as the starting board state and skip old moves
             board_moves = extract_moves(first)
             for uci in board_moves:
@@ -1162,7 +1162,7 @@ class OnlineController:
                 except Exception:
                     break
         else:
-            display.send(f"Connected\nYou are {'WHITE' if you_are_white else 'BLACK'}")
+            display.send(f"Connected\nYou are {'White' if you_are_white else 'Black'}")
             apply_new_moves(extract_moves(first), announce_new=False)
 
         sync_clock_from_payload(first)

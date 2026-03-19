@@ -142,8 +142,6 @@ def _find_best_font_size(lines, min_size=14, max_size=28, vpad=4, spacing=6):
 # Draw centered text with explicit size/spacing
 # ------------------------------------------------------
 def _draw_centered_text_with_size(lines, size: int, spacing: int = 6, vpad: int = 12):
-    lines = [ln.upper() if ln else ln for ln in lines]
-
     # Clear framebuffer (no new allocations)
     DRAW.rectangle((0, 0, W, H), fill="BLACK")
 
@@ -186,14 +184,9 @@ def _draw_centered_text_with_size(lines, size: int, spacing: int = 6, vpad: int 
 
 
 def _draw_centered_text_auto(lines, min_size=14, max_size=28, vpad=12, spacing=6):
-    """Uppercase, word-wrap at max_size, then auto-size down until everything fits."""
-    upped = [(ln or "").upper() for ln in lines]
-    wrapped = []
-    for ln in upped:
-        for wl in _word_wrap(ln, max_size, W - 12):
-            wrapped.append(wl)
-    size, spacing = _find_best_font_size(wrapped, min_size, max_size, vpad, spacing)
-    _draw_centered_text_with_size(wrapped, size=size, spacing=spacing, vpad=vpad)
+    """Auto-size down until everything fits (no wrapping)."""
+    size, spacing = _find_best_font_size(lines, min_size, max_size, vpad, spacing)
+    _draw_centered_text_with_size(lines, size=size, spacing=spacing, vpad=vpad)
 
 
 def _draw_menu(lines):
@@ -210,7 +203,7 @@ def _draw_menu(lines):
 
     DRAW.rectangle((0, 0, W, H), fill="BLACK")
 
-    footer = raw_footer.upper() if raw_footer else ""
+    footer = raw_footer or ""
     footer_font = _get_font(FOOTER_SIZE)
     footer_h = _measure(FOOTER_SIZE, footer, footer_font)[1] if footer else 0
     # Reserve: footer text + separator gap (5) + bottom pad (4)
@@ -221,8 +214,7 @@ def _draw_menu(lines):
     vpad = 8
     min_size, max_size = 14, 28
 
-    # Uppercase items (no word-wrap — each item stays on one line)
-    display_lines = [(ln or "").upper() for ln in raw_items if ln]
+    display_lines = [(ln or "") for ln in raw_items if ln]
 
     item_size = min_size
     for sz in range(max_size, min_size - 1, -1):
@@ -324,26 +316,21 @@ def _draw_online(lines):
     vpad = 4
     min_body, max_body = 12, 22
 
-    # Uppercase + word-wrap at max_body, then auto-size to fit
-    upped_body = [(ln or "").upper() for ln in (body_lines or [""])]
-    wrapped_body = []
-    for ln in upped_body:
-        for wl in _word_wrap(ln, max_body, W - 12):
-            wrapped_body.append(wl)
-    wrapped_body = [ln for ln in wrapped_body if ln]
+    display_body = [(ln or "") for ln in (body_lines or [""])]
+    display_body = [ln for ln in display_body if ln]
 
     body_size = min_body
     for sz in range(max_body, min_body - 1, -1):
         font = _get_font(sz)
-        heights = [_measure(sz, ln, font)[1] for ln in wrapped_body] if wrapped_body else []
+        heights = [_measure(sz, ln, font)[1] for ln in display_body] if display_body else []
         total_h = sum(heights) + spacing * (len(heights) - 1) if heights else 0
-        widths = [_measure(sz, ln, font)[0] for ln in wrapped_body] if wrapped_body else []
+        widths = [_measure(sz, ln, font)[0] for ln in display_body] if display_body else []
         if total_h <= avail_h and all(w <= W - 12 for w in widths):
             body_size = sz
             break
 
     body_font = _get_font(body_size)
-    sized = [(ln, _measure(body_size, ln, body_font)) for ln in wrapped_body]
+    sized = [(ln, _measure(body_size, ln, body_font)) for ln in display_body]
     total_h = sum(h for _, (_, h) in sized) + spacing * (len(sized) - 1) if sized else 0
     y = avail_top + max(vpad, (avail_h - total_h) // 2)
     for ln, (w, h) in sized:
@@ -378,7 +365,7 @@ def _draw_qr(data: str, caption_lines):
             for ln in caption_lines[:3]:
                 if not ln:
                     continue
-                bbox = DRAW_MEASURE.textbbox((0, 0), ln.upper(), font=font_cap)
+                bbox = DRAW_MEASURE.textbbox((0, 0), ln, font=font_cap)
                 caption_h += (bbox[3] - bbox[1]) + 4
             caption_h = min(caption_h + 6, 52)
 
@@ -414,7 +401,6 @@ def _draw_qr(data: str, caption_lines):
             for ln in caption_lines[:3]:
                 if not ln:
                     continue
-                ln = ln.upper()
                 bbox = DRAW_MEASURE.textbbox((0, 0), ln, font=font_cap)
                 tw = bbox[2] - bbox[0]
                 DRAW.text(((W - tw) // 2, ycur), ln, font=font_cap, fill="WHITE")

@@ -74,7 +74,7 @@ def main():
                     pass
                 try:
                     short = (str(e) or e.__class__.__name__)[:18]
-                    display.send(f"ERROR\n{short}\nOK = menu")
+                    display.send(f"Error\n{short}\nOK = menu")
                     t0 = time.monotonic()
                     while time.monotonic() - t0 < 2.0:
                         msg = link.read_from_board()
