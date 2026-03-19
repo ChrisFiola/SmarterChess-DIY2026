@@ -221,30 +221,26 @@ def _draw_menu(lines):
     vpad = 8
     min_size, max_size = 14, 28
 
-    # Word-wrap at max_size, then auto-size down to fit
-    upped = [(ln or "").upper() for ln in raw_items if ln]
-    wrapped = []
-    for ln in upped:
-        for wl in _word_wrap(ln, max_size, W - 16):
-            wrapped.append(wl)
+    # Uppercase items (no word-wrap — each item stays on one line)
+    display_lines = [(ln or "").upper() for ln in raw_items if ln]
 
     item_size = min_size
     for sz in range(max_size, min_size - 1, -1):
         font = _get_font(sz)
-        heights = [_measure(sz, ln, font)[1] for ln in wrapped]
+        heights = [_measure(sz, ln, font)[1] for ln in display_lines]
         total_h = sum(heights) + spacing * (len(heights) - 1) if heights else 0
-        widths = [_measure(sz, ln, font)[0] for ln in wrapped]
+        widths = [_measure(sz, ln, font)[0] for ln in display_lines]
         if total_h <= avail_h - 2 * vpad and all(w <= W - 16 for w in widths):
             item_size = sz
             break
 
     item_font = _get_font(item_size)
-    heights = [_measure(item_size, ln, item_font)[1] for ln in wrapped]
+    heights = [_measure(item_size, ln, item_font)[1] for ln in display_lines]
     total_h = sum(heights) + spacing * (len(heights) - 1) if heights else 0
 
     # Center items in the available area above the footer
     y = max(vpad, (avail_h - total_h) // 2)
-    for ln, h in zip(wrapped, heights):
+    for ln, h in zip(display_lines, heights):
         w = _measure(item_size, ln, item_font)[0]
         DRAW.text(((W - w) // 2, y), ln, font=item_font, fill="WHITE")
         y += h + spacing
