@@ -162,8 +162,8 @@ class StudyController:
 
             # Show full chapter name if it was truncated
             if len(chapter_name.strip()) > MAX_NAME:
-                if not self._show_annotation(link, display, chapter_name):
-                    continue  # user pressed Back — return to chapter list
+                if not self._show_chapter_title(link, display, chapter_name):
+                    continue  # user pressed OK — return to chapter list
 
             # Play mode selection
             mode_choice = _paged_menu(
@@ -183,6 +183,43 @@ class StudyController:
             # After chapter finishes, loop back to chapter selection
 
     # ----------------------------------------------------------------- private
+
+    def _show_chapter_title(
+        self, link: BoardLink, display: Display, title: str
+    ) -> bool:
+        """Show full chapter title with 1=continue and OK=back semantics.
+
+        Returns True if user pressed 1 (continue), False if OK (back) or exit.
+        """
+        lines = _wrap_text(title, max_chars=20)
+        per_page = 3
+        pages = [lines[i : i + per_page] for i in range(0, len(lines), per_page)]
+
+        for page_idx, page_lines in enumerate(pages):
+            is_last = page_idx == len(pages) - 1
+            while len(page_lines) < per_page:
+                page_lines = page_lines + [""]
+            footer = "1=play  OK=back"
+            display.send("\n".join(page_lines) + "\n" + footer, size="menu")
+            link.send_to_board("WaitForOkOrSkipSetup")
+
+            while True:
+                msg = link.read_from_board()
+                if msg is None:
+                    continue
+                if msg == "shutdown":
+                    shutdown_raspberry_pi(link, display)
+                    return False
+                if msg in NEW_GAME_MSGS or msg in OK_MSGS:
+                    return False  # OK = back
+                if (msg or "").strip() == "1":
+                    if is_last:
+                        return True  # 1 = continue
+                    break  # next page
+                if msg.startswith("typing_") or msg.startswith("capq_") or msg in HINT_MSGS:
+                    continue
+
+        return True
 
     def _show_annotation(
         self, link: BoardLink, display: Display, text: str
