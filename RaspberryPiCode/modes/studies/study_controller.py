@@ -160,6 +160,11 @@ class StudyController:
             except (ValueError, IndexError):
                 continue
 
+            # Show full chapter name if it was truncated
+            if len(chapter_name.strip()) > MAX_NAME:
+                if not self._show_annotation(link, display, chapter_name):
+                    continue  # user pressed Back — return to chapter list
+
             # Play mode selection
             mode_choice = _paged_menu(
                 link, display, ["Play as White", "Play as Black", "Watch"]
@@ -255,8 +260,6 @@ class StudyController:
                 display.send(f"{side} to move\n→{dests}\nHint=main line")
 
         _arm()
-        # Light up main variation on the LEDs
-        link.send_to_board(f"hint_{main_uci}")
 
         while True:
             msg = link.read_from_board()
@@ -311,8 +314,6 @@ class StudyController:
                 )
                 if not ok:
                     return None
-                # handle_illegal_move already re-armed Pico; re-show study hint
-                link.send_to_board(f"hint_{main_uci}")
                 continue
 
             # Match against any variation
@@ -338,7 +339,6 @@ class StudyController:
                 )
                 if not ok:
                     return None
-                link.send_to_board(f"hint_{main_uci}")
                 continue
 
             # Correct move
@@ -359,9 +359,18 @@ class StudyController:
         fen = board.fen()
         label = chapter_name[:15]
 
-        result = guide_board_setup(link, display, fen, label=label)
-        if result is None:
-            return  # user backed out during setup
+        # Skip setup if the chapter starts from the standard starting position
+        if board.board_fen() == chess.Board().board_fen():
+            display.send(f"{label}\nStandard start\nBoard ready")
+            link.send_to_board("hint_disable")
+            link.send_to_board("puzzle_setup_begin")
+            time.sleep(0.2)
+            link.send_to_board("puzzle_setup_done")
+            link.send_to_board("hint_enable")
+        else:
+            result = guide_board_setup(link, display, fen, label=label)
+            if result is None:
+                return  # user backed out during setup
 
         link.send_to_board("SetupComplete")
 
