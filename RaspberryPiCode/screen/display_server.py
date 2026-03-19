@@ -43,9 +43,6 @@ MEASURE_CACHE = {}  # (size, text) -> (w,h)
 # Font cache
 FONTS = {}
 
-# Fixed font sizes — used everywhere so the display looks consistent.
-# Word-wrapping handles long text; we never auto-shrink or truncate.
-BODY_SIZE = 16
 FOOTER_SIZE = 12
 
 
@@ -189,16 +186,21 @@ def _draw_centered_text_with_size(lines, size: int, spacing: int = 6, vpad: int 
 
 
 def _draw_centered_text_auto(lines, min_size=14, max_size=28, vpad=12, spacing=6):
-    """Render lines at the fixed body size with word-wrap and uppercase."""
-    processed = _prepare_lines(lines, BODY_SIZE)
-    _draw_centered_text_with_size(processed, size=BODY_SIZE, spacing=spacing, vpad=vpad)
+    """Uppercase, word-wrap at max_size, then auto-size down until everything fits."""
+    upped = [(ln or "").upper() for ln in lines]
+    wrapped = []
+    for ln in upped:
+        for wl in _word_wrap(ln, max_size, W - 12):
+            wrapped.append(wl)
+    size, spacing = _find_best_font_size(wrapped, min_size, max_size, vpad, spacing)
+    _draw_centered_text_with_size(wrapped, size=size, spacing=spacing, vpad=vpad)
 
 
 def _draw_menu(lines):
-    """Draw menu lines at a fixed size: items centered, footer pinned to the bottom.
+    """Draw menu lines with auto-sizing: items centered, footer pinned to the bottom.
 
     Expects lines = [item1, item2, item3, footer].  Footer may be empty string.
-    Text is uppercased and word-wrapped automatically.
+    Text is uppercased and word-wrapped at the largest fitting font size.
     """
     if not lines:
         return
@@ -215,19 +217,35 @@ def _draw_menu(lines):
     footer_reserved = (footer_h + 14) if footer else 0
     avail_h = H - footer_reserved
 
-    # Uppercase + word-wrap all item lines
     spacing = 6
     vpad = 8
-    item_font = _get_font(BODY_SIZE)
-    display_lines = _prepare_lines([ln for ln in raw_items if ln], BODY_SIZE, max_w=W - 16)
+    min_size, max_size = 14, 28
 
-    heights = [_measure(BODY_SIZE, ln, item_font)[1] for ln in display_lines]
+    # Word-wrap at max_size, then auto-size down to fit
+    upped = [(ln or "").upper() for ln in raw_items if ln]
+    wrapped = []
+    for ln in upped:
+        for wl in _word_wrap(ln, max_size, W - 16):
+            wrapped.append(wl)
+
+    item_size = min_size
+    for sz in range(max_size, min_size - 1, -1):
+        font = _get_font(sz)
+        heights = [_measure(sz, ln, font)[1] for ln in wrapped]
+        total_h = sum(heights) + spacing * (len(heights) - 1) if heights else 0
+        widths = [_measure(sz, ln, font)[0] for ln in wrapped]
+        if total_h <= avail_h - 2 * vpad and all(w <= W - 16 for w in widths):
+            item_size = sz
+            break
+
+    item_font = _get_font(item_size)
+    heights = [_measure(item_size, ln, item_font)[1] for ln in wrapped]
     total_h = sum(heights) + spacing * (len(heights) - 1) if heights else 0
 
     # Center items in the available area above the footer
     y = max(vpad, (avail_h - total_h) // 2)
-    for ln, h in zip(display_lines, heights):
-        w = _measure(BODY_SIZE, ln, item_font)[0]
+    for ln, h in zip(wrapped, heights):
+        w = _measure(item_size, ln, item_font)[0]
         DRAW.text(((W - w) // 2, y), ln, font=item_font, fill="WHITE")
         y += h + spacing
 
@@ -308,12 +326,28 @@ def _draw_online(lines):
     avail_h = max(24, H - avail_top - 8)
     spacing = 5
     vpad = 4
+    min_body, max_body = 12, 22
 
-    display_body = _prepare_lines(body_lines or [""], BODY_SIZE, max_w=W - 12)
-    display_body = [ln for ln in display_body if ln]
+    # Uppercase + word-wrap at max_body, then auto-size to fit
+    upped_body = [(ln or "").upper() for ln in (body_lines or [""])]
+    wrapped_body = []
+    for ln in upped_body:
+        for wl in _word_wrap(ln, max_body, W - 12):
+            wrapped_body.append(wl)
+    wrapped_body = [ln for ln in wrapped_body if ln]
 
-    body_font = _get_font(BODY_SIZE)
-    sized = [(ln, _measure(BODY_SIZE, ln, body_font)) for ln in display_body]
+    body_size = min_body
+    for sz in range(max_body, min_body - 1, -1):
+        font = _get_font(sz)
+        heights = [_measure(sz, ln, font)[1] for ln in wrapped_body] if wrapped_body else []
+        total_h = sum(heights) + spacing * (len(heights) - 1) if heights else 0
+        widths = [_measure(sz, ln, font)[0] for ln in wrapped_body] if wrapped_body else []
+        if total_h <= avail_h and all(w <= W - 12 for w in widths):
+            body_size = sz
+            break
+
+    body_font = _get_font(body_size)
+    sized = [(ln, _measure(body_size, ln, body_font)) for ln in wrapped_body]
     total_h = sum(h for _, (_, h) in sized) + spacing * (len(sized) - 1) if sized else 0
     y = avail_top + max(vpad, (avail_h - total_h) // 2)
     for ln, (w, h) in sized:
