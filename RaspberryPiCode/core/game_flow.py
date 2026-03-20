@@ -1665,12 +1665,25 @@ def _run_update(link: BoardLink, display: Display) -> None:
     # buffer during GC pauses and flash sector-erase operations.
     chunk_size = 32
     chunk_delay = 0.12
+
+    # Pre-encode all files and count total chunks for progress display
+    upload_plan: list[tuple[Path, str]] = []
+    total_chunks = 0
     for pico_file in [path for path in pico_files if path.exists()]:
         encoded = base64.b64encode(pico_file.read_bytes()).decode()
+        n_chunks = (len(encoded) + chunk_size - 1) // chunk_size
+        total_chunks += n_chunks
+        upload_plan.append((pico_file, encoded))
+
+    sent_chunks = 0
+    for pico_file, encoded in upload_plan:
         link.send_to_board(f"UpdateFile_{pico_file.name}")
         time.sleep(chunk_delay)
         for i in range(0, len(encoded), chunk_size):
             link.send_to_board(f"UpdateChunk_{encoded[i:i + chunk_size]}")
+            sent_chunks += 1
+            pct = (sent_chunks * 100) // total_chunks
+            display.send(f"Uploading...\n{pct}%")
             time.sleep(chunk_delay)
         link.send_to_board("UpdateFileDone")
         time.sleep(chunk_delay)
