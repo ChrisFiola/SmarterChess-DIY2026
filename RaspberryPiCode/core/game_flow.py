@@ -955,8 +955,8 @@ def _configure_vs_computer(link: BoardLink, display: Display, cfg: GameConfig) -
     display.send("vs Computer\nHints enabled")
     time.sleep(0.5)
 
-    # Difficulty
-    display.send("Difficulty level:\n1 to 8\nOK = cancel")
+    # Difficulty — show approximate Elo for each button
+    display.send("Difficulty (Elo):\n200 to 2200\nBtn 1-8  OK=back")
     link.send_to_board("EngineStrength")
     link.send_to_board(f"default_strength_{cfg.skill_level}")
     while True:
@@ -967,6 +967,10 @@ def _configure_vs_computer(link: BoardLink, display: Display, cfg: GameConfig) -
             raise ReturnToMenu()
         if msg.isdigit():
             cfg.skill_level = max(1, min(int(msg), 8))
+            _ELO_LABELS = {1: 200, 2: 400, 3: 600, 4: 900, 5: 1200, 6: 1500, 7: 1800, 8: 2200}
+            elo = _ELO_LABELS[cfg.skill_level]
+            display.send(f"Level {cfg.skill_level}\n~{elo} Elo")
+            time.sleep(0.8)
             break
 
     cfg.move_time_ms = 2000  # used for hint calculations
