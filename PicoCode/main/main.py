@@ -130,7 +130,7 @@ class State:
         self.game_state = Game.IDLE
         self.current_turn = "W"
         self.in_game = False
-        self.skip_next_wait_ok_confirm = False
+
         self.default_strength = 5
         self.default_move_time = 2000
         self.in_setup = False
@@ -162,6 +162,7 @@ class UARTLink:
             tx=Pin(Config.UART.TX_PIN),
             rx=Pin(Config.UART.RX_PIN),
             timeout=Config.UART.TIMEOUT_MS,
+            rxbuf=512,
         )
 
     def send(self, kind, payload=""):
@@ -1100,9 +1101,6 @@ def _handle_choose_mode(_msg):
 
 
 def _handle_wait_for_ok_confirm(_msg=None):
-    if st.skip_next_wait_ok_confirm:
-        st.skip_next_wait_ok_confirm = False
-        return
     cp.reset_edges()
     if not st.persistent_trail_active:
         board.markings()
@@ -1321,7 +1319,6 @@ def _handle_puzzle_wrong(msg):
                 time.sleep_ms(Config.Timing.POLL_MS)
             cp.disarm_confirm_ok()
             cp.reset_edges()
-            st.skip_next_wait_ok_confirm = True
             link.send("btn_ok")
             break
         time.sleep_ms(Config.Timing.POLL_MS)
@@ -1603,7 +1600,9 @@ def _main_loop():
         if st.puzzle_setup_active:
             msg_setup = link.read()
             if msg_setup:
-                _handle_puzzle_setup_message(msg_setup)
+                if not _handle_puzzle_setup_message(msg_setup):
+                    if msg_setup.startswith("heyArduinoWaitForOkConfirm"):
+                        _handle_wait_for_ok_confirm(msg_setup)
             if cp.BTN_OK.value() == 0 and cp.BTN_HINT.value() == 0:
                 link.send("n")
                 st.puzzle_setup_active = False
