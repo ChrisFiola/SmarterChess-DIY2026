@@ -5,24 +5,23 @@ Stockfish opponent wrapper.
 Maps the 1-8 skill scale from the Pico UI to Stockfish's internal
 parameters, then retrieves best moves.
 
-Strength mapping:
-  Levels 1-2  — Skill Level (0-20): UCI_Elo has a ~1320 floor inside
-                Stockfish, so very weak play requires the Skill Level
-                parameter instead.
-  Levels 3-8  — UCI_Elo: gives a more realistic, human-like difficulty
-                curve at the mid and upper range.
+Each level combines three knobs for a smooth difficulty ramp:
+  - Stockfish Skill Level or UCI_Elo (engine playing strength)
+  - Search depth cap (limits how far ahead the engine looks)
+  - Blunder chance (randomly picks a legal move instead of the best one)
 
-  Level  1 → Skill Level 0   (roughly 500 Elo equivalent)
-  Level  2 → Skill Level 1   (roughly 800 Elo equivalent)
-  Level  3 → UCI_Elo  1000
-  Level  4 → UCI_Elo  1300
-  Level  5 → UCI_Elo  1600
-  Level  6 → UCI_Elo  1800
-  Level  7 → UCI_Elo  2000
-  Level  8 → UCI_Elo  2300
+  Level  1 → Skill Level 0,  depth 1, 40% blunder, 0.5s  (~200 Elo)
+  Level  2 → Skill Level 0,  depth 2, 25% blunder, 0.5s  (~400 Elo)
+  Level  3 → Skill Level 1,  depth 4, 15% blunder, 1.0s  (~600 Elo)
+  Level  4 → Skill Level 3,  depth 8, 8% blunder,  1.0s  (~900 Elo)
+  Level  5 → UCI_Elo  1200,  no cap,  4% blunder,  1.5s  (~1200 Elo)
+  Level  6 → UCI_Elo  1500,  no cap,  0% blunder,  2.0s  (~1500 Elo)
+  Level  7 → UCI_Elo  1800,  no cap,  0% blunder,  2.5s  (~1800 Elo)
+  Level  8 → UCI_Elo  2200,  no cap,  0% blunder,  3.0s  (~2200 Elo)
 """
 from __future__ import annotations
 
+import random
 import sys
 import traceback
 from typing import Optional
@@ -36,12 +35,22 @@ def _clamp(n: int, lo: int, hi: int) -> int:
     return lo if n < lo else hi if n > hi else n
 
 
-# Levels 1-2 use Stockfish Skill Level (0-20) because UCI_Elo bottoms out
-# at ~1320 and cannot produce truly beginner-level play below that.
-_SKILL_LEVEL_MAP = {1: 0, 2: 1}
-
-# Levels 3-8 use UCI_Elo for a realistic human-like difficulty curve.
-_ELO_MAP = {3: 1000, 4: 1300, 5: 1600, 6: 1800, 7: 2000, 8: 2300}
+# Per-level configuration: (method, value, depth_cap, blunder_pct, time_ms)
+#   method="skill" → Stockfish Skill Level (0-20), UCI_LimitStrength off
+#   method="elo"   → UCI_Elo, UCI_LimitStrength on
+#   depth_cap=None → no depth limit (use time only)
+#   blunder_pct    → 0-100, chance of playing a random legal move
+#   time_ms        → think time per move in milliseconds
+_LEVEL_CONFIG = {
+    1: ("skill",  0,     1,  40,  500),
+    2: ("skill",  0,     2,  25,  500),
+    3: ("skill",  1,     4,  15, 1000),
+    4: ("skill",  3,     8,   8, 1000),
+    5: ("elo",  1200, None,   4, 1500),
+    6: ("elo",  1500, None,   0, 2000),
+    7: ("elo",  1800, None,   0, 2500),
+    8: ("elo",  2200, None,   0, 3000),
+}
 
 
 class StockfishOpponent:
@@ -70,25 +79,28 @@ class StockfishOpponent:
 
     def _ensure_configured(self) -> None:
         """Send strength configuration to the engine if it has changed."""
+        if self.ctx.hint_override_active:
+            # hint() set engine to full strength — must reconfigure
+            self.ctx.hint_override_active = False
+            self._configured = False
         if self._configured and self._last_skill == self.skill_level:
             return
 
         engine = self.ctx.ensure()
+        method, value, _depth, _blunder, _time = _LEVEL_CONFIG[self.skill_level]
 
         try:
-            if self.skill_level in _SKILL_LEVEL_MAP:
-                sf_level = _SKILL_LEVEL_MAP[self.skill_level]
-                engine.configure({"UCI_LimitStrength": False, "Skill Level": sf_level})
+            if method == "skill":
+                engine.configure({"UCI_LimitStrength": False, "Skill Level": value})
                 print(
-                    f"[ENGINE] skill={self.skill_level} → Skill Level={sf_level}",
+                    f"[ENGINE] skill={self.skill_level} → Skill Level={value}",
                     file=sys.stderr,
                     flush=True,
                 )
             else:
-                elo = _ELO_MAP[self.skill_level]
-                engine.configure({"UCI_LimitStrength": True, "UCI_Elo": elo})
+                engine.configure({"UCI_LimitStrength": True, "UCI_Elo": value})
                 print(
-                    f"[ENGINE] skill={self.skill_level} → UCI_Elo={elo}",
+                    f"[ENGINE] skill={self.skill_level} → UCI_Elo={value}",
                     file=sys.stderr,
                     flush=True,
                 )
@@ -102,4 +114,19 @@ class StockfishOpponent:
 
     def get_move(self, board: chess.Board) -> Optional[str]:
         self._ensure_configured()
-        return self.ctx.bestmove(board, self.move_time_ms)
+
+        _method, _value, depth_cap, blunder_pct, time_ms = _LEVEL_CONFIG[self.skill_level]
+
+        # Random blunder: pick any legal move
+        if blunder_pct > 0 and random.randint(1, 100) <= blunder_pct:
+            legal = list(board.legal_moves)
+            if legal:
+                pick = random.choice(legal).uci()
+                print(
+                    f"[ENGINE] blunder! random move {pick} (level {self.skill_level})",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                return pick
+
+        return self.ctx.bestmove(board, time_ms, depth=depth_cap)

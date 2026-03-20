@@ -887,25 +887,10 @@ def _run_game_setup_loop():
                 except Exception:
                     pass
                 continue
-            if msg.startswith("heyArduinodefault_time_"):
-                try:
-                    st.default_move_time = int(msg.split("_")[-1])
-                except Exception:
-                    pass
-                continue
             if msg.startswith("heyArduinoEngineStrength"):
                 cp.profile.vs_strength_time()
-                board.prompt_strength()
-                v = _select_mapped_value(1, 20)
-                if v is None:
-                    return
-                link.send(str(v))
-                time.sleep_ms(Config.Timing.SETUP_TRANSITION_MS)
-                return
-            if msg.startswith("heyArduinoTimeControl"):
-                cp.profile.vs_strength_time()
-                board.prompt_time()
-                v = _select_mapped_value(1000, 8000)
+                board.markings()
+                v = _select_mapped_value(1, 8)
                 if v is None:
                     return
                 link.send(str(v))
@@ -967,6 +952,13 @@ def _run_game_setup_loop():
             if msg.startswith("heyArduinoBrightnessControl"):
                 cp.profile.brightness()
                 link.send("brightness_" + str(_brightness))
+                # Show brightness preview: 8 squares in a row, each at its
+                # brightness level so the user can see the effect of each step.
+                board.clear(BLACK)
+                base = _C.WHITE
+                for x in range(8):
+                    board.set_square(x, 3, _scale(base, x + 1))
+                board.write()
                 v = _select_mapped_value(1, 8)
                 if v is None:
                     return

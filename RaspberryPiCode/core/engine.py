@@ -26,6 +26,7 @@ class EngineContext:
         """
         self.engine: Optional["chess.engine.SimpleEngine"] = None
         self._chess_engine = None  # chess.engine module, lazily loaded
+        self.hint_override_active = False  # set after hint() overrides strength
 
     def _engine_mod(self):
         """Return the chess.engine module, importing it on first call."""
@@ -61,14 +62,23 @@ class EngineContext:
                 pass
             self.engine = None
 
-    def bestmove(self, board: "chess.Board", time_ms: int) -> Optional[str]:
-        """Return the best move UCI string for the given position, or None if game is over."""
+    def bestmove(
+        self, board: "chess.Board", time_ms: int, depth: Optional[int] = None
+    ) -> Optional[str]:
+        """Return the best move UCI string for the given position, or None if game is over.
+
+        If *depth* is given, the search is capped at that many plies in
+        addition to the time limit — whichever is reached first.
+        """
         if board.is_game_over():
             return None
 
         chess_engine = self._engine_mod()
         engine = self.ensure()
-        limit = chess_engine.Limit(time=max(0.01, time_ms / 1000.0))
+        limit = chess_engine.Limit(
+            time=max(0.01, time_ms / 1000.0),
+            depth=depth,
+        )
 
         result = engine.play(board, limit)
         return result.move.uci() if result.move else None
@@ -76,16 +86,21 @@ class EngineContext:
     def hint(self, board: "chess.Board", time_ms: int) -> Optional[str]:
         """Return the top suggested move UCI string for the given position.
 
+        Temporarily sets the engine to full strength so hints are always the
+        best possible advice, regardless of the current difficulty level.
         Uses engine analysis (multipv=1) and falls back to bestmove on failure.
         """
         if board.is_game_over():
             return None
 
         chess_engine = self._engine_mod()
+        engine = self.ensure()
         limit = chess_engine.Limit(time=max(0.01, time_ms / 1000.0))
 
         try:
-            engine = self.ensure()
+            # Full strength for hints
+            engine.configure({"UCI_LimitStrength": False, "Skill Level": 20})
+            self.hint_override_active = True
             info = engine.analyse(board, limit, multipv=1)
             pv = info.get("pv")
             if pv:

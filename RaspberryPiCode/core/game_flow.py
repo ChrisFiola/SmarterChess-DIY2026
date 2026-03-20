@@ -913,9 +913,9 @@ def _configure_vs_computer(link: BoardLink, display: Display, cfg: GameConfig) -
     """
     DIY-like setup flow:
       - Difficulty (skill)
-      - Move time
       - Player color
-    All values sent back to Pico unchanged (protocol preserved).
+    Move time is fixed at 2s — difficulty is controlled by the level's depth
+    cap and blunder chance instead.
     """
     display.send("vs Computer\nHints enabled")
     time.sleep(0.5)
@@ -931,22 +931,10 @@ def _configure_vs_computer(link: BoardLink, display: Display, cfg: GameConfig) -
         if msg in OK_MSGS or msg.startswith("n"):
             raise ReturnToMenu()
         if msg.isdigit():
-            cfg.skill_level = max(1, min(int(msg), 20))
+            cfg.skill_level = max(1, min(int(msg), 8))
             break
 
-    # Move time
-    display.send("Computer\nmove time:\n1 to 8\nOK = cancel")
-    link.send_to_board("TimeControl")
-    link.send_to_board(f"default_time_{cfg.move_time_ms}")
-    while True:
-        msg = link.read_from_board()
-        if msg is None:
-            continue
-        if msg in OK_MSGS or msg.startswith("n"):
-            raise ReturnToMenu()
-        if msg.isdigit():
-            cfg.move_time_ms = max(10, int(msg))
-            break
+    cfg.move_time_ms = 2000  # used for hint calculations
 
     # Color
     display.send("Select a colour:\n1=White 2=Black\n3=Random\nOK = cancel")
