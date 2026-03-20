@@ -675,7 +675,7 @@ def _collect_and_submit_move():
             if isinstance(move_from, tuple) and move_from[0] == "back_from":
                 continue
             if move_from is None:
-                if st.persistent_trail_active:
+                if st.persistent_trail_active and st.game_state == Game.RUNNING:
                     continue
                 return
             move_to = _select_to_square(move_from)
@@ -1274,16 +1274,26 @@ def _handle_study_move(msg):
 
 
 def _handle_study_vars(msg):
-    """Light up variation destination squares when multiple lines are available."""
+    """Light up origin and destination squares for each available variation.
+
+    Main line (first UCI) is shown in BLUE; alternatives are shown in YELLOW.
+    Main line is drawn last so it takes precedence on any shared squares.
+    """
     payload = msg[len("heyArduinostudy_vars_"):]
     ucis = [u for u in payload.split("|") if len(u) >= 4]
     if not ucis:
         return
     board.markings()
-    for uci in ucis:
-        xy = board.algebraic_to_xy(uci[2:4])
+    # Draw variation lines first (yellow), then main line (blue) on top
+    for uci in ucis[1:]:
+        for sq in (uci[:2], uci[2:4]):
+            xy = board.algebraic_to_xy(sq)
+            if xy:
+                board.set_square(xy[0], xy[1], YELLOW)
+    for sq in (ucis[0][:2], ucis[0][2:4]):
+        xy = board.algebraic_to_xy(sq)
         if xy:
-            board.set_square(xy[0], xy[1], YELLOW)
+            board.set_square(xy[0], xy[1], BLUE)
     board.write()
     st.persistent_trail_active = True
     st.persistent_trail_type = "study_vars"
