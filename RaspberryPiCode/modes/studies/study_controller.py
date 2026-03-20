@@ -463,7 +463,7 @@ class StudyController:
                 # which auto-calls _collect_and_submit_move on OK, causing a deadlock
                 # when we then send WaitForOkConfirm for annotations).
                 display.send(f"{side_label} plays\n{uci[:2]}→{uci[2:4]}\nOK = continue")
-                link.send_to_board(f"study_move_{uci}")
+                link.send_to_board(f"study_move_{uci}{'_cap' if cap else ''}")
                 board.push(move)
                 send_check_signal(link, board)
                 node = main_var

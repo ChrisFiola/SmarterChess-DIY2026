@@ -1600,9 +1600,7 @@ def _main_loop():
         if st.puzzle_setup_active:
             msg_setup = link.read()
             if msg_setup:
-                if not _handle_puzzle_setup_message(msg_setup):
-                    if msg_setup.startswith("heyArduinoWaitForOkConfirm"):
-                        _handle_wait_for_ok_confirm(msg_setup)
+                _handle_puzzle_setup_message(msg_setup)
             if cp.BTN_OK.value() == 0 and cp.BTN_HINT.value() == 0:
                 link.send("n")
                 st.puzzle_setup_active = False
