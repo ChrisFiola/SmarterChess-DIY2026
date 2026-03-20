@@ -604,8 +604,21 @@ def post_game_menu(
     """Show post-game flow: OK to view analysis QR, then return to menu.
 
     Always raises ReturnToMenu. Call this after notify_game_over().
+    The Pico shows its own game-over scene and sends "n" when the user
+    presses OK to dismiss it — we must wait for that before sending any
+    new commands, otherwise they pile up in the UART buffer unseen.
     """
-    time.sleep(1.5)  # let the game-over display settle
+    # Wait for Pico to finish its game-over scene (sends "n" on dismiss)
+    while True:
+        msg = link.read_from_board()
+        if msg is None:
+            continue
+        if msg == "shutdown":
+            shutdown_raspberry_pi(link, display)
+            raise ReturnToMenu()
+        if msg in NEW_GAME_MSGS or msg in OK_MSGS:
+            break
+
     display.send("Press OK\nto view analysis")
     link.send_to_board("ChooseMode")
     link.send_to_board("only_ok_cancel")
