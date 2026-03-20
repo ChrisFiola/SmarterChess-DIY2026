@@ -6,7 +6,7 @@ import os as _uos
 from pico_hw import configure as _configure_hw, ControlPanel, ChessBoard
 
 
-# trigger again
+# trigger faster
 class Config:
     class UART:
         BAUD = 115200
