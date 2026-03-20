@@ -165,7 +165,7 @@ class StudyController:
 
         # Chapter selection loop — pressing Back returns to study list
         while True:
-            choice = self._show_study_menu(link, display, display_names)
+            choice = _paged_menu(link, display, display_names)
             if choice is None:
                 return  # user pressed Back → back to study selection
 
@@ -181,7 +181,7 @@ class StudyController:
                     continue  # user pressed OK — return to chapter list
 
             # Play mode selection
-            mode_choice = self._show_study_menu(
+            mode_choice = _paged_menu(
                 link, display, ["Play as White", "Play as Black", "Watch"]
             )
             if mode_choice is None:
@@ -198,18 +198,6 @@ class StudyController:
             # After chapter finishes, loop back to chapter selection
 
     # ----------------------------------------------------------------- private
-
-    def _show_study_menu(
-        self, link: BoardLink, display: Display, options: List[str]
-    ) -> Optional[str]:
-        """Show a study menu and re-sync the Pico if it is still in play mode."""
-        return _paged_menu(
-            link,
-            display,
-            options,
-            wake_command="ChooseMode",
-            resend_timeout=3.0,
-        )
 
     def _show_chapter_title(
         self, link: BoardLink, display: Display, title: str
@@ -243,14 +231,16 @@ class StudyController:
                     if is_last:
                         return True  # 1 = continue
                     break  # next page
-                if msg.startswith("typing_") or msg.startswith("capq_") or msg in HINT_MSGS:
+                if (
+                    msg.startswith("typing_")
+                    or msg.startswith("capq_")
+                    or msg in HINT_MSGS
+                ):
                     continue
 
         return True
 
-    def _show_annotation(
-        self, link: BoardLink, display: Display, text: str
-    ) -> bool:
+    def _show_annotation(self, link: BoardLink, display: Display, text: str) -> bool:
         """Show paginated annotation text (3 lines/page).
 
         Hint = next page (cycles back from last), OK = done.
@@ -320,9 +310,7 @@ class StudyController:
             if len(variations) == 1:
                 display.send(f"{side} to move\nHint = see move")
             else:
-                dests = " / ".join(
-                    chess.Move.uci(v.move)[2:4] for v in variations[:4]
-                )
+                dests = " / ".join(chess.Move.uci(v.move)[2:4] for v in variations[:4])
                 display.send(f"{side} to move\n→{dests}\nHint=main line")
 
         _arm()
@@ -388,9 +376,7 @@ class StudyController:
                 var_uci = chess.Move.uci(var.move)
                 if uci[:4] == var_uci[:4]:
                     # promotion suffix must match if present
-                    if len(var_uci) < 5 or (
-                        len(uci) >= 5 and uci[4] == var_uci[4]
-                    ):
+                    if len(var_uci) < 5 or (len(uci) >= 5 and uci[4] == var_uci[4]):
                         matched = var
                         break
 
@@ -476,9 +462,7 @@ class StudyController:
                 # the normal message loop (engine format triggers engine_ack_pending
                 # which auto-calls _collect_and_submit_move on OK, causing a deadlock
                 # when we then send WaitForOkConfirm for annotations).
-                display.send(
-                    f"{side_label} plays\n{uci[:2]}→{uci[2:4]}\nOK = continue"
-                )
+                display.send(f"{side_label} plays\n{uci[:2]}→{uci[2:4]}\nOK = continue")
                 link.send_to_board(f"study_move_{uci}")
                 board.push(move)
                 send_check_signal(link, board)

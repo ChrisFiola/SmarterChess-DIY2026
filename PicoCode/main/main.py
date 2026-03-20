@@ -1103,11 +1103,10 @@ def _handle_wait_for_ok_confirm(_msg=None):
     if st.skip_next_wait_ok_confirm:
         st.skip_next_wait_ok_confirm = False
         return
+    cp.reset_edges()
     if not st.persistent_trail_active:
         board.markings()
     cp.only_ok(True, GREEN, border_on=st.in_game, force=True)
-    cp.wait_for_ok_release()
-    cp.reset_edges()
     while True:
         if cp.shutdown_held():
             _shutdown_pico()
@@ -1128,11 +1127,10 @@ def _handle_wait_for_ok_confirm(_msg=None):
 
 def _handle_wait_for_annotation_page(_msg=None):
     """Block until OK (skip/continue → btn_ok) or Hint (next page → btn_hint)."""
+    cp.reset_edges()
     if not st.persistent_trail_active:
         board.markings()
     cp.only_ok(True, GREEN, border_on=st.in_game, force=True)
-    cp.wait_for_ok_release()
-    cp.reset_edges()
     while True:
         if cp.shutdown_held():
             _shutdown_pico()
@@ -1281,7 +1279,7 @@ def _handle_study_vars(msg):
     Main line (first UCI) is shown in BLUE; alternatives are shown in YELLOW.
     Main line is drawn last so it takes precedence on any shared squares.
     """
-    payload = msg[len("heyArduinostudy_vars_"):]
+    payload = msg[len("heyArduinostudy_vars_") :]
     ucis = [u for u in payload.split("|") if len(u) >= 4]
     if not ucis:
         return
