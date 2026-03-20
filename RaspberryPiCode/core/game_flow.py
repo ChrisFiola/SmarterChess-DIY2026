@@ -1661,11 +1661,10 @@ def _run_update(link: BoardLink, display: Display) -> None:
             time.sleep(2)
             return
 
-    # 80 ms between chunks — large enough for the Pico's GC pauses and
-    # flash sector-erase operations (~45 ms worst case) not to overflow
-    # the UART receive buffer and corrupt a base64 chunk.
-    chunk_size = 64
-    chunk_delay = 0.08
+    # Conservative timing to avoid overflowing the Pico's UART receive
+    # buffer during GC pauses and flash sector-erase operations.
+    chunk_size = 32
+    chunk_delay = 0.12
     for pico_file in [path for path in pico_files if path.exists()]:
         encoded = base64.b64encode(pico_file.read_bytes()).decode()
         link.send_to_board(f"UpdateFile_{pico_file.name}")

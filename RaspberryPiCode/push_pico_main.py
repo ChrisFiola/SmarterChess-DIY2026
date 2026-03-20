@@ -139,13 +139,13 @@ def main() -> int:
     parser.add_argument(
         "--chunk-size",
         type=int,
-        default=64,
+        default=32,
         help="Base64 chunk size to send per UART message.",
     )
     parser.add_argument(
         "--chunk-delay",
         type=float,
-        default=0.02,
+        default=0.12,
         help="Delay between chunk messages in seconds.",
     )
     parser.add_argument(
