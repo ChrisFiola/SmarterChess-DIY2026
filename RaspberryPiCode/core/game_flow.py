@@ -1661,10 +1661,11 @@ def _run_update(link: BoardLink, display: Display) -> None:
             time.sleep(2)
             return
 
-    # Conservative timing to avoid overflowing the Pico's UART receive
-    # buffer during GC pauses and flash sector-erase operations.
-    chunk_size = 32
-    chunk_delay = 0.12
+    # 50 ms between 64-char chunks — each message is ~87 bytes which fits
+    # comfortably in the Pico's 512-byte rxbuf, and the 50 ms gap gives the
+    # Pico 2-3 read cycles (20 ms each) to consume each chunk.
+    chunk_size = 64
+    chunk_delay = 0.05
 
     # Pre-encode all files and count total chunks for progress display
     upload_plan: list[tuple[Path, str]] = []
