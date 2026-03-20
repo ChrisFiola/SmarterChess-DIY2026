@@ -544,16 +544,18 @@ def _extract_imported_game_url(resp: dict) -> str:
 def _build_post_game_analysis_url(pgn: str) -> Tuple[str, str]:
     from modes.online.lichess_client import import_game_pgn
 
-    imported = import_game_pgn(pgn)
-    imported_url = _extract_imported_game_url(imported)
-    if imported_url:
-        return imported_url, "import"
-
-    fallback_url = _build_lichess_analysis_url_from_pgn(pgn)
-    if fallback_url:
+    for attempt in range(3):
+        imported = import_game_pgn(pgn)
+        imported_url = _extract_imported_game_url(imported)
+        if imported_url:
+            return imported_url, "import"
         err = str((imported or {}).get("_error") or "unknown error").strip()
-        print(f"[QR ANALYSIS] import failed, using PGN URL: {err}", flush=True)
-        return fallback_url, "pgn"
+        print(
+            f"[QR ANALYSIS] import attempt {attempt + 1}/3 failed: {err}",
+            flush=True,
+        )
+        if attempt < 2:
+            time.sleep(2)
 
     return "", "none"
 
