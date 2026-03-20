@@ -1273,6 +1273,24 @@ def _handle_study_move(msg):
     cp.reset_edges()
 
 
+def _handle_study_vars(msg):
+    """Light up variation destination squares when multiple lines are available."""
+    payload = msg[len("heyArduinostudy_vars_"):]
+    ucis = [u for u in payload.split("|") if len(u) >= 4]
+    if not ucis:
+        return
+    board.markings()
+    for uci in ucis:
+        xy = board.algebraic_to_xy(uci[2:4])
+        if xy:
+            board.set_square(xy[0], xy[1], YELLOW)
+    board.write()
+    st.persistent_trail_active = True
+    st.persistent_trail_type = "study_vars"
+    st.persistent_trail_move = None
+    st.persistent_trail_end_color = None
+
+
 def _handle_puzzle_wrong(msg):
     raw = msg[len("heyArduinopuzzle_wrong_") :].strip()
     mv = "".join(ch for ch in raw if _is_alphanumeric(ch))[:4]
@@ -1532,6 +1550,9 @@ def _route_incoming_message(msg):
         return True
     if msg.startswith("heyArduinohint_"):
         _handle_hint_move(msg)
+        return True
+    if msg.startswith("heyArduinostudy_vars_"):
+        _handle_study_vars(msg)
         return True
     if msg.startswith("heyArduinostudy_move_"):
         _handle_study_move(msg)

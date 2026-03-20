@@ -299,6 +299,9 @@ class StudyController:
 
         def _arm() -> None:
             """Arm the Pico for move entry and update the LCD."""
+            if len(variations) > 1:
+                ucis = "|".join(chess.Move.uci(v.move) for v in variations[:4])
+                link.send_to_board(f"study_vars_{ucis}")
             link.send_to_board(
                 f"turn_{'white' if board.turn == chess.WHITE else 'black'}"
             )
