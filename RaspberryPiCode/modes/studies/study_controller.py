@@ -165,7 +165,7 @@ class StudyController:
 
         # Chapter selection loop — pressing Back returns to study list
         while True:
-            choice = _paged_menu(link, display, display_names)
+            choice = self._show_study_menu(link, display, display_names)
             if choice is None:
                 return  # user pressed Back → back to study selection
 
@@ -181,7 +181,7 @@ class StudyController:
                     continue  # user pressed OK — return to chapter list
 
             # Play mode selection
-            mode_choice = _paged_menu(
+            mode_choice = self._show_study_menu(
                 link, display, ["Play as White", "Play as Black", "Watch"]
             )
             if mode_choice is None:
@@ -198,6 +198,18 @@ class StudyController:
             # After chapter finishes, loop back to chapter selection
 
     # ----------------------------------------------------------------- private
+
+    def _show_study_menu(
+        self, link: BoardLink, display: Display, options: List[str]
+    ) -> Optional[str]:
+        """Show a study menu and re-sync the Pico if it is still in play mode."""
+        return _paged_menu(
+            link,
+            display,
+            options,
+            wake_command="ChooseMode",
+            resend_timeout=3.0,
+        )
 
     def _show_chapter_title(
         self, link: BoardLink, display: Display, title: str
