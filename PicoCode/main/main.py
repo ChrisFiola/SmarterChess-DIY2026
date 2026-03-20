@@ -162,7 +162,7 @@ class UARTLink:
             tx=Pin(Config.UART.TX_PIN),
             rx=Pin(Config.UART.RX_PIN),
             timeout=Config.UART.TIMEOUT_MS,
-            rxbuf=512,
+            rxbuf=128,
         )
 
     def send(self, kind, payload=""):
