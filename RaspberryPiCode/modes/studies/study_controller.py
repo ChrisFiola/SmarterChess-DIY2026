@@ -73,6 +73,8 @@ def _parse_chapters(pgn_text: str) -> List[Tuple[str, chess.pgn.Game]]:
 
     Returns a list of (chapter_name, game) tuples.
     Chapter name is taken from the PGN Event header.
+    Lichess exports use "Study Name: Chapter Name" format; we extract
+    just the chapter name (the part after the last ": ").
     """
     chapters: List[Tuple[str, chess.pgn.Game]] = []
     reader = io.StringIO(pgn_text)
@@ -82,10 +84,11 @@ def _parse_chapters(pgn_text: str) -> List[Tuple[str, chess.pgn.Game]]:
         if game is None:
             break
         idx += 1
-        name = (
-            str(game.headers.get("Event") or "").strip()
-            or f"Chapter {idx}"
-        )
+        event = str(game.headers.get("Event") or "").strip()
+        # Lichess uses "Study Name: Chapter Name" — keep only the chapter part
+        if ": " in event:
+            event = event.rsplit(": ", 1)[1].strip() or event
+        name = event or f"Chapter {idx}"
         chapters.append((name, game))
     return chapters
 
