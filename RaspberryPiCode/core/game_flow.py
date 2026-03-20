@@ -541,8 +541,28 @@ def _extract_imported_game_url(resp: dict) -> str:
     return ""
 
 
+def _wait_for_lichess(max_attempts: int = 5) -> bool:
+    """Block until lichess.org is reachable. Returns True if connected."""
+    import requests as _req
+
+    for i in range(max_attempts):
+        try:
+            r = _req.get("https://lichess.org", timeout=5)
+            if r.status_code < 500:
+                return True
+        except Exception as e:
+            print(f"[QR ANALYSIS] connectivity check {i + 1}/{max_attempts}: {e}", flush=True)
+        if i < max_attempts - 1:
+            time.sleep(2)
+    return False
+
+
 def _build_post_game_analysis_url(pgn: str) -> Tuple[str, str]:
     from modes.online.lichess_client import import_game_pgn
+
+    if not _wait_for_lichess():
+        print("[QR ANALYSIS] Lichess unreachable after retries", flush=True)
+        return "", "none"
 
     for attempt in range(3):
         imported = import_game_pgn(pgn)
@@ -578,7 +598,7 @@ def offer_analysis_qr(link: BoardLink, display: Display, board: "chess.Board") -
         wait_for_ok(link, display)
         return
 
-    display.send("Uploading to\nLichess...")
+    display.send("Connecting to\nLichess...")
     analysis_url, url_source = run_in_bg(
         lambda: _build_post_game_analysis_url(pgn),
         link,
