@@ -871,6 +871,93 @@ def _select_mapped_value(out_min, out_max, *, cancel_to_idle=False):
         time.sleep_ms(Config.Timing.FAST_POLL_MS)
 
 
+def _difficulty_board_preview(level):
+    board.clear(BLACK)
+    base = _C.GREEN
+    for x in range(level):
+        board.set_square(x, 3, _scale(base, _brightness))
+    board.write()
+
+
+def _select_difficulty(default_level):
+    """Increment/decrement difficulty selector.
+
+    Button 1 = up, Button 2 = down (hold for continuous).
+    OK = confirm (returns level 1-8).
+    Hint = back (returns None).
+    """
+    level = max(1, min(8, default_level))
+    cp.disable_hint_irq()
+    cp.hint_irq_flag = False
+    cp.reset_edges()
+    _difficulty_board_preview(level)
+    link.send("lvl_" + str(level))
+
+    HOLD_INITIAL_MS = 400
+    HOLD_REPEAT_MS = 150
+    btn1_pin = cp.pins[0]  # button 1
+    btn2_pin = cp.pins[1]  # button 2
+    hold_pin = None
+    hold_dir = 0
+    hold_start = 0
+    last_repeat = 0
+
+    try:
+        while True:
+            if cp.shutdown_held():
+                _shutdown_pico()
+
+            # Check for OK (confirm) or Hint (back) via edge detection
+            b = cp.detect_press_allowed()
+            if b == (Config.Buttons.OK_INDEX + 1):
+                return level
+            if b == (Config.Buttons.HINT_INDEX + 1):
+                return None
+
+            # Hold detection for button 1 (up) and button 2 (down)
+            now = time.ticks_ms()
+            if b == 1:
+                hold_pin = btn1_pin
+                hold_dir = 1
+                hold_start = now
+                last_repeat = now
+                new_level = min(8, level + 1)
+                if new_level != level:
+                    level = new_level
+                    link.send("lvl_" + str(level))
+                    _difficulty_board_preview(level)
+            elif b == 2:
+                hold_pin = btn2_pin
+                hold_dir = -1
+                hold_start = now
+                last_repeat = now
+                new_level = max(1, level - 1)
+                if new_level != level:
+                    level = new_level
+                    link.send("lvl_" + str(level))
+                    _difficulty_board_preview(level)
+
+            # Continuous hold repeat
+            if hold_pin is not None:
+                if hold_pin.value() == 0:
+                    elapsed = time.ticks_diff(now, hold_start)
+                    since_repeat = time.ticks_diff(now, last_repeat)
+                    if elapsed >= HOLD_INITIAL_MS and since_repeat >= HOLD_REPEAT_MS:
+                        new_level = max(1, min(8, level + hold_dir))
+                        if new_level != level:
+                            level = new_level
+                            link.send("lvl_" + str(level))
+                            _difficulty_board_preview(level)
+                        last_repeat = now
+                else:
+                    hold_pin = None
+                    hold_dir = 0
+
+            time.sleep_ms(Config.Timing.FAST_POLL_MS)
+    finally:
+        cp.hint_irq_flag = False
+
+
 def _run_game_setup_loop():
     st.in_setup = True
     try:
@@ -887,11 +974,12 @@ def _run_game_setup_loop():
                 except Exception:
                     pass
                 continue
-            if msg.startswith("heyArduinoEngineStrength"):
-                cp.profile.vs_strength_time()
+            if msg.startswith("heyArduinoDifficultySelect"):
+                cp.profile.difficulty_select()
                 board.markings()
-                v = _select_mapped_value(1, 8)
+                v = _select_difficulty(st.default_strength)
                 if v is None:
+                    link.send("btn_hint")
                     return
                 link.send(str(v))
                 time.sleep_ms(Config.Timing.SETUP_TRANSITION_MS)
@@ -931,6 +1019,9 @@ def _run_game_setup_loop():
                 _handle_menu_paged(msg, ok_color=GREEN)
                 continue
             if msg.startswith("heyArduinoWaitForOkConfirm"):
+                _handle_wait_for_ok_confirm(msg)
+                continue
+            if msg.startswith("heyArduinoonly_ok_cancel"):
                 _handle_wait_for_ok_confirm(msg)
                 continue
             if msg.startswith("heyArduinoWaitForAnnotationPage"):

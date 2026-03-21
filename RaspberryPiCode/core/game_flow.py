@@ -643,7 +643,6 @@ def post_game_menu(
 
     display.send("Press OK\nto view analysis")
     link.send_to_board("ChooseMode")
-    link.send_to_board("only_ok_cancel")
     wait_for_ok(link, display)
     offer_analysis_qr(link, display, board)
     raise ReturnToMenu()
@@ -944,10 +943,13 @@ def _run_settings_menu(link: BoardLink, display: Display, cfg: GameConfig) -> No
             return
 
 
+_ELO_LABELS = {1: 200, 2: 400, 3: 600, 4: 900, 5: 1200, 6: 1500, 7: 1800, 8: 2200}
+
+
 def _configure_vs_computer(link: BoardLink, display: Display, cfg: GameConfig) -> None:
     """
     DIY-like setup flow:
-      - Difficulty (skill)
+      - Difficulty (increment/decrement selector with Elo display)
       - Player color
     Move time is fixed at 2s — difficulty is controlled by the level's depth
     cap and blunder chance instead.
@@ -955,19 +957,28 @@ def _configure_vs_computer(link: BoardLink, display: Display, cfg: GameConfig) -
     display.send("vs Computer\nHints enabled")
     time.sleep(0.5)
 
-    # Difficulty — show approximate Elo for each button
-    display.send("Difficulty (Elo):\n200 to 2200\nBtn 1-8  OK=back")
-    link.send_to_board("EngineStrength")
+    # Difficulty — increment/decrement selector
+    elo = _ELO_LABELS.get(cfg.skill_level, 200)
+    display.send(f"Difficulty:\n~{elo} Elo\n1=Up 2=Down\nOK=Go  Hint=Back")
     link.send_to_board(f"default_strength_{cfg.skill_level}")
+    link.send_to_board("DifficultySelect")
     while True:
         msg = link.read_from_board()
         if msg is None:
             continue
-        if msg in OK_MSGS or msg.startswith("n"):
+        if msg in HINT_MSGS:
             raise ReturnToMenu()
+        if msg.startswith("lvl_"):
+            try:
+                lvl = max(1, min(int(msg.split("_")[1]), 8))
+                cfg.skill_level = lvl
+                elo = _ELO_LABELS.get(lvl, 200)
+                display.send(f"Difficulty:\n~{elo} Elo\n1=Up 2=Down\nOK=Go  Hint=Back")
+            except Exception:
+                pass
+            continue
         if msg.isdigit():
             cfg.skill_level = max(1, min(int(msg), 8))
-            _ELO_LABELS = {1: 200, 2: 400, 3: 600, 4: 900, 5: 1200, 6: 1500, 7: 1800, 8: 2200}
             elo = _ELO_LABELS[cfg.skill_level]
             display.send(f"Level {cfg.skill_level}\n~{elo} Elo")
             time.sleep(0.8)

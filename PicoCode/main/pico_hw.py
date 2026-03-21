@@ -70,6 +70,12 @@ class Profiles:
             False, True, True, True, False, [1, 2, 3, 4, 5, 6, 7, 8, 9], ok_color=RED
         )
 
+    def difficulty_select(self):
+        self._apply(
+            False, True, False, True, True, [1, 2, 9, 10],
+            ok_color=GREEN, hint_color=RED,
+        )
+
     def vs_color(self):
         self._apply(False, True, False, True, False, [1, 2, 3, 9], ok_color=RED)
 
