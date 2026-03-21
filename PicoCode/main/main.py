@@ -1096,6 +1096,7 @@ def _handle_puzzle_setup_message(msg):
     if msg.startswith("heyArduinopuzzle_setup_begin"):
         st.puzzle_setup_active = True
         cp.disable_hint_irq()
+        cp.hint_irq_flag = False
         cp.reset_edges()
         cp.border(True, force=True)
         cp.only_ok(True)
@@ -1324,6 +1325,10 @@ def _handle_game_end(_msg):
     st.ok_back_enabled = False
     st.wait_exit_enabled = False
     st.suspend_until_new_game = False
+    st.persistent_trail_active = False
+    st.persistent_trail_type = None
+    st.persistent_trail_move = None
+    st.persistent_trail_end_color = None
     st.game_state = Game.SETUP
     cp.disable_hint_irq()
     cp.reset_edges()

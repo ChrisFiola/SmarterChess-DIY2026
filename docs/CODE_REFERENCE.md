@@ -33,9 +33,12 @@ RaspberryPiCode/
     │   ├── lichess_client.py        HTTP client for the Lichess Board API.
     │   ├── lichess_game.py          Helpers to extract fields from Board API payloads.
     │   └── online_controller.py     Full Lichess session lifecycle.
-    └── puzzles/
-        ├── puzzle_controller.py     Fetch, setup, and solve loop for all puzzle modes.
-        └── puzzle_ids.txt           Local list of puzzle IDs for the "Mix and match" fallback.
+    ├── puzzles/
+    │   ├── puzzle_controller.py     Fetch, setup, and solve loop for all puzzle modes.
+    │   └── puzzle_ids.txt           Local list of puzzle IDs for the "Mix and match" fallback.
+    └── studies/
+        ├── study_controller.py      Lichess Study mode: load chapters, guided setup, play tree.
+        └── studies.txt              Study IDs and display names (one per line).
 ```
 
 ---
@@ -85,6 +88,13 @@ modes/puzzles/puzzle_controller.py
   ├─► modes/online/lichess_client.py
   └─► screen/display.py
 
+modes/studies/study_controller.py
+  ├─► core/boardlink.py
+  ├─► core/game_flow.py
+  ├─► core/protocol.py
+  ├─► modes/online/lichess_client.py
+  └─► screen/display.py
+
 screen/display.py
   └─► screen/lcd_pipe.py
 
@@ -117,13 +127,13 @@ screen/display_server.py
            │  wait_for_ok / wait_for_mode_sel   │
            └────────────────┬──────────────────┘
                             │ used by
-         ┌──────────────────┼──────────────────────┐
-         ▼                  ▼                       ▼
-  vs_computer/       online/                  puzzles/
-  game_controller    online_controller        puzzle_controller
-         │                  │                       │
-         ▼                  ▼                       ▼
-  stockfish_opponent  lichess_client           lichess_client
+         ┌──────────────────┼──────────────────────┬──────────────┐
+         ▼                  ▼                       ▼              ▼
+  vs_computer/       online/                  puzzles/       studies/
+  game_controller    online_controller        puzzle_controller  study_controller
+         │                  │                       │              │
+         ▼                  ▼                       ▼              ▼
+  stockfish_opponent  lichess_client           lichess_client  lichess_client
          │
          ▼
     core/engine.py (Stockfish)
@@ -142,13 +152,13 @@ piMain.main()
 │
 └─ [loop]
     ├─ game_flow.wait_for_mode_selection(link, display, state)
-    │     reads Pico until a mode token arrives (1/2/3/4)
-    │     returns "stockfish" | "local" | "online" | "puzzle"
+    │     paged menu → reads Pico until a mode token arrives
+    │     returns "stockfish" | "local" | "online" | "puzzle" | "studies"
     │
     └─ game_flow.run_selected_mode(link, display, ctx, state, cfg)
           │
           ├─[stockfish]─────────────────────────────────────────────────────┐
-          │  game_flow._configure_vs_computer()   collect skill/time/colour │
+          │  game_flow._configure_vs_computer()   difficulty selector + colour │
           │  ctx.ensure()                         start Stockfish if needed │
           │  game_controller.GameController(deps, cfg).run_stockfish_game() │
           │    │                                                             │
@@ -216,6 +226,13 @@ piMain.main()
                     solution correctness check
                     handle_illegal_move()  (for wrong or illegal moves)
                     format_engine_move()   (for auto-reply moves)
+
+          └─[studies]────────────────────────────────────────────────────
+             game_flow._run_study_mode()   show study list from studies.txt
+             study_controller.StudyController(client, study_id, name).run()
+               ├─ lichess_client — fetch study PGN
+               ├─ guide_board_setup()   LED-guided piece placement
+               └─ [play loop]   navigate game tree, show annotations
 ```
 
 ---
@@ -301,12 +318,18 @@ Keeping one process alive avoids repeated startup costs (~1–2 s each).
 
 | Method | What it does | Called from |
 |---|---|---|
-| `__init__` | Sets `engine = None`; process starts lazily | `piMain.main` |
+| `__init__` | Sets `engine = None`, `hint_override_active = False`; process starts lazily | `piMain.main` |
 | `_engine_mod()` | Imports and caches the `chess.engine` module on first call | `ensure`, `bestmove`, `hint` |
 | `ensure(path)` | Returns running engine; starts it if not running; retries forever on failure | `stockfish_opponent._ensure_configured`, `hint`, `bestmove` |
 | `quit()` | Sends UCI `quit` to Stockfish; clears `self.engine` | `piMain.main` (finally) |
-| `bestmove(board, time_ms)` | Calls `engine.play()` with a time limit; returns UCI string | `stockfish_opponent.get_move` |
-| `hint(board, time_ms)` | Calls `engine.analyse(multipv=1)`; falls back to `bestmove` on failure | `game_flow.send_move_hint` |
+| `bestmove(board, time_ms, depth=None)` | Calls `engine.play()` with time limit and optional depth cap; returns UCI string | `stockfish_opponent.get_move` |
+| `hint(board, time_ms)` | Temporarily sets engine to full strength (Skill Level 20), sets `hint_override_active = True`, calls `engine.analyse(multipv=1)`; falls back to `bestmove` on failure | `game_flow.send_move_hint` |
+
+**Instance attribute:**
+
+| Attribute | Purpose |
+|---|---|
+| `hint_override_active` | Set to `True` after `hint()` overrides engine strength to full. Cleared by `StockfishOpponent._ensure_configured()` which reconfigures the engine back to the current difficulty level before the next move. |
 
 ---
 
@@ -346,6 +369,10 @@ move handling, menu helpers, promotion flow, draw detection, and game-over logic
 | `prompt_next_turn` | `(link, display, brd, mode, cfg, last_uci)` | Shows last-move arrow + human/engine label; sends `turn_` if human | `game_controller`, `game_flow._run_local_game` |
 | `shutdown_raspberry_pi` | `(link, display)` | Shows shutdown message, calls `sudo shutdown -h now` | All modes when `shutdown` token received |
 | `check_move_captures` | `(brd, uci) → bool` | Returns True if the move captures (including en passant) | `handle_capq_message`, `game_controller._handle_event`, `puzzle_controller.run` |
+| `confirm_exit_game` | `(link, display) → bool` | Shows "Leave game?" paged menu (Resign / Exit to menu); returns True if user chose to leave | `online_controller._play_game`, `game_controller` |
+| `post_game_menu` | `(link, display, board) → never` | Post-game flow: waits for Pico dismiss, offers analysis QR, raises `ReturnToMenu` | `game_controller`, `game_flow._run_local_game` |
+| `guide_board_setup` | `(link, display, fen, label) → str\|None` | LED-guided piece placement from FEN; sends `puzzle_setup_begin`/`done` and per-square hints; returns `"ok"`/`"skip"`/`None` | `puzzle_controller.run`, `study_controller` |
+| `offer_analysis_qr` | `(link, display, board)` | Shows QR code linking to Lichess analysis of the game PGN | `post_game_menu` |
 
 **Private helpers:**
 
@@ -370,17 +397,19 @@ move handling, menu helpers, promotion flow, draw detection, and game-over logic
 
 | Function | What it does |
 |---|---|
-| `_configure_vs_computer(link, display, cfg)` | Collects skill / time / colour from Pico |
+| `_configure_vs_computer(link, display, cfg)` | Collects difficulty (increment/decrement selector with Elo display via `DifficultySelect` protocol) and colour from Pico. Move time is fixed per level — no separate time prompt. |
 | `_configure_local_game(link, display, cfg)` | Sets max skill, fastest think time |
 | `_run_local_game(link, display, ctx, state, cfg)` | Full 2-player game loop |
 | `_run_online_game(link, display, cfg)` | Imports and delegates to `OnlineController` |
 | `_run_puzzle_game(link, display)` | Shows puzzle submenu, imports and delegates to `PuzzleController` |
+| `_run_study_mode(link, display)` | Shows study list from `studies.txt`, imports and delegates to `StudyController` |
 | `run_selected_mode(link, display, ctx, state, cfg)` | Top-level dispatcher: reads `state.mode` and calls the correct path |
 
 **Constants:**
 
 | Constant | Type | Purpose |
 |---|---|---|
+| `_ELO_LABELS` | `Dict[int, int]` | Maps levels 1–8 to approximate Elo ratings (200, 400, 600, 900, 1200, 1500, 1800, 2200) for LCD display |
 | `PHASE_THEMES` | `List[Tuple[str,str]]` | Lichess theme tag → display label pairs for the Phases menu |
 | `OPENING_GROUPS` | `List[Tuple[str, List[str]]]` | Alphabetical groups of opening names for the Openings menu |
 
@@ -485,30 +514,33 @@ No PIL or external QR libraries needed.
 **Purpose:** Maps the 1–8 UI skill slider to Stockfish's internal parameters
 and retrieves moves via the shared `EngineContext`.
 
-**Skill mapping:**
+Each level combines three knobs for a smooth difficulty ramp:
+- Stockfish Skill Level or UCI_Elo (engine playing strength)
+- Search depth cap (limits how far ahead the engine looks)
+- Blunder chance (randomly picks a legal move instead of the best one)
 
-Levels 1–2 use Stockfish's `Skill Level` parameter (UCI_Elo has a ~1320 floor and cannot produce true beginner play). Levels 3–8 use `UCI_Elo` for a realistic human-like curve.
+Levels 1–4 use Stockfish's `Skill Level` parameter with depth caps and blunder chances. Levels 5–8 use `UCI_Elo` for a realistic human-like curve.
 
-| UI Level | Parameter | Value |
-|---|---|---|
-| 1 | Skill Level | 0 (~500 Elo) |
-| 2 | Skill Level | 1 (~800 Elo) |
-| 3 | UCI_Elo | 1000 |
-| 4 | UCI_Elo | 1300 |
-| 5 | UCI_Elo | 1600 |
-| 6 | UCI_Elo | 1800 |
-| 7 | UCI_Elo | 2000 |
-| 8 | UCI_Elo | 2300 |
+**Per-level configuration** (`_LEVEL_CONFIG` — 5-tuple: method, value, depth_cap, blunder_pct, time_ms):
+
+| UI Level | Method | Value | Depth Cap | Blunder % | Time (ms) | ~Elo |
+|---|---|---|---|---|---|---|
+| 1 | Skill Level | 0 | 1 | 40% | 500 | ~200 |
+| 2 | Skill Level | 0 | 2 | 25% | 500 | ~400 |
+| 3 | Skill Level | 1 | 4 | 15% | 1000 | ~600 |
+| 4 | Skill Level | 3 | 8 | 8% | 1000 | ~900 |
+| 5 | UCI_Elo | 1200 | — | 4% | 1500 | ~1200 |
+| 6 | UCI_Elo | 1500 | — | 0% | 2000 | ~1500 |
+| 7 | UCI_Elo | 1800 | — | 0% | 2500 | ~1800 |
+| 8 | UCI_Elo | 2200 | — | 0% | 3000 | ~2200 |
 
 | Function / Method | What it does | Called from |
 |---|---|---|
 | `_clamp(n, lo, hi)` | Clamps an integer to [lo, hi] | Skill setters |
-| `_map_skill_to_elo(ui_skill)` | Returns Elo rating for the skill level | `_ensure_configured` when `use_elo=True` |
-| `_map_skill_to_stockfish_level(ui_skill)` | Returns Stockfish Skill Level 0–18 | `_ensure_configured` when `use_elo=False` |
 | `StockfishOpponent.__init__` | Stores ctx, time, skill; marks unconfigured | `run_selected_mode` |
 | `set_time_ms(ms)` | Updates think time for the next move | `game_controller.run_stockfish_game` |
-| `_ensure_configured()` | Pushes `UCI_Elo` or `Skill Level` to engine if settings changed | `get_move` |
-| `get_move(board) → str\|None` | Ensures engine is configured, calls `ctx.bestmove()` | `game_controller._play_one_engine_move` |
+| `_ensure_configured()` | Pushes `UCI_Elo` or `Skill Level` to engine if settings changed; clears `hint_override_active` flag if hint() overrode strength | `get_move` |
+| `get_move(board) → str\|None` | Ensures engine is configured; rolls blunder chance (random legal move); otherwise calls `ctx.bestmove()` with per-level depth cap and time | `game_controller._play_one_engine_move` |
 
 ---
 
@@ -721,6 +753,7 @@ Instantiated by:
 | `btn_hint` / `hint` | HINT button pressed |
 | `n` / `btn_new` | Back / new game button |
 | `draw` / `btn_draw` | Draw offer button |
+| `lvl_N` | Difficulty level changed to N (1–8) during DifficultySelect |
 | `s1` / `s2` / `s3` | Colour choice: White / Black / Random |
 | `heypixshutdown` | Hardware power-off signal |
 
@@ -741,7 +774,8 @@ Instantiated by:
 | `GameOver:1/2-1/2` | Draw |
 | `ChooseMode` | Show mode selection on Pico display |
 | `SetupComplete` | Configuration done, game starting |
-| `EngineStrength` | Prompt Pico to show difficulty input |
+| `default_strength_N` | Set the starting difficulty level (1–8) for the selector |
+| `DifficultySelect` | Prompt Pico to show increment/decrement difficulty selector |
 | `PlayerColor` | Prompt Pico to show colour choice |
 | `promotion_choice_needed` | Ask player to choose promotion piece |
 | `puzzle_setup_begin` | Start LED-guided piece placement |
@@ -752,6 +786,7 @@ Instantiated by:
 | `lcd_ack_from` | ACK for `typing_from_*` |
 | `lcd_ack_to` | ACK for `typing_to_*` |
 | `lcd_ack_confirm` | ACK for `typing_confirm_*` |
+| `WaitForOkConfirm` | Put Pico into OK-confirm state (only OK and shutdown active) |
 | `MenuPaged` | Tell Pico a paged menu is active |
 | `ok_back_enable` | Enable OK button (green) as a back/cancel button |
 | `ok_cancel_enable` | Enable OK button (red) as a cancel button — used during online lobby |

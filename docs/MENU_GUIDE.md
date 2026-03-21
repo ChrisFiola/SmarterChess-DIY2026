@@ -49,9 +49,15 @@ Notes:
 
 These prompts are used for:
 
-- VS Computer difficulty
-- VS Computer move time
 - LED brightness
+
+### Difficulty selector (VS Computer)
+
+- `1` (button 1): increase level
+- `2` (button 2): decrease level
+- Hold `1` or `2`: continuous increment/decrement
+- `OK`: confirm selection
+- `HINT`: cancel and go back to menu
 
 ### Color and promotion prompts
 
@@ -61,8 +67,7 @@ These prompts are used for:
 ### Global shortcuts during games
 
 - Tap `HINT`: ask for a hint where hints are enabled
-- Hold `HINT` for about 2 seconds: offer a draw in online games
-- Press `OK` and `HINT` together: start the "new game / exit current game" path
+- Press `OK` and `HINT` together: open the "Leave game?" menu (online: offer draw / resign / exit; offline: exit to menu)
 - Hold physical button `8` for about 2 seconds: shutdown path on the Pico
 
 ## Full menu tree
@@ -71,8 +76,7 @@ These prompts are used for:
 Game Mode
 |- Play Chess!
 |  |- Against PC
-|  |  |- Difficulty
-|  |  |- Move time
+|  |  |- Difficulty (increment/decrement selector)
 |  |  `- Player color
 |  |- Local 2-player
 |  `- Lichess Online
@@ -97,6 +101,8 @@ Game Mode
 |        |- O to R
 |        |- S to V
 |        `- W to Z
+|- Studies (dynamic, from studies.txt)
+|  `- Chapter list (per study)
 `- Settings
    |- Brightness
    `- Update
@@ -112,8 +118,8 @@ Game Mode
 +--------------------+
 |1) Play Chess!      |
 |2) Puzzles          |
-|3) Settings         |
-|OK=back Hint=next   |
+|3) Studies          |
+|4) Settings         |
 +--------------------+
 ```
 
@@ -132,7 +138,8 @@ Interaction:
 
 - Press `1` on the main page for `Play Chess!`, then `1` to `3` to choose a chess mode.
 - Press `2` on the main page for `Puzzles`.
-- Press `3` on the main page for `Settings`.
+- Press `3` on the main page for `Studies`.
+- Press `4` on the main page for `Settings`.
 - Press `OK` to cancel/back, though the main loop will simply keep you in mode
   selection.
 
@@ -152,27 +159,34 @@ of setup prompts.
 +--------------------+
 ```
 
-### Difficulty prompt
+### Difficulty selector
+
+The difficulty selector uses an increment/decrement interface with live Elo
+display. Button 1 increases, button 2 decreases, and holding either repeats.
+The board shows a bar graph on row 4 (LEDs 1–8) previewing the level.
 
 ```text
 +--------------------+
-|Difficulty level:   |
-|1 to 8              |
-|OK = cancel         |
+|Difficulty:         |
+|~1200 Elo           |
+|1=Up 2=Down         |
+|OK=Go  Hint=Back    |
++--------------------+
+```
+
+After confirming with OK:
+
+```text
++--------------------+
+|Level 5             |
+|~1200 Elo           |
+|                    |
 |                    |
 +--------------------+
 ```
 
-### Move-time prompt
-
-```text
-+--------------------+
-|Computer            |
-|move time:          |
-|1 to 8              |
-|OK = cancel         |
-+--------------------+
-```
+Move time is no longer a separate prompt — each level has a fixed think time
+built into the difficulty ramp (500 ms at level 1 up to 3000 ms at level 8).
 
 ### Color prompt
 
@@ -187,9 +201,10 @@ of setup prompts.
 
 Interaction:
 
-- Use `1` to `8` to set difficulty and move time.
+- Use `1` (up) and `2` (down) to adjust difficulty; hold for continuous change.
+- Press `OK` to confirm difficulty, or `HINT` to cancel back to menu.
 - Use `1`, `2`, or `3` to set player color.
-- `OK` cancels the setup and returns to the main menu.
+- `OK` cancels the colour prompt and returns to the main menu.
 
 ## Local 2-player
 
@@ -431,22 +446,37 @@ room for it.
 ### Leave game? menu
 
 During an active online game, pressing `OK` and `HINT` together opens the
-leave menu.
+leave menu. The options change depending on whether a draw offer is pending:
+
+Default:
 
 ```text
 +--------------------+
-|Leave game?         |
-|1) Resign           |
-|2) Exit to menu     |
+|1) Offer draw       |
+|2) Resign           |
+|3) Exit to menu     |
 |OK=back Hint=next   |
++--------------------+
+```
+
+When opponent has offered a draw:
+
+```text
++--------------------+
+|1) Accept draw      |
+|2) Decline draw     |
+|3) Resign           |
+|4) Exit to menu     |
 +--------------------+
 ```
 
 Interaction:
 
-- `1` resigns the Lichess game
-- `2` leaves the board UI without resigning, so the game can be resumed later
-- `OK` also backs out of the leave menu and exits to the main menu path
+- `Offer draw` sends a draw offer to Lichess
+- `Accept/Decline draw` responds to the opponent's draw offer
+- `Resign` resigns the Lichess game
+- `Exit to menu` leaves the board UI without resigning, so the game can be resumed later
+- `OK` backs out of the leave menu and resumes the game
 
 ## Puzzles
 

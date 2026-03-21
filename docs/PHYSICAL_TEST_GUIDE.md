@@ -8,7 +8,7 @@ Hardware assumed:
 - Raspberry Pi running `piMain.py`
 - Pico microcontroller managing board LEDs, sensors, and buttons
 - 4-line LCD (20 chars wide) connected via the display server
-- Buttons: **OK**, **HINT**, **NEW** (back/new game), number buttons **1–4**
+- Buttons: **OK**, **HINT**, number buttons **1–8** (menus use 1–4), hold button **8** for shutdown
 
 ---
 
@@ -33,13 +33,12 @@ Before running any test, verify:
 
 **Expected:**
 - LCD shows `SMARTCHESS` banner for ~1 s
-- LCD then shows mode selection menu:
+- LCD then shows the paged mode selection menu:
   ```
-  Choose mode:
-  1) Against PC
-  2) Lichess Online
-  3) Local 2-player
-  4) Puzzles
+  1) Play Chess!
+  2) Puzzles
+  3) Studies
+  4) Settings
   ```
 
 **Pass:** Menu appears within 5 s of startup.
@@ -65,14 +64,16 @@ Before running any test, verify:
 ### 2-A  Setup flow (full)
 
 **Steps:**
-1. Press **1** on the Pico to select "Against PC"
-2. When asked for difficulty, press **5**
-3. When asked for move time, press **3**
-4. When asked for colour, press **1** (White)
+1. From the main menu, press **1** (Play Chess!), then **1** (Against PC)
+2. LCD shows `vs Computer / Hints enabled` briefly
+3. LCD shows `Difficulty: / ~1200 Elo / 1=Up 2=Down / OK=Go  Hint=Back`
+4. Press **1** twice to increase to level 7 (~1800 Elo), then press **OK** to confirm
+5. When asked for colour, press **1** (White)
 
 **Expected:**
-- LCD prompts `Difficulty level: / 1 to 8 / OK = cancel` then accepts `5`
-- LCD prompts `Computer / move time: / 1 to 8 / OK = cancel` then accepts `3`
+- Board LEDs show a bar graph on row 4 previewing the difficulty level
+- Each press of **1** increments the level and updates the Elo on the LCD
+- After pressing **OK**, LCD briefly shows `Level 7 / ~1800 Elo`
 - LCD prompts `Select a colour: / 1=White 2=Black / 3=Random / OK = cancel`
 - LCD shows `Engine loading...` briefly
 - LCD shows `WHITE to move` and the board LEDs go into human-turn state
@@ -82,11 +83,11 @@ Before running any test, verify:
 
 ---
 
-### 2-B  Cancel setup with OK
+### 2-B  Cancel setup with HINT
 
 **Steps:**
-1. Press **1** to enter "Against PC"
-2. On the difficulty prompt, press **OK**
+1. Press **1** (Play Chess!), then **1** (Against PC)
+2. On the difficulty selector, press **HINT**
 
 **Expected:**
 - Returns immediately to the mode selection menu
@@ -240,8 +241,8 @@ Before running any test, verify:
 ### 3-A  Basic game flow
 
 **Steps:**
-1. Select mode **3** (Local 2-player)
-2. LCD shows `Local 2-Player / Hints enabled` for 2 s, then `WHITE to move`
+1. Select **1** (Play Chess!), then **2** (Local 2-player)
+2. LCD shows `Local 2-player / Hints enabled` for 2 s, then `WHITE to move`
 3. Enter a move as White, then enter a move as Black
 
 **Expected:**
@@ -286,7 +287,7 @@ Before running any test, verify:
 
 **Steps:**
 1. Put the Pi into WiFi AP mode (or disconnect from all networks)
-2. Select mode **2** (Lichess Online)
+2. Select **1** (Play Chess!), then **3** (Lichess Online)
 
 **Expected:**
 - LCD shows a QR code or URL like `http://192.168.4.1/` with "Scan to setup WiFi"
@@ -301,7 +302,7 @@ Before running any test, verify:
 
 **Steps:**
 1. Ensure the Pi has WiFi but no internet access (or an invalid `LICHESS_TOKEN`)
-2. Select mode **2**
+2. Select **1** (Play Chess!), then **3** (Lichess Online)
 
 **Expected:**
 - After up to 3 retry attempts, LCD shows `Lichess offline / WiFi/DNS error / OK = Menu`
@@ -316,7 +317,7 @@ Before running any test, verify:
 
 **Steps:**
 1. Ensure the Pi has a valid internet connection and `LICHESS_TOKEN`
-2. Select mode **2**
+2. Select **1** (Play Chess!), then **3** (Lichess Online)
 
 **Expected:**
 - LCD shows `Lichess online / Start a game / on lichess.org / OK = cancel`
@@ -348,21 +349,24 @@ Before running any test, verify:
 ### 4-E  Draw offer
 
 **Steps:**
-1. During an active online game, send a draw signal from the Pico (button mapped to `draw` or `btn_draw`)
+1. During an active online game, press **OK** and **HINT** together to open the leave menu
+2. Select **1) Offer draw**
 
 **Expected:**
 - LCD shows `Offering draw...` briefly
 - Draw offer is sent to Lichess (visible on the Lichess website)
+- Returns to the game
 
 **Pass:** Draw offer appears on Lichess.
 **Fail:** Nothing happens, or an error is shown.
 
 ---
 
-### 4-F  Resign (back/new button during online game)
+### 4-F  Resign (via leave menu)
 
 **Steps:**
-1. During an active online game, press **NEW** (back)
+1. During an active online game, press **OK** and **HINT** together
+2. Select **Resign** from the leave menu
 
 **Expected:**
 - LCD shows `Resigning...`
@@ -379,7 +383,7 @@ Before running any test, verify:
 ### 5-A  Daily puzzle setup flow
 
 **Steps:**
-1. Select mode **4** (Puzzles)
+1. Select **2** (Puzzles) from the main menu
 2. Select **1) Daily Puzzle** from the puzzle menu
 
 **Expected:**
@@ -456,7 +460,7 @@ Before running any test, verify:
 ### 5-F  Mix and match puzzle
 
 **Steps:**
-1. Select mode **4**, then **2) Mix and match**
+1. Select **2** (Puzzles), then **2) Mix and match**
 
 **Expected:**
 - A random puzzle is fetched from the local `puzzle_ids.txt` file
@@ -470,7 +474,7 @@ Before running any test, verify:
 ### 5-G  Theme → Phases
 
 **Steps:**
-1. Select mode **4 → 3) Themes → 1) Phases**
+1. Select **2** (Puzzles) **→ 3) Themes → 1) Phases**
 2. Choose **Endgame**
 
 **Expected:**
@@ -485,7 +489,7 @@ Before running any test, verify:
 ### 5-H  Theme → Openings navigation
 
 **Steps:**
-1. Select mode **4 → 3) Themes → 2) Openings**
+1. Select **2** (Puzzles) **→ 3) Themes → 2) Openings**
 2. Choose group **A to E**
 3. Choose **Caro-Kann Defense**
 
@@ -514,17 +518,17 @@ Before running any test, verify:
 
 ---
 
-### 6-B  NEW button from inside a game
+### 6-B  Exit game via OK+HINT
 
 **Steps:**
-1. While in any game (VS Computer or Local), press **NEW** mid-game
+1. While in any game (VS Computer or Local), press **OK** and **HINT** together
 
 **Expected:**
-- Game exits immediately
-- Mode selection menu reappears
+- "Leave game?" menu appears with "Exit to menu" option
+- Selecting it returns to the mode selection menu
 
 **Pass:** Returns to menu from any point in a game.
-**Fail:** Game continues, or the Pi crashes.
+**Fail:** Game continues, menu doesn't appear, or the Pi crashes.
 
 ---
 
