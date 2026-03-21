@@ -872,10 +872,10 @@ def _select_mapped_value(out_min, out_max, *, cancel_to_idle=False):
 
 
 def _difficulty_board_preview(level):
-    board.clear(BLACK)
     base = _C.GREEN
-    for x in range(level):
-        board.set_square(x, 3, _scale(base, _brightness))
+    scaled = _scale(base, _brightness)
+    for x in range(8):
+        board.set_square(x, 3, scaled if x < level else BLACK)
     board.write()
 
 
