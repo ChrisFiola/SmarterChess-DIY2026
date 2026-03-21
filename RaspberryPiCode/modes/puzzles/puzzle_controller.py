@@ -893,8 +893,8 @@ class PuzzleController:
                 display.send(f"{label}\nSetup done\nPuzzle begins")
                 time.sleep(0.3)
         finally:
-            link.send_to_board("hint_enable")
             link.send_to_board("puzzle_setup_done")
+            link.send_to_board("hint_enable")
             try:
                 link.clear_input()
             except Exception:

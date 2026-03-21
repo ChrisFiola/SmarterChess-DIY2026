@@ -798,8 +798,8 @@ def guide_board_setup(
         time.sleep(0.5)
         return "ok"
     finally:
-        link.send_to_board("hint_enable")
         link.send_to_board("puzzle_setup_done")
+        link.send_to_board("hint_enable")
         try:
             link.clear_input()
         except Exception:
