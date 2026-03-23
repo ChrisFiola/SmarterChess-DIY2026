@@ -820,6 +820,7 @@ _PLAY_CHESS_MENU_OPTIONS: List[Tuple[str, Optional[str]]] = [
     ("Against PC", "stockfish"),
     ("Local 2-player", "local"),
     ("Lichess Online", "online"),
+    ("Chess.com Daily", "chesscom"),
 ]
 
 
@@ -1255,6 +1256,12 @@ def _run_online_game(link: BoardLink, display: Display, cfg: GameConfig) -> None
     from modes.online.online_controller import OnlineController
 
     OnlineController(link, display, cfg).run()
+
+
+def _run_chesscom_game(link: BoardLink, display: Display, cfg: GameConfig) -> None:
+    from modes.chesscom.chesscom_controller import ChessComController
+
+    ChessComController(link, display, cfg).run()
 
 
 # ── Puzzle phase tags (lichess.org/training/themes) ──────────────────────────
@@ -1904,6 +1911,9 @@ def run_selected_mode(
 
     elif state.mode == "online":
         _run_online_game(link, display, cfg)
+
+    elif state.mode in ("chesscom", "chess.com", "chesscom_daily"):
+        _run_chesscom_game(link, display, cfg)
 
     else:
         print(f"[MODE DISPATCH] unknown mode={state.mode!r}", flush=True)
