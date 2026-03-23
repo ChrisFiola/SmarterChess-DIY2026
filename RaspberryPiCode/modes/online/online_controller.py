@@ -37,6 +37,7 @@ from modes.online.lichess_game import (
     extract_winner,
 )
 from core.net_utils import is_ap_mode, wifi_config_url
+from core.wifi_ap import ensure_wifi
 from core.protocol import (
     parse_uci_move,
     format_engine_move,
@@ -331,12 +332,15 @@ class OnlineController:
         link.send_to_board("ok_cancel_enable")
         display.send("Lichess\nConnecting...\nOK = cancel")
 
-        if is_ap_mode():
-            url = wifi_config_url() or "http://192.168.4.1/"
-            if hasattr(display, "show_qr"):
-                display.show_qr(url, "Scan to setup WiFi", "OK = cancel")
+        if is_ap_mode() or not ensure_wifi(display):
+            if is_ap_mode():
+                url = wifi_config_url() or "http://192.168.4.1/"
+                if hasattr(display, "show_qr"):
+                    display.show_qr(url, "Scan to setup WiFi", "OK = cancel")
+                else:
+                    display.send(f"AP mode\nOpen:\n{url}\nOK = cancel")
             else:
-                display.send(f"AP mode\nOpen:\n{url}\nOK = cancel")
+                display.send("No WiFi\nconnection\nOK = cancel")
             while True:
                 m = link.read_from_board()
                 if not m:

@@ -1436,14 +1436,14 @@ def _render_paged_menu(
 
     The display server handles uppercase and word-wrap, so we just pass
     clean text without character-count constraints.
+    Page indicator is rendered separately by the display server via the
+    size token (e.g. ``menu:1/2``).
     """
 
     def _fmt(i: int, s: str) -> str:
         return f"{i}) {(s or '').strip()}"
 
     lines = [_fmt(i + 1, opt) for i, opt in enumerate(items[:per_page])]
-    if lines and pages > 1:
-        lines[0] = f"{lines[0]} {page + 1}/{pages}"
 
     while len(lines) < 3:
         lines.append("")
@@ -1500,6 +1500,7 @@ def _paged_menu(
 
     while True:
         chunk = opts[page * per_page : page * per_page + per_page]
+        page_tag = f":{page + 1}/{pages}" if pages > 1 else ""
         display.send(
             _render_paged_menu(
                 page,
@@ -1508,7 +1509,7 @@ def _paged_menu(
                 can_back=can_back,
                 per_page=per_page,
             ),
-            size="menu",
+            size=f"menu{page_tag}",
         )
         msg = link.read_from_board()
         if msg is None:
@@ -1541,6 +1542,7 @@ def _paged_menu(
             idx = int(m) - 1
             if idx < len(chunk) and chunk[idx]:
                 return chunk[idx]
+            _sync_menu()
             continue
 
 

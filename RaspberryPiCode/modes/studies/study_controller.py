@@ -215,7 +215,8 @@ class StudyController:
             while len(page_lines) < per_page:
                 page_lines = page_lines + [""]
             footer = "1=play  OK=back"
-            display.send("\n".join(page_lines) + "\n" + footer, size="menu")
+            page_tag = f":{page_idx + 1}/{len(pages)}" if len(pages) > 1 else ""
+            display.send("\n".join(page_lines) + "\n" + footer, size=f"menu{page_tag}")
             link.send_to_board("WaitForOkOrSkipSetup")
 
             while True:
@@ -260,7 +261,8 @@ class StudyController:
             while len(page_lines) < per_page:
                 page_lines.append("")
             footer = "Hint=back  OK=done" if is_last else "Hint=next  OK=skip"
-            display.send("\n".join(page_lines) + "\n" + footer, size="menu")
+            page_tag = f":{page_idx + 1}/{len(pages)}" if len(pages) > 1 else ""
+            display.send("\n".join(page_lines) + "\n" + footer, size=f"menu{page_tag}")
             link.send_to_board("WaitForAnnotationPage")
 
             while True:

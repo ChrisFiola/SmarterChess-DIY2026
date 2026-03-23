@@ -189,11 +189,12 @@ def _draw_centered_text_auto(lines, min_size=14, max_size=28, vpad=12, spacing=6
     _draw_centered_text_with_size(lines, size=size, spacing=spacing, vpad=vpad)
 
 
-def _draw_menu(lines):
+def _draw_menu(lines, page_info=""):
     """Draw menu lines with auto-sizing: items centered, footer pinned to the bottom.
 
     Expects lines = [item1, item2, item3, footer].  Footer may be empty string.
     Text is uppercased and word-wrapped at the largest fitting font size.
+    ``page_info`` is an optional string like "1/2" rendered top-right.
     """
     if not lines:
         return
@@ -203,12 +204,21 @@ def _draw_menu(lines):
 
     DRAW.rectangle((0, 0, W, H), fill="BLACK")
 
+    # Page indicator in top-right header area
+    header_reserved = 0
+    if page_info:
+        pg_size = FOOTER_SIZE
+        pg_font = _get_font(pg_size)
+        pg_w, pg_h = _measure(pg_size, page_info, pg_font)
+        DRAW.text((W - pg_w - 6, 4), page_info, font=pg_font, fill="GRAY")
+        header_reserved = pg_h + 4
+
     footer = raw_footer or ""
     footer_font = _get_font(FOOTER_SIZE)
     footer_h = _measure(FOOTER_SIZE, footer, footer_font)[1] if footer else 0
     # Reserve: footer text + separator gap (5) + bottom pad (4)
     footer_reserved = (footer_h + 14) if footer else 0
-    avail_h = H - footer_reserved
+    avail_h = H - footer_reserved - header_reserved
 
     spacing = 6
     vpad = 8
@@ -230,8 +240,9 @@ def _draw_menu(lines):
     heights = [_measure(item_size, ln, item_font)[1] for ln in display_lines]
     total_h = sum(heights) + spacing * (len(heights) - 1) if heights else 0
 
-    # Center items in the available area above the footer
-    y = max(vpad, (avail_h - total_h) // 2)
+    # Center items in the available area between header and footer
+    top = header_reserved
+    y = top + max(vpad, (avail_h - total_h) // 2)
     for ln, h in zip(display_lines, heights):
         w = _measure(item_size, ln, item_font)[0]
         DRAW.text(((W - w) // 2, y), ln, font=item_font, fill="WHITE")
@@ -465,8 +476,9 @@ def _render_current():
         _draw_qr(qr_data, captions)
         return
 
-    if size_key == "menu":
-        _draw_menu(lines)
+    if size_key.startswith("menu"):
+        page_info = size_key.split(":", 1)[1] if ":" in size_key else ""
+        _draw_menu(lines, page_info=page_info)
         return
 
     if size_key == "online":

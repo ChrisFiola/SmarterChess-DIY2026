@@ -18,6 +18,7 @@ import chess
 
 from core.boardlink import BoardLink
 from core.engine import EngineContext
+from core.wifi_ap import ensure_wifi
 from core.game_flow import (
     GameConfig,
     GameState,
@@ -34,6 +35,8 @@ def main():
     display.restart_server()
     display.banner("SMARTCHESS")
     display.wait_ready()
+
+    ensure_wifi(display)
 
     ctx = EngineContext()
     link = BoardLink()
