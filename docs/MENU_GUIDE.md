@@ -79,16 +79,22 @@ Game Mode
 |  |  |- Difficulty (increment/decrement selector)
 |  |  `- Player color
 |  |- Local 2-player
-|  `- Lichess Online
-|     |- Online
-|     |  |- New Game
-|     |  |  |- Challenge Friend
-|     |  |  |  |- Friend list (dynamic)
-|     |  |  |  `- Time Control
-|     |  |  |- Quick Pairing
-|     |  |  `- Correspondence
-|     |  |- Ongoing Games (dynamic)
-|     |  `- Leave game? (during an active online game)
+|  |- Lichess Online
+|  |  |- Online
+|  |  |  |- New Game
+|  |  |  |  |- Challenge Friend
+|  |  |  |  |  |- Friend list (dynamic)
+|  |  |  |  |  `- Time Control
+|  |  |  |  |- Quick Pairing
+|  |  |  |  `- Correspondence
+|  |  |  |- Ongoing Games (dynamic)
+|  |  |  |- Challenge Received
+|  |  |  `- Leave game? (during an active online game)
+|  `- Chess.com Daily
+|     |- My Turn
+|     |- All Games
+|     |- Resign (when Connected Board API is configured)
+|     `- Change User
 |- Puzzles
 |  |- Daily Puzzle
 |  |- Mix and match
@@ -130,13 +136,13 @@ Game Mode
 |1) Against PC       |
 |2) Local 2-player   |
 |3) Lichess Online   |
-|OK=back Hint=next   |
+|4) Chess.com Daily  |
 +--------------------+
 ```
 
 Interaction:
 
-- Press `1` on the main page for `Play Chess!`, then `1` to `3` to choose a chess mode.
+- Press `1` on the main page for `Play Chess!`, then `1` to `4` to choose a chess mode.
 - Press `2` on the main page for `Puzzles`.
 - Press `3` on the main page for `Studies`.
 - Press `4` on the main page for `Settings`.
@@ -302,7 +308,7 @@ instead of a text menu.
 |Online              |
 |1) New Game         |
 |2) Ongoing Games    |
-|OK=back Hint=next   |
+|3) Challenge Receiv.|
 +--------------------+
 ```
 
@@ -443,6 +449,23 @@ Example:
 If there are multiple pages, a page suffix is added where the menu renderer has
 room for it.
 
+### Challenge Received
+
+If Lichess has any incoming challenges waiting, this branch shows a dynamic
+paged menu of challengers. Selecting one accepts the challenge and waits for
+the game to start.
+
+Typical accept screen:
+
+```text
++--------------------+
+|Accepting           |
+|<friend_name>...    |
+|OK = cancel         |
+|                    |
++--------------------+
+```
+
 ### Leave game? menu
 
 During an active online game, pressing `OK` and `HINT` together opens the
@@ -477,6 +500,54 @@ Interaction:
 - `Resign` resigns the Lichess game
 - `Exit to menu` leaves the board UI without resigning, so the game can be resumed later
 - `OK` backs out of the leave menu and resumes the game
+
+## Chess.com Daily
+
+After selecting `Chess.com Daily`, the controller verifies the configured
+username and then shows one of these headers:
+
+```text
++--------------------+
+|Chess.com           |
+|<your_username>     |
+|Connected Board     |
+|                    |
++--------------------+
+```
+
+or, if the Connected Board API is not configured:
+
+```text
++--------------------+
+|Chess.com           |
+|<your_username>     |
+|Read-only mode      |
+|                    |
++--------------------+
+```
+
+### Chess.com menu
+
+When the Connected Board API is configured:
+
+```text
++--------------------+
+|1) My Turn          |
+|2) All Games        |
+|3) Resign           |
+|4) Change User      |
++--------------------+
+```
+
+Without the Connected Board API, the `Resign` item is omitted and the menu is a
+3-item paged menu with a title line.
+
+Interaction:
+
+- `My Turn` filters to games where it is your turn
+- `All Games` shows ongoing daily games
+- `Resign` resigns the currently active game when supported
+- `Change User` lets you enter a different Chess.com username from the board
 
 ## Puzzles
 
@@ -747,6 +818,9 @@ code that opens the game in Lichess analysis.
 ```
 
 Pressing `OK` shows a full-screen QR code.
+
+Pressing `OK` on the QR screen returns directly to the main menu. There is no
+second confirmation prompt after the QR screen.
 
 ## Behavior details and quirks
 

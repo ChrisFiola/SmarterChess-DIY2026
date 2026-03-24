@@ -1,34 +1,55 @@
-# Super Smart Chessboard Revival
+# SmarterChess DIY 2026
 
-## UPDATE 2026
-I'm trying to revive this project in 2026. i want to be able to play chess IRL and record my moves so I can study them online.
+SmarterChess is a physical smart chessboard built around a Raspberry Pi and a
+Raspberry Pi Pico. The board reads moves from the pieces, drives LEDs for move
+guidance, shows menus and QR codes on a small LCD, and can play both offline
+and online chess.
 
-I am starting from the original DIY Machines's project and will update the code to make it work on a raspberry pi pico instead of arduino.
+This repo is a modernized continuation of the original DIY Machines project.
+The current codebase targets Python 3, Stockfish on Raspberry Pi, and a Pico
+instead of the original Arduino-based setup.
 
-The original code is not compatible with the latest python updates and is hardly running on the latest Stockfish.
+## Current features
 
-This updated project uses:
+- Local 2-player mode with hint support
+- VS Computer mode with selectable strength and board-side choice
+- Lichess Online mode with `New Game`, `Ongoing Games`, and
+  `Challenge Received`
+- Chess.com Daily mode with `My Turn`, `All Games`, optional `Resign`, and
+  `Change User`
+- Puzzle mode with daily, random, and themed puzzles
+- Study mode with paged chapter text and play/watch options
+- Guided board setup for resumed and remote positions
+- Post-game QR analysis flow for local and VS Computer games
+- WiFi captive-portal / AP fallback for online setup
+- Color-coded LED feedback for hints, captures, illegal moves, promotion, and
+  game-over states
+
+## Hardware used
+
 - Raspberry Pi Zero W or Raspberry Pi 3B+
 - Raspberry Pi Pico
-- Amazon's BTF-Lighting WS2812E LED Strip 30Led/Meters
-- Smaller 3D Print parts that can print with a CR20 218x218 base plate maximum
-- Waveshare 1.14" LCD screen
+- WS2812 LED strip
+- Waveshare 1.14" LCD
 
-## NEW FEATURES
-- Different colored captured square when inputing and confirming a move
-- Game Over changes the board color and animation as well as displaying it on the screen
-- Promotions changes the board color and animation as well as displaying a promotion menu on the screen
-- Hints display in yellow
-- IRL 1v1 implemented to play face to face with hints enabled. Both players have a green color trail.
-- VS Computer uses green color trail for the user and blue color trail for the computer
-- Invalid move lights the whole board red to indicate a wrong move and shows where to put back the piece before continuing play
-- Updated to work on Python3. Not depending on old libraries like Python2 that caused a headache in setting up the original DIY Machines project
-- Added a Puzzle mode. Daily Puzzle and Mix and match with over 5 million puzzles available fetched from lichess.org database.
-- Added Lichess Online mode. You can start a game on Lichess.org and play it fully from the physical board.
+## Project layout
 
-## Original README
-Play remotely over the internet, or locally against the inbuilt computer.
+- `RaspberryPiCode/` - main application, game modes, display server, and shared
+  flow helpers
+- `PicoCode/` - Pico firmware for buttons, LEDs, sensors, and serial protocol
+- `docs/` - current reference and operator guides
 
-Project video available at: https://youtu.be/Z92TdhsAWD4
+## Docs
 
-Find wiring diagrams, 3d printable parts and more here: https://www.diymachines.co.uk/smart-chess-board-with-remote-and-local-play
+- [Code Reference](docs/CODE_REFERENCE.md)
+- [Menu Guide](docs/MENU_GUIDE.md)
+- [Physical Test Guide](docs/PHYSICAL_TEST_GUIDE.md)
+- [Lichess Manual Start](docs/LICHESS_MANUAL_START.md)
+
+## Original project
+
+Original DIY Machines project video:
+https://youtu.be/Z92TdhsAWD4
+
+Original project page:
+https://www.diymachines.co.uk/smart-chess-board-with-remote-and-local-play

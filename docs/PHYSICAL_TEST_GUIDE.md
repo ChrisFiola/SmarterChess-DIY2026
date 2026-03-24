@@ -198,10 +198,14 @@ Before running any test, verify:
 **Expected:**
 - LCD shows `GAME OVER / White wins` (or Black, depending on who mates)
 - `GameOver:1-0` (or `0-1`) is sent to the Pico
-- Pressing **NEW** returns to the mode selection menu
+- Press **OK** once to dismiss the Pico game-over screen
+- LCD then shows `Press OK / to view analysis`
+- Press **OK** to show the analysis QR code
+- Press **OK** on the QR screen to return to the mode selection menu
 
 **Pass:** Game-over screen appears with correct result.
-**Fail:** Game continues after checkmate, or wrong winner is shown.
+**Fail:** Game continues after checkmate, wrong winner is shown, or an extra
+confirm screen appears between the game-over dismiss and the QR/menu flow.
 
 ---
 
@@ -214,6 +218,10 @@ Before running any test, verify:
 - Game automatically declares the draw without waiting for a claim
 - LCD shows `GAME OVER` + draw reason + move number
 - Pico receives `GameOver:1/2-1/2`
+- Press **OK** once to dismiss the Pico game-over screen
+- LCD then shows `Press OK / to view analysis`
+- Press **OK** to show the analysis QR code
+- Press **OK** on the QR screen to return to the mode selection menu
 
 **Pass:** Draw is detected and declared automatically.
 **Fail:** Game continues past the draw threshold.
@@ -320,20 +328,23 @@ Before running any test, verify:
 2. Select **1** (Play Chess!), then **3** (Lichess Online)
 
 **Expected:**
-- LCD shows `Lichess online / Start a game / on lichess.org / OK = cancel`
-- Display refreshes with `Waiting for game...` every ~1.5 s
-- Pressing **OK** cancels and returns to menu
+- LCD connects, verifies the account, and then shows the online menu
+- The online menu contains `New Game`, `Ongoing Games`, and
+  `Challenge Received`
+- Pressing **OK** from that menu returns to mode select
 
-**Pass:** Waiting banner cycles and OK cancels cleanly.
-**Fail:** Freezes on the connecting screen or crashes.
+**Pass:** Online menu appears and can be cancelled cleanly.
+**Fail:** Freezes on the connecting screen, skips the menu, or crashes.
 
 ---
 
 ### 4-D  Playing a game online
 
 **Steps:**
-1. Start a game on lichess.org using the account whose token is configured
-2. The board should connect and show `Connected / You are WHITE` (or BLACK)
+1. Enter **Lichess Online**
+2. Choose **New Game** and start a game from the board, or start one on
+   lichess.org and resume it with **Ongoing Games**
+3. The board should connect and show `Connected / You are WHITE` (or BLACK)
 
 **Expected:**
 - Your turn: LCD shows `WHITE to move` and Pico accepts move input
@@ -449,11 +460,14 @@ Before running any test, verify:
 1. Enter all moves in the solution correctly
 
 **Expected:**
-- LCD shows `Puzzle solved! / OK = menu`
-- Pressing **OK** returns to the mode selection menu
+- LCD shows the solved state and sends `GameOver:1-0`
+- Press **OK** once to dismiss the Pico game-over screen
+- The mode returns directly to the mode selection menu
+- There is no extra green OK-confirm screen after the solved/game-over screen
 
 **Pass:** Solved message appears after the final move.
-**Fail:** Game continues past the solution, or the menu doesn't return.
+**Fail:** Game continues past the solution, the menu doesn't return, or an
+extra confirm screen appears after the solved screen.
 
 ---
 
@@ -502,9 +516,45 @@ Before running any test, verify:
 
 ---
 
-## 6 — Cross-mode edge cases
+## 6 - Chess.com Daily mode
 
-### 6-A  Shutdown signal
+### 6-A  Menu and account state
+
+**Steps:**
+1. Select **1** (Play Chess!), then **4** (Chess.com Daily)
+
+**Expected:**
+- LCD verifies the configured Chess.com username
+- A header shows either `Connected Board` or `Read-only mode`
+- The menu shows `My Turn`, `All Games`, and `Change User`
+- If the Connected Board API is configured, `Resign` is also present
+
+**Pass:** Header and menu match the configured account state.
+**Fail:** Menu is missing, the wrong mode is shown, or the account check loops.
+
+---
+
+### 6-B  Open a daily game
+
+**Steps:**
+1. Enter **Chess.com Daily**
+2. Select **My Turn** or **All Games**
+3. Pick an active game
+
+**Expected:**
+- The board guides setup into the current position if needed
+- After setup, the game position is shown on the physical board
+- If it is your turn and the Connected Board API is configured, moves can be
+  submitted directly from the board
+
+**Pass:** A game opens and the board matches the selected position.
+**Fail:** Setup is wrong, the wrong game opens, or the board desyncs.
+
+---
+
+## 7 - Cross-mode edge cases
+
+### 7-A  Shutdown signal
 
 **Steps:**
 1. In any active game, trigger the `shutdown` signal from the Pico (physical power button or mapped input)
@@ -518,7 +568,7 @@ Before running any test, verify:
 
 ---
 
-### 6-B  Exit game via OK+HINT
+### 7-B  Exit game via OK+HINT
 
 **Steps:**
 1. While in any game (VS Computer or Local), press **OK** and **HINT** together
@@ -532,7 +582,7 @@ Before running any test, verify:
 
 ---
 
-### 6-C  Capture query
+### 7-C  Capture query
 
 **Steps:**
 1. In any game, move a piece to a square that contains an opponent piece (capture)
@@ -553,7 +603,7 @@ Before running any test, verify:
 
 ---
 
-### 6-D  Paged menu navigation
+### 7-D  Paged menu navigation
 
 **Steps:**
 1. Enter puzzle mode → Themes → Openings → group "A to E" (has more than 4 items)
@@ -569,7 +619,7 @@ Before running any test, verify:
 
 ---
 
-## 7 — Regression tests after code changes
+## 8 - Regression tests after code changes
 
 Run these whenever a file in `core/` is modified.
 
