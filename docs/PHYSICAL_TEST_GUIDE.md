@@ -516,45 +516,9 @@ extra confirm screen appears after the solved screen.
 
 ---
 
-## 6 - Chess.com Daily mode
+## 6 - Cross-mode edge cases
 
-### 6-A  Menu and account state
-
-**Steps:**
-1. Select **1** (Play Chess!), then **4** (Chess.com Daily)
-
-**Expected:**
-- LCD verifies the configured Chess.com username
-- A header shows either `Connected Board` or `Read-only mode`
-- The menu shows `My Turn`, `All Games`, and `Change User`
-- If the Connected Board API is configured, `Resign` is also present
-
-**Pass:** Header and menu match the configured account state.
-**Fail:** Menu is missing, the wrong mode is shown, or the account check loops.
-
----
-
-### 6-B  Open a daily game
-
-**Steps:**
-1. Enter **Chess.com Daily**
-2. Select **My Turn** or **All Games**
-3. Pick an active game
-
-**Expected:**
-- The board guides setup into the current position if needed
-- After setup, the game position is shown on the physical board
-- If it is your turn and the Connected Board API is configured, moves can be
-  submitted directly from the board
-
-**Pass:** A game opens and the board matches the selected position.
-**Fail:** Setup is wrong, the wrong game opens, or the board desyncs.
-
----
-
-## 7 - Cross-mode edge cases
-
-### 7-A  Shutdown signal
+### 6-A  Shutdown signal
 
 **Steps:**
 1. In any active game, trigger the `shutdown` signal from the Pico (physical power button or mapped input)
@@ -568,7 +532,7 @@ extra confirm screen appears after the solved screen.
 
 ---
 
-### 7-B  Exit game via OK+HINT
+### 6-B  Exit game via OK+HINT
 
 **Steps:**
 1. While in any game (VS Computer or Local), press **OK** and **HINT** together
@@ -582,7 +546,7 @@ extra confirm screen appears after the solved screen.
 
 ---
 
-### 7-C  Capture query
+### 6-C  Capture query
 
 **Steps:**
 1. In any game, move a piece to a square that contains an opponent piece (capture)
@@ -603,7 +567,7 @@ extra confirm screen appears after the solved screen.
 
 ---
 
-### 7-D  Paged menu navigation
+### 6-D  Paged menu navigation
 
 **Steps:**
 1. Enter puzzle mode → Themes → Openings → group "A to E" (has more than 4 items)
@@ -619,7 +583,7 @@ extra confirm screen appears after the solved screen.
 
 ---
 
-## 8 - Regression tests after code changes
+## 7 - Regression tests after code changes
 
 Run these whenever a file in `core/` is modified.
 

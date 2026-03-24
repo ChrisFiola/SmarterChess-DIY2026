@@ -90,11 +90,6 @@ Game Mode
 |  |  |  |- Ongoing Games (dynamic)
 |  |  |  |- Challenge Received
 |  |  |  `- Leave game? (during an active online game)
-|  `- Chess.com Daily
-|     |- My Turn
-|     |- All Games
-|     |- Resign (when Connected Board API is configured)
-|     `- Change User
 |- Puzzles
 |  |- Daily Puzzle
 |  |- Mix and match
@@ -116,7 +111,8 @@ Game Mode
 
 ## Main menu
 
-`Game Mode` now opens on a single compact page.
+`Game Mode` opens on a single compact page, with `Play Chess!` keeping the core
+play options on one screen.
 
 ### Main page
 
@@ -136,13 +132,16 @@ Game Mode
 |1) Against PC       |
 |2) Local 2-player   |
 |3) Lichess Online   |
-|4) Chess.com Daily  |
+|OK=back Hint=next   |
 +--------------------+
 ```
 
+This submenu is intentionally a single-page launcher for the three main play
+flows: VS Computer, Local 2-player, and Lichess Online.
+
 Interaction:
 
-- Press `1` on the main page for `Play Chess!`, then `1` to `4` to choose a chess mode.
+- Press `1` on the main page for `Play Chess!`, then `1` to `3` to choose a chess mode.
 - Press `2` on the main page for `Puzzles`.
 - Press `3` on the main page for `Studies`.
 - Press `4` on the main page for `Settings`.
@@ -501,54 +500,6 @@ Interaction:
 - `Exit to menu` leaves the board UI without resigning, so the game can be resumed later
 - `OK` backs out of the leave menu and resumes the game
 
-## Chess.com Daily
-
-After selecting `Chess.com Daily`, the controller verifies the configured
-username and then shows one of these headers:
-
-```text
-+--------------------+
-|Chess.com           |
-|<your_username>     |
-|Connected Board     |
-|                    |
-+--------------------+
-```
-
-or, if the Connected Board API is not configured:
-
-```text
-+--------------------+
-|Chess.com           |
-|<your_username>     |
-|Read-only mode      |
-|                    |
-+--------------------+
-```
-
-### Chess.com menu
-
-When the Connected Board API is configured:
-
-```text
-+--------------------+
-|1) My Turn          |
-|2) All Games        |
-|3) Resign           |
-|4) Change User      |
-+--------------------+
-```
-
-Without the Connected Board API, the `Resign` item is omitted and the menu is a
-3-item paged menu with a title line.
-
-Interaction:
-
-- `My Turn` filters to games where it is your turn
-- `All Games` shows ongoing daily games
-- `Resign` resigns the currently active game when supported
-- `Change User` lets you enter a different Chess.com username from the board
-
 ## Puzzles
 
 ### Puzzles top menu
@@ -826,7 +777,7 @@ second confirmation prompt after the QR screen.
 
 - Menus always use `HINT` for next page. There is no previous-page button.
 - The top-level menu and `Play Chess!` submenu use a compact 3-item layout with
-  `OK=back Hint=next` on the fourth line.
+  a consistent `OK=back Hint=next` footer on the fourth line.
 - Dynamic menus truncate names to fit the LCD width.
 - The online and puzzle systems also show non-menu status screens such as
   `Loading...`, `Waiting for opponent...`, and QR codes. Those are not paged

@@ -2,8 +2,9 @@
 
 SmarterChess is a physical smart chessboard built around a Raspberry Pi and a
 Raspberry Pi Pico. The board reads moves from the pieces, drives LEDs for move
-guidance, shows menus and QR codes on a small LCD, and can play both offline
-and online chess.
+guidance, shows menus and QR codes on a small LCD, and supports local play,
+engine play, Lichess online games, puzzles, and studies from the same board
+interface.
 
 This repo is a modernized continuation of the original DIY Machines project.
 The current codebase targets Python 3, Stockfish on Raspberry Pi, and a Pico
@@ -15,8 +16,6 @@ instead of the original Arduino-based setup.
 - VS Computer mode with selectable strength and board-side choice
 - Lichess Online mode with `New Game`, `Ongoing Games`, and
   `Challenge Received`
-- Chess.com Daily mode with `My Turn`, `All Games`, optional `Resign`, and
-  `Change User`
 - Puzzle mode with daily, random, and themed puzzles
 - Study mode with paged chapter text and play/watch options
 - Guided board setup for resumed and remote positions
@@ -34,8 +33,8 @@ instead of the original Arduino-based setup.
 
 ## Project layout
 
-- `RaspberryPiCode/` - main application, game modes, display server, and shared
-  flow helpers
+- `RaspberryPiCode/` - main application, mode controllers, display server, and
+  shared game/menu flow helpers
 - `PicoCode/` - Pico firmware for buttons, LEDs, sensors, and serial protocol
 - `docs/` - current reference and operator guides
 

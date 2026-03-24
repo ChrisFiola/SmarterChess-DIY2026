@@ -39,9 +39,6 @@ RaspberryPiCode/
    |  |- lichess_client.py
    |  |- lichess_game.py
    |  `- online_controller.py
-   |- chesscom/
-   |  |- chesscom_client.py
-   |  `- chesscom_controller.py
    |- puzzles/
    |  |- puzzle_controller.py
    |  `- puzzle_ids.txt
@@ -277,30 +274,6 @@ Current behavior notes:
 - active-game exit/draw handling is specific to online mode and does not use `confirm_exit_game()`
 - online game over sends `GameOver:*`, waits for `wait_for_gameover_dismiss()`, then returns to menu
 
-### Chess.com Daily
-
-Files:
-
-- `modes/chesscom/chesscom_controller.py`
-- `modes/chesscom/chesscom_client.py`
-
-Current menu:
-
-- `My Turn`
-- `All Games`
-- `Resign` when Connected Board API is configured
-- `Change User`
-
-Current reuse points:
-
-- `confirm_board_ready_or_setup()` for board setup
-- shared typing/capture/promotion/check helpers
-
-Current refactors:
-
-- account verification is centralized in `_verify_current_account()`
-- active-game serial handling is centralized in `_handle_active_game_message()`
-
 ### Puzzles
 
 File:
@@ -363,7 +336,6 @@ Current refactors:
 - `Against PC`
 - `Local 2-player`
 - `Lichess Online`
-- `Chess.com Daily`
 
 ### Settings submenu
 
@@ -473,7 +445,6 @@ Important payloads:
 - Local 2-player loop: `core/game_flow.py`
 - VS Computer loop: `modes/vs_computer/game_controller.py`
 - Lichess online lifecycle: `modes/online/online_controller.py`
-- Chess.com daily lifecycle: `modes/chesscom/chesscom_controller.py`
 - Puzzle fetch/setup/solve: `modes/puzzles/puzzle_controller.py`
 - Study chapter flow: `modes/studies/study_controller.py`
 - LCD text rendering: `screen/display.py` + `screen/display_server.py`
