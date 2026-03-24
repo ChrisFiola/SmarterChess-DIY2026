@@ -41,6 +41,7 @@ from core.game_flow import (
     shutdown_raspberry_pi,
     run_in_bg,
     wait_for_ok,
+    wait_for_gameover_dismiss,
     wait_for_ok_or_skip_setup,
     confirm_exit_game,
     handle_illegal_move,
@@ -926,7 +927,7 @@ class PuzzleController:
                     pass
                 display.send(f"Puzzle solved!\nOK = menu")
                 link.send_to_board("GameOver:1-0")
-                wait_for_ok(link, display)
+                wait_for_gameover_dismiss(link, display)
                 return
 
             expected = st.solution[st.idx]

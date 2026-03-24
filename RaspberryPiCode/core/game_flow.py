@@ -85,6 +85,31 @@ def wait_for_ok(link: BoardLink, display: Display, *, send_prompt: bool = True) 
             continue
 
 
+def wait_for_gameover_dismiss(link: BoardLink, display: Display) -> bool:
+    """Wait for Pico to dismiss its built-in GameOver screen.
+
+    GameOver already puts the Pico into a blocking OK flow that answers with
+    "n" on dismiss. Sending WaitForOkConfirm on top of that creates a second
+    OK prompt, so callers should use this helper instead of wait_for_ok().
+
+    Returns False if shutdown is triggered.
+    """
+    while True:
+        msg = link.read_from_board()
+        if msg is None:
+            continue
+
+        if msg == "shutdown":
+            shutdown_raspberry_pi(link, display)
+            return False
+
+        if msg in NEW_GAME_MSGS or msg in OK_MSGS:
+            return True
+
+        if msg.startswith("typing_") or msg.startswith("capq_") or msg in HINT_MSGS:
+            continue
+
+
 def wait_for_ok_or_skip_setup(link: BoardLink, display: Display):
     """Wait for setup-entry confirmation."""
     link.send_to_board("WaitForOkOrSkipSetup")
@@ -630,16 +655,8 @@ def post_game_menu(
     presses OK to dismiss it — we must wait for that before sending any
     new commands, otherwise they pile up in the UART buffer unseen.
     """
-    # Wait for Pico to finish its game-over scene (sends "n" on dismiss)
-    while True:
-        msg = link.read_from_board()
-        if msg is None:
-            continue
-        if msg == "shutdown":
-            shutdown_raspberry_pi(link, display)
-            raise ReturnToMenu()
-        if msg in NEW_GAME_MSGS or msg in OK_MSGS:
-            break
+    if not wait_for_gameover_dismiss(link, display):
+        raise ReturnToMenu()
 
     display.send("Press OK\nto view analysis")
     link.send_to_board("ChooseMode")
@@ -689,19 +706,7 @@ def _check_and_handle_draw(link: BoardLink, display: Display, brd: chess.Board) 
         move_no = 0
     display.show_draw(reason, move_no)
 
-    # Wait for Pico to acknowledge by sending 'n' (new game / back)
-    while True:
-        msg2 = link.read_from_board()
-        if msg2 is None:
-            continue
-        if msg2 == "shutdown":
-            shutdown_raspberry_pi(link, display)
-            return True
-        if msg2 in NEW_GAME_MSGS:
-            # caller typically raises ReturnToMenu
-            return True
-        if msg2.startswith("typing_") or msg2 in HINT_MSGS | OK_MSGS:
-            continue
+    return wait_for_gameover_dismiss(link, display)
 
 
 # -------------------- Flow control --------------------

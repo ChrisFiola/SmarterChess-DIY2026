@@ -51,6 +51,7 @@ from core.game_flow import (
     _paged_menu,
     run_in_bg,
     wait_for_ok,
+    wait_for_gameover_dismiss,
     handle_typing_message,
     handle_capq_message,
     handle_illegal_move,
@@ -1052,7 +1053,7 @@ class OnlineController:
             display.clear_online_clock()
             link.send_to_board(f"GameOver:{result}")
             display.send(f"Game over\n{winner_text}\n{reason}")
-            wait_for_ok(link, display)
+            wait_for_gameover_dismiss(link, display)
             raise ReturnToMenu()
 
         def apply_new_moves(move_list, announce_new: bool = True):
