@@ -1469,12 +1469,12 @@ def _render_paged_menu(
     while len(lines) < 3:
         lines.append("")
 
-    has_next = (page + 1) < pages
-    if can_back and has_next:
+    has_hint = pages > 1
+    if can_back and has_hint:
         footer = "OK=Back  Hint=Next"
     elif can_back:
         footer = "OK=Back"
-    elif has_next:
+    elif has_hint:
         footer = "Hint=Next"
     else:
         footer = ""

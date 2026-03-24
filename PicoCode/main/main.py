@@ -1112,6 +1112,9 @@ def _handle_puzzle_setup_message(msg):
         board.markings()
         cp.enable_hint_irq()
         return True
+    if msg.startswith("heyArduinoWaitForOkConfirm"):
+        _handle_wait_for_ok_confirm(msg)
+        return True
     if msg.startswith("heyArduinoWaitForOkOrSkipSetup"):
         _handle_wait_for_ok_or_skip_setup(msg)
         return True
