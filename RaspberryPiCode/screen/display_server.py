@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
-import os, sys, time, select
+import os
+import select
+import sys
+import time
+
 from PIL import Image, ImageDraw, ImageFont
 
 # Add own directory to path so qrgen.py is importable when launched as a subprocess
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from lcd_pipe import PIPE_PATH, READY_FLAG_PATH
 
 # Optional QR rendering (pure python, bundled)
 try:
@@ -15,12 +21,9 @@ except Exception:
 sys.path.append("/home/king/LCD_Module_RPI_code/RaspberryPi/python")
 from lib.LCD_1inch14 import LCD_1inch14
 
-PIPE = "/tmp/lcdpipe"
-READY_FLAG = "/tmp/display_server_ready"
-
 # Remove stale ready flag
-if os.path.exists(READY_FLAG):
-    os.remove(READY_FLAG)
+if os.path.exists(READY_FLAG_PATH):
+    os.remove(READY_FLAG_PATH)
 
 # Init display
 disp = LCD_1inch14()
@@ -67,18 +70,6 @@ def _word_wrap(text, size, max_w):
     if current:
         lines.append(current)
     return lines if lines else [text]
-
-
-def _prepare_lines(lines, size, max_w=None):
-    """Uppercase and word-wrap a list of pre-split text lines."""
-    if max_w is None:
-        max_w = W - 12
-    result = []
-    for ln in lines:
-        upper = (ln or "").upper()
-        for wrapped in _word_wrap(upper, size, max_w):
-            result.append(wrapped)
-    return result
 
 
 def _open_fifo_blocking(path: str):
@@ -447,13 +438,13 @@ def _draw_splash():
 _draw_splash()
 
 # Signal ready to Pi
-with open(READY_FLAG, "w") as f:
+with open(READY_FLAG_PATH, "w") as f:
     f.write("ready\n")
 
 # ------------------------------------------------------
 # Main loop
 # ------------------------------------------------------
-pipe = _open_fifo_blocking(PIPE)
+pipe = _open_fifo_blocking(PIPE_PATH)
 FPS_CAP = 10.0
 MIN_DT = 1.0 / FPS_CAP
 
@@ -515,7 +506,7 @@ while True:
                 except Exception:
                     pass
                 time.sleep(0.1)
-                pipe = _open_fifo_blocking(PIPE)
+                pipe = _open_fifo_blocking(PIPE_PATH)
                 pending_msg = None
                 last_drawn = None
                 break

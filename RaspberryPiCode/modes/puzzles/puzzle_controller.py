@@ -28,7 +28,6 @@ from screen.display import Display
 from core.boardlink import BoardLink
 from modes.online.lichess_client import LichessClient
 from core.protocol import (
-    send_lcd_ack_for_payload,
     parse_uci_move,
     format_engine_move,
     format_hint_move,
@@ -493,6 +492,44 @@ class PuzzleController:
         except Exception:
             pass
 
+    def _build_state_from_payload(
+        self,
+        payload: dict,
+        *,
+        fallback_id: str = "",
+        missing_error: str,
+        log_prefix: Optional[str] = None,
+    ) -> Tuple[Optional[PuzzleState], Optional[str]]:
+        """Validate a puzzle API payload and convert it into PuzzleState."""
+        puzzle = payload.get("puzzle") or {}
+        game = payload.get("game") or {}
+
+        puzzle_id = str(puzzle.get("id") or fallback_id)
+        pgn = str(game.get("pgn") or "")
+        initial_ply = int(puzzle.get("initialPly") or 0)
+        solution = puzzle.get("solution") or []
+        themes = puzzle.get("themes") or []
+        rating = puzzle.get("rating")
+
+        if not puzzle_id or not pgn or not solution:
+            return None, missing_error
+
+        if log_prefix:
+            try:
+                print(
+                    f"[{log_prefix}] id={puzzle_id!r} rating={rating!r} themes={themes!r} initialPly={initial_ply}",
+                    flush=True,
+                )
+            except Exception:
+                pass
+
+        return (
+            _build_puzzle_state(
+                puzzle_id, pgn, initial_ply, solution, themes, rating
+            ),
+            None,
+        )
+
     def _fetch_daily(self) -> Tuple[Optional[PuzzleState], Optional[str]]:
         """Fetch today's Lichess daily puzzle. Retries once on transient failure.
 
@@ -522,29 +559,11 @@ class PuzzleController:
                     pass
                 return None, (err1 or err0 or "Unknown error")
 
-        puzzle = payload.get("puzzle") or {}
-        game = payload.get("game") or {}
-
-        puzzle_id = str(puzzle.get("id") or "")
-        pgn = str(game.get("pgn") or "")
-        initial_ply = int(puzzle.get("initialPly") or 0)
-        solution = puzzle.get("solution") or []
-
-        themes = puzzle.get("themes") or []
-        rating = puzzle.get("rating")
-
-        if not puzzle_id or not pgn or not solution:
-            return None, "Daily puzzle response missing required fields"
-
-        # Debug (journalctl)
-        try:
-            print(
-                f"[PUZZLE DAILY] id={puzzle_id!r} rating={rating!r} themes={themes!r} initialPly={initial_ply}",
-                flush=True,
-            )
-        except Exception:
-            pass
-        return _build_puzzle_state(puzzle_id, pgn, initial_ply, solution, themes, rating), None
+        return self._build_state_from_payload(
+            payload,
+            missing_error="Daily puzzle response missing required fields",
+            log_prefix="PUZZLE DAILY",
+        )
 
     def _fetch_mix(self) -> Tuple[Optional[PuzzleState], Optional[str]]:
         """Pick a random puzzle from the local puzzle_ids.txt and fetch it from Lichess.
@@ -566,29 +585,12 @@ class PuzzleController:
         if not isinstance(payload, dict) or payload.get("_error"):
             return None, str(payload.get("_error") or "Puzzle fetch failed")
 
-        puzzle = payload.get("puzzle") or {}
-        game = payload.get("game") or {}
-
-        puzzle_id = str(puzzle.get("id") or pid)
-        pgn = str(game.get("pgn") or "")
-        initial_ply = int(puzzle.get("initialPly") or 0)
-        solution = puzzle.get("solution") or []
-
-        themes = puzzle.get("themes") or []
-        rating = puzzle.get("rating")
-
-        if not puzzle_id or not pgn or not solution:
-            return None, "Puzzle response missing required fields"
-
-        # Debug (journalctl)
-        try:
-            print(
-                f"[PUZZLE MIX] id={puzzle_id!r} rating={rating!r} themes={themes!r} initialPly={initial_ply}",
-                flush=True,
-            )
-        except Exception:
-            pass
-        return _build_puzzle_state(puzzle_id, pgn, initial_ply, solution, themes, rating), None
+        return self._build_state_from_payload(
+            payload,
+            fallback_id=pid,
+            missing_error="Puzzle response missing required fields",
+            log_prefix="PUZZLE MIX",
+        )
 
     def _fetch_theme(self, angle: str) -> Tuple[Optional[PuzzleState], Optional[str]]:
         """Fetch a puzzle for a given Lichess *angle*.

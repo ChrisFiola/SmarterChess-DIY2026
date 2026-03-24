@@ -10,7 +10,6 @@ Startup sequence:
   4. On ReturnToMenu, restart from step 2
 """
 import os
-import sys
 import time
 import traceback
 
@@ -26,7 +25,7 @@ from core.game_flow import (
     wait_for_mode_selection,
     run_selected_mode,
 )
-from core.protocol import IGNORED_MSGS, OK_MSGS
+from core.protocol import IGNORED_MSGS
 from screen.display import Display
 
 

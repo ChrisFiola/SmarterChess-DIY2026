@@ -21,9 +21,10 @@ from threading import Thread
 from typing import Optional
 from urllib.parse import parse_qs
 
+from core.net_utils import run_command
+
 _AP_SSID = "SmartChess-Setup"
 _AP_IP = "192.168.4.1"
-_AP_SUBNET = "192.168.4.0/24"
 _AP_DHCP_START = "192.168.4.10"
 _AP_DHCP_END = "192.168.4.50"
 _IFACE = "wlan0"
@@ -34,16 +35,6 @@ _hostapd_proc: Optional[subprocess.Popen] = None
 _dnsmasq_proc: Optional[subprocess.Popen] = None
 _server: Optional[HTTPServer] = None
 _connected_ssid: Optional[str] = None
-
-
-def _run(cmd: list[str], timeout_s: float = 5.0) -> str:
-    try:
-        out = subprocess.check_output(
-            cmd, stderr=subprocess.DEVNULL, timeout=timeout_s
-        )
-        return out.decode("utf-8", errors="ignore").strip()
-    except Exception:
-        return ""
 
 
 def _run_quiet(cmd: list[str], timeout_s: float = 5.0) -> bool:
@@ -59,7 +50,7 @@ def _run_quiet(cmd: list[str], timeout_s: float = 5.0) -> bool:
 
 def is_wifi_connected() -> bool:
     """Return True if wlan0 is associated with an SSID in STA mode."""
-    ssid = _run(["iwgetid", _IFACE, "-r"], timeout_s=1.0)
+    ssid = run_command(["iwgetid", _IFACE, "-r"], timeout_s=1.0)
     return bool(ssid)
 
 
@@ -67,9 +58,9 @@ def _scan_networks() -> list[dict]:
     """Scan for visible WiFi networks. Returns list of {ssid, signal, security}."""
     _run_quiet(["iw", "dev", _IFACE, "scan", "trigger"])
     time.sleep(2)
-    raw = _run(["iw", "dev", _IFACE, "scan", "dump"], timeout_s=10.0)
+    raw = run_command(["iw", "dev", _IFACE, "scan", "dump"], timeout_s=10.0)
     if not raw:
-        raw = _run(["iwlist", _IFACE, "scan"], timeout_s=10.0)
+        raw = run_command(["iwlist", _IFACE, "scan"], timeout_s=10.0)
         return _parse_iwlist(raw)
     return _parse_iw_scan(raw)
 
@@ -484,7 +475,7 @@ def ensure_wifi(display=None, timeout_s: float = 120.0) -> bool:
     while time.monotonic() - t0 < timeout_s:
         if is_wifi_connected():
             _stop_ap()
-            ssid = _run(["iwgetid", _IFACE, "-r"], timeout_s=1.0)
+            ssid = run_command(["iwgetid", _IFACE, "-r"], timeout_s=1.0)
             print(f"[WIFI AP] Now connected to {ssid!r}", flush=True)
             if display:
                 display.send(f"Connected!\n{ssid}")

@@ -14,7 +14,6 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
-from urllib.parse import quote
 
 import chess
 
@@ -519,8 +518,8 @@ def _result_to_winner_text(res: str) -> str:
     return "Draw"
 
 
-LICHESS_ANALYSIS_PGN_URL = "https://lichess.org/analysis/pgn/"
 LICHESS_BASE_URL = "https://lichess.org"
+STARTING_FEN_PIECES = chess.STARTING_FEN.split(" ")[0]
 
 
 def _export_game_pgn(board: "chess.Board") -> str:
@@ -540,13 +539,6 @@ def _export_game_pgn(board: "chess.Board") -> str:
         return ""
 
     return pgn
-
-
-def _build_lichess_analysis_url_from_pgn(pgn: str) -> str:
-    pgn = (pgn or "").strip()
-    if not pgn or pgn == "*":
-        return ""
-    return f"{LICHESS_ANALYSIS_PGN_URL}{quote(pgn, safe='')}"
 
 
 def _extract_imported_game_url(resp: dict) -> str:
@@ -620,7 +612,7 @@ def offer_analysis_qr(link: BoardLink, display: Display, board: "chess.Board") -
     if not pgn:
         display.send("No moves yet\nNo analysis link\nOK = back")
         link.send_to_board("MenuPaged")
-        wait_for_ok(link, display)
+        wait_for_ok(link, display, send_prompt=False)
         return
 
     display.send("Connecting to\nLichess...")
@@ -633,7 +625,7 @@ def offer_analysis_qr(link: BoardLink, display: Display, board: "chess.Board") -
     if not analysis_url:
         display.send("No analysis link\navailable\nOK = back")
         link.send_to_board("MenuPaged")
-        wait_for_ok(link, display)
+        wait_for_ok(link, display, send_prompt=False)
         return
 
     print(
@@ -642,7 +634,7 @@ def offer_analysis_qr(link: BoardLink, display: Display, board: "chess.Board") -
     )
     display.show_qr(analysis_url)  # full-screen, no caption
     link.send_to_board("MenuPaged")
-    wait_for_ok(link, display)
+    wait_for_ok(link, display, send_prompt=False)
 
 
 def post_game_menu(
@@ -809,6 +801,23 @@ def guide_board_setup(
             link.clear_input()
         except Exception:
             pass
+
+
+def confirm_board_ready_or_setup(
+    link: BoardLink,
+    display: Display,
+    board: "chess.Board",
+    *,
+    label: str,
+    start_message: str,
+) -> bool:
+    """Handle the common "starting position vs guided setup" flow."""
+    current_pieces = board.fen().split(" ")[0]
+    if not board.move_stack or current_pieces == STARTING_FEN_PIECES:
+        display.send(start_message)
+        return wait_for_ok(link, display)
+
+    return guide_board_setup(link, display, board.fen(), label=label) is not None
 
 
 # -------------------- Setup & mode selection --------------------

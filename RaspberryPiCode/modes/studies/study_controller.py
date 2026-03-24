@@ -199,6 +199,25 @@ class StudyController:
 
     # ----------------------------------------------------------------- private
 
+    @staticmethod
+    def _paginate_lines(lines: List[str], *, per_page: int = 3) -> List[List[str]]:
+        return [lines[i : i + per_page] for i in range(0, len(lines), per_page)]
+
+    @staticmethod
+    def _render_page(
+        display: Display,
+        page_lines: List[str],
+        *,
+        footer: str,
+        page_idx: int,
+        total_pages: int,
+    ) -> None:
+        padded = list(page_lines)
+        while len(padded) < 3:
+            padded.append("")
+        page_tag = f":{page_idx + 1}/{total_pages}" if total_pages > 1 else ""
+        display.send("\n".join(padded) + "\n" + footer, size=f"menu{page_tag}")
+
     def _show_chapter_title(
         self, link: BoardLink, display: Display, title: str
     ) -> bool:
@@ -207,16 +226,17 @@ class StudyController:
         Returns True if user pressed 1 (continue), False if OK (back) or exit.
         """
         lines = _wrap_text(title, max_chars=20)
-        per_page = 3
-        pages = [lines[i : i + per_page] for i in range(0, len(lines), per_page)]
+        pages = self._paginate_lines(lines)
 
         for page_idx, page_lines in enumerate(pages):
             is_last = page_idx == len(pages) - 1
-            while len(page_lines) < per_page:
-                page_lines = page_lines + [""]
-            footer = "1=play  OK=back"
-            page_tag = f":{page_idx + 1}/{len(pages)}" if len(pages) > 1 else ""
-            display.send("\n".join(page_lines) + "\n" + footer, size=f"menu{page_tag}")
+            self._render_page(
+                display,
+                page_lines,
+                footer="1=play  OK=back",
+                page_idx=page_idx,
+                total_pages=len(pages),
+            )
             link.send_to_board("WaitForOkOrSkipSetup")
 
             while True:
@@ -251,18 +271,18 @@ class StudyController:
         if not lines or lines == [""]:
             return True
 
-        per_page = 3
-        pages = [lines[i : i + per_page] for i in range(0, len(lines), per_page)]
+        pages = self._paginate_lines(lines)
         page_idx = 0
 
         while True:
             is_last = page_idx == len(pages) - 1
-            page_lines = list(pages[page_idx])
-            while len(page_lines) < per_page:
-                page_lines.append("")
-            footer = "Hint=back  OK=done" if is_last else "Hint=next  OK=skip"
-            page_tag = f":{page_idx + 1}/{len(pages)}" if len(pages) > 1 else ""
-            display.send("\n".join(page_lines) + "\n" + footer, size=f"menu{page_tag}")
+            self._render_page(
+                display,
+                pages[page_idx],
+                footer="Hint=back  OK=done" if is_last else "Hint=next  OK=skip",
+                page_idx=page_idx,
+                total_pages=len(pages),
+            )
             link.send_to_board("WaitForAnnotationPage")
 
             while True:

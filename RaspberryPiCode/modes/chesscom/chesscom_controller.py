@@ -49,6 +49,7 @@ from core.game_flow import (
     GameConfig,
     ReturnToMenu,
     _paged_menu,
+    confirm_board_ready_or_setup,
     run_in_bg,
     wait_for_ok,
     handle_typing_message,
@@ -57,15 +58,11 @@ from core.game_flow import (
     send_check_signal,
     send_turn_notification,
     shutdown_raspberry_pi,
-    guide_board_setup,
 )
 
 _USERNAME_FILE = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), ".chesscom_username"
 )
-
-_STARTING_FEN_PIECES = chess.STARTING_FEN.split(" ")[0]
-
 
 def _load_username() -> Optional[str]:
     """Load Chess.com username from env var or file."""
@@ -239,18 +236,14 @@ class ChessComController:
 
         link.send_to_board("SetupComplete")
 
-        current_pieces = board.fen().split(" ")[0]
-        if not uci_moves or current_pieces == _STARTING_FEN_PIECES:
-            display.send("Starting position\nNo setup needed\nOK = continue")
-            if not wait_for_ok(link, display):
-                return None
-            return board
-
         opp = extract_opponent(game, self.username)
-        setup_choice = guide_board_setup(
-            link, display, board.fen(), label=f"vs {opp}"
-        )
-        if setup_choice is None:
+        if not confirm_board_ready_or_setup(
+            link,
+            display,
+            board,
+            label=f"vs {opp}",
+            start_message="Starting position\nNo setup needed\nOK = continue",
+        ):
             return None
         return board
 
@@ -294,23 +287,11 @@ class ChessComController:
                 move_prompted = True
 
             m = link.read_from_board()
-            if m is None:
-                continue
-
-            if m == "shutdown":
-                shutdown_raspberry_pi(link, display)
+            action = self._handle_active_game_message(board, m, ignore_hint=True)
+            if action is not None:
+                if action:
+                    continue
                 return
-            if m in NEW_GAME_MSGS or m in OK_MSGS:
-                link.send_to_board("GameEnd")
-                return
-            if m.startswith("typing_"):
-                handle_typing_message(link, display, m, board)
-                continue
-            if m.startswith("capq_"):
-                handle_capq_message(link, board, m)
-                continue
-            if m in HINT_MSGS:
-                continue
 
             uci = m.strip()
             if not uci or len(uci) < 4:
@@ -388,29 +369,73 @@ class ChessComController:
             display.send(f"Move failed\n{err[:18]}\nOK = back")
             wait_for_ok(link, display)
 
-    def _wait_for_exit(self, board: chess.Board) -> None:
+    def _handle_active_game_message(
+        self,
+        board: chess.Board,
+        msg: Optional[str],
+        *,
+        ignore_hint: bool = False,
+    ) -> Optional[bool]:
+        """Handle common serial messages during an active Chess.com position.
+
+        Returns:
+          - True when the message was handled and the caller should keep looping
+          - False when the caller should exit the current position
+          - None when the caller should continue with move-specific processing
+        """
         link, display = self.link, self.display
+        if msg is None:
+            return True
+        if msg == "shutdown":
+            shutdown_raspberry_pi(link, display)
+            return False
+        if msg in NEW_GAME_MSGS or msg in OK_MSGS:
+            link.send_to_board("GameEnd")
+            return False
+        if msg.startswith("typing_"):
+            handle_typing_message(link, display, msg, board)
+            return True
+        if msg.startswith("capq_"):
+            handle_capq_message(link, board, msg)
+            return True
+        if ignore_hint and msg in HINT_MSGS:
+            return True
+        return None
+
+    def _wait_for_exit(self, board: chess.Board) -> None:
         while True:
-            m = link.read_from_board()
-            if m is None:
+            action = self._handle_active_game_message(board, self.link.read_from_board())
+            if action is None:
                 continue
-            if m == "shutdown":
-                shutdown_raspberry_pi(link, display)
+            if not action:
                 return
-            if m in NEW_GAME_MSGS or m in OK_MSGS:
-                link.send_to_board("GameEnd")
-                return
-            if m.startswith("typing_"):
-                handle_typing_message(link, display, m, board)
-                continue
-            if m.startswith("capq_"):
-                handle_capq_message(link, board, m)
-                continue
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
     def _cancel_to_menu(self) -> None:
         raise ReturnToMenu()
+
+    def _verify_current_account(self, *, include_error_detail: bool) -> bool:
+        """Validate the active Chess.com account and show a consistent error flow."""
+        link, display = self.link, self.display
+
+        display.send(f"Checking\n{self.username}...")
+        profile = run_in_bg(
+            self.api.get_account,
+            link,
+            display,
+            on_cancel=self._cancel_to_menu,
+        )
+        if profile and not profile.get("_error"):
+            return True
+
+        err = str((profile or {}).get("_error") or "Unknown error")
+        if include_error_detail:
+            display.send(f"User not found\n{err[:18]}\nOK = back")
+        else:
+            display.send("User not found\nOK = back")
+        wait_for_ok(link, display)
+        return False
 
     # ── Main entry point ──────────────────────────────────────────────────────
 
@@ -432,17 +457,7 @@ class ChessComController:
                 display.send(f"Chess.com\n{self.username}\nRead-only mode")
             time.sleep(1)
 
-            # Verify user exists
-            display.send(f"Checking\n{self.username}...")
-            profile = run_in_bg(
-                self.api.get_account,
-                link, display,
-                on_cancel=self._cancel_to_menu,
-            )
-            if not profile or profile.get("_error"):
-                err = (profile or {}).get("_error", "Unknown error")
-                display.send(f"User not found\n{err[:18]}\nOK = back")
-                wait_for_ok(link, display)
+            if not self._verify_current_account(include_error_detail=True):
                 raise ReturnToMenu()
 
             _save_username(self.username)
@@ -467,15 +482,9 @@ class ChessComController:
                     if new_name:
                         self.username = new_name.lower()
                         self.api = ConnectedBoardAPI(self.username)
-                        display.send(f"Checking\n{self.username}...")
-                        profile = run_in_bg(
-                            self.api.get_account,
-                            link, display,
-                            on_cancel=self._cancel_to_menu,
-                        )
-                        if not profile or profile.get("_error"):
-                            display.send("User not found\nOK = back")
-                            wait_for_ok(link, display)
+                        if not self._verify_current_account(
+                            include_error_detail=False
+                        ):
                             old = _load_username()
                             if old:
                                 self.username = old

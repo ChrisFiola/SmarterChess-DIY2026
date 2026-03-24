@@ -20,7 +20,7 @@ During active play:
 from __future__ import annotations
 
 from collections import deque
-from typing import Any, Deque, Dict, Optional, Set
+from typing import Any, Callable, Deque, Dict, Optional, Set
 import threading
 import time
 import chess
@@ -49,6 +49,7 @@ from core.game_flow import (
     GameConfig,
     ReturnToMenu,
     _paged_menu,
+    confirm_board_ready_or_setup,
     run_in_bg,
     wait_for_ok,
     wait_for_gameover_dismiss,
@@ -59,7 +60,6 @@ from core.game_flow import (
     send_check_signal,
     send_turn_notification,
     shutdown_raspberry_pi,
-    guide_board_setup,
 )
 
 # ── Time-control definitions ──────────────────────────────────────────────────
@@ -85,10 +85,6 @@ _CHALLENGE_TIME_OPTIONS = [
     ("15+10 Rapid",     900, 10),
     ("30+0 Classical", 1800,  0),
 ]
-
-# Starting FEN piece-placement string — used to detect untouched boards
-_STARTING_FEN_PIECES = chess.STARTING_FEN.split(" ")[0]
-
 
 class OnlineController:
     """Manages one complete Lichess online game session.
@@ -289,6 +285,34 @@ class OnlineController:
         # choice is None — user pressed Back to stay in game
         self.link.send_to_board("SetupComplete")
 
+    def _submit_request_and_wait_for_game(
+        self,
+        *,
+        banner: str,
+        request_fn: Callable[[], Dict[str, Any]],
+        exclude_game_ids: Set[str],
+        error_fallback: str,
+        require_ok: bool = False,
+    ) -> Optional[str]:
+        """Run a cancelable request, show a standard error, then wait for game start."""
+        self.display.send(banner)
+        self.link.send_to_board("ok_cancel_enable")
+
+        resp = run_in_bg(
+            request_fn,
+            self.link,
+            self.display,
+            on_cancel=self._cancel_to_menu,
+        )
+        ok = bool(resp and (resp.get("ok") if require_ok else not resp.get("_error")))
+        if not ok:
+            err = (resp or {}).get("_error") or error_fallback
+            self.display.send(f"Challenge error\n{str(err)[:18]}\nOK = back")
+            wait_for_ok(self.link, self.display)
+            return None
+
+        return self._wait_for_game_start(exclude_game_ids=exclude_game_ids)
+
     # ── Common Pico message handling ──────────────────────────────────────────
 
     def _handle_common(self, msg: str, board: chess.Board) -> bool:
@@ -463,18 +487,16 @@ class OnlineController:
 
             threading.Thread(target=_do_seek, daemon=True).start()
         else:
-            resp = run_in_bg(
-                lambda: self.client.create_open_challenge(days=selected["days"]),
-                link,
-                display,
-                on_cancel=self._cancel_to_menu,
+            game_id = self._submit_request_and_wait_for_game(
+                banner=f"Seeking {choice}\nOK = cancel",
+                request_fn=lambda: self.client.create_open_challenge(
+                    days=selected["days"]
+                ),
+                exclude_game_ids=existing_game_ids,
+                error_fallback="Creation failed",
             )
-            if not resp or resp.get("_error"):
-                err = (resp or {}).get("_error") or "Creation failed"
-                display.send(f"Challenge error\n{err[:18]}\nOK = back")
-                wait_for_ok(link, display)
-                return None
             seek_done.set()
+            return game_id
 
         game_id = self._wait_for_game_start(exclude_game_ids=existing_game_ids)
         seek_done.set()  # signal seek thread to stop if still running
@@ -506,21 +528,14 @@ class OnlineController:
         _, limit_sec, inc_sec = tc
         existing_game_ids = self._current_ongoing_game_ids()
 
-        display.send(f"Challenging\n{chosen_name}...\nOK = cancel")
-        link.send_to_board("ok_cancel_enable")
-
-        resp = run_in_bg(
-            lambda: self.client.challenge_user(chosen_name, limit_sec, inc_sec),
-            link, display,
-            on_cancel=self._cancel_to_menu,
+        return self._submit_request_and_wait_for_game(
+            banner=f"Challenging\n{chosen_name}...\nOK = cancel",
+            request_fn=lambda: self.client.challenge_user(
+                chosen_name, limit_sec, inc_sec
+            ),
+            exclude_game_ids=existing_game_ids,
+            error_fallback="Challenge failed",
         )
-        if not resp or resp.get("_error"):
-            err = (resp or {}).get("_error") or "Challenge failed"
-            display.send(f"Challenge error\n{err[:18]}\nOK = back")
-            wait_for_ok(link, display)
-            return None
-
-        return self._wait_for_game_start(exclude_game_ids=existing_game_ids)
 
     def _run_correspondence(self) -> Optional[str]:
         """Challenge a friend to a 3-day correspondence game."""
@@ -531,21 +546,14 @@ class OnlineController:
             return None
         existing_game_ids = self._current_ongoing_game_ids()
 
-        display.send(f"Challenging\n{chosen_name}...\nOK = cancel")
-        link.send_to_board("ok_cancel_enable")
-
-        resp = run_in_bg(
-            lambda: self.client.challenge_user_correspondence(chosen_name, days=3),
-            link, display,
-            on_cancel=self._cancel_to_menu,
+        return self._submit_request_and_wait_for_game(
+            banner=f"Challenging\n{chosen_name}...\nOK = cancel",
+            request_fn=lambda: self.client.challenge_user_correspondence(
+                chosen_name, days=3
+            ),
+            exclude_game_ids=existing_game_ids,
+            error_fallback="Creation failed",
         )
-        if not resp or resp.get("_error"):
-            err = (resp or {}).get("_error") or "Creation failed"
-            display.send(f"Challenge error\n{err[:18]}\nOK = back")
-            wait_for_ok(link, display)
-            return None
-
-        return self._wait_for_game_start(exclude_game_ids=existing_game_ids)
 
     def _pick_friend_name(self) -> Optional[str]:
         """Load followed users and return one selected username/id."""
@@ -656,21 +664,13 @@ class OnlineController:
         challenger_name = labels[idx]
         existing_game_ids = self._current_ongoing_game_ids()
 
-        display.send(f"Accepting\n{challenger_name}...\nOK = cancel")
-        link.send_to_board("ok_cancel_enable")
-
-        resp = run_in_bg(
-            lambda: self.client.accept_challenge(challenge_id),
-            link, display,
-            on_cancel=self._cancel_to_menu,
+        return self._submit_request_and_wait_for_game(
+            banner=f"Accepting\n{challenger_name}...\nOK = cancel",
+            request_fn=lambda: self.client.accept_challenge(challenge_id),
+            exclude_game_ids=existing_game_ids,
+            error_fallback="Accept failed",
+            require_ok=True,
         )
-        if not resp or not resp.get("ok"):
-            err = (resp or {}).get("_error") or "Accept failed"
-            display.send(f"Challenge error\n{err[:18]}\nOK = back")
-            wait_for_ok(link, display)
-            return None
-
-        return self._wait_for_game_start(exclude_game_ids=existing_game_ids)
 
     def _run_new_game(self) -> Optional[str]:
         """New Game submenu → returns game ID or None."""
@@ -788,19 +788,13 @@ class OnlineController:
         # puzzle_setup_begin / setup_place_* are handled by _main_loop.
         link.send_to_board("SetupComplete")
 
-        # If board is still at starting position, skip setup
-        current_pieces = board.fen().split(" ")[0]
-        if not moves or current_pieces == _STARTING_FEN_PIECES:
-            display.send("Board at start\nNo setup needed\nOK = continue")
-            if not wait_for_ok(link, display):
-                return None
-            return board
-
-        # Guide user through physical board setup
-        setup_choice = guide_board_setup(
-            link, display, board.fen(), label="Current position"
-        )
-        if setup_choice is None:
+        if not confirm_board_ready_or_setup(
+            link,
+            display,
+            board,
+            label="Current position",
+            start_message="Board at start\nNo setup needed\nOK = continue",
+        ):
             return None
         return board
 

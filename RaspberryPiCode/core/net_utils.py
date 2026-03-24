@@ -10,7 +10,7 @@ import subprocess
 from typing import Optional
 
 
-def _run(cmd: list[str], timeout_s: float = 1.5) -> str:
+def run_command(cmd: list[str], timeout_s: float = 1.5) -> str:
     try:
         out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, timeout=timeout_s)
         return out.decode("utf-8", errors="ignore").strip()
@@ -20,18 +20,18 @@ def _run(cmd: list[str], timeout_s: float = 1.5) -> str:
 
 def _iw_ssid(iface: str = "wlan0") -> str:
     # iwgetid -r prints current SSID when in STA mode
-    return _run(["iwgetid", iface, "-r"], timeout_s=1.0)
+    return run_command(["iwgetid", iface, "-r"], timeout_s=1.0)
 
 
 def _ipv4_addr(iface: str = "wlan0") -> Optional[str]:
-    out = _run(["ip", "-o", "-4", "addr", "show", "dev", iface], timeout_s=1.5)
+    out = run_command(["ip", "-o", "-4", "addr", "show", "dev", iface], timeout_s=1.5)
     # Example: "3: wlan0    inet 192.168.4.1/24 brd ..."
     m = re.search(r"inet\s+(\d+\.\d+\.\d+\.\d+)/", out)
     return m.group(1) if m else None
 
 
 def _service_active(name: str) -> bool:
-    out = _run(["systemctl", "is-active", name], timeout_s=1.5)
+    out = run_command(["systemctl", "is-active", name], timeout_s=1.5)
     return out.strip() == "active"
 
 
