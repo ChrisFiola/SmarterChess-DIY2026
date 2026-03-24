@@ -1113,7 +1113,7 @@ def _handle_puzzle_setup_message(msg):
         cp.enable_hint_irq()
         return True
     if msg.startswith("heyArduinoWaitForOkConfirm"):
-        _handle_wait_for_ok_confirm(msg)
+        _handle_puzzle_setup_ok_confirm(msg)
         return True
     if msg.startswith("heyArduinoWaitForOkOrSkipSetup"):
         _handle_wait_for_ok_or_skip_setup(msg)
@@ -1205,6 +1205,25 @@ def _handle_wait_for_ok_confirm(_msg=None):
             if st.persistent_trail_active:
                 _clear_persistent_trail()
                 board.markings()
+            link.send("btn_ok")
+            return
+        time.sleep_ms(Config.Timing.FAST_POLL_MS)
+
+
+def _handle_puzzle_setup_ok_confirm(_msg=None):
+    """Wait for OK during puzzle setup without redrawing the board."""
+    cp.reset_edges()
+    cp.only_ok(True, GREEN, border_on=True, force=True)
+    while True:
+        if cp.shutdown_held():
+            _shutdown_pico()
+        b = cp.detect_press_raw()
+        if b == (Config.Buttons.OK_INDEX + 1):
+            while cp.BTN_OK.value() == 0:
+                time.sleep_ms(Config.Timing.POLL_MS)
+            cp.disarm_confirm_ok()
+            cp.set_ok_led(False)
+            cp.reset_edges()
             link.send("btn_ok")
             return
         time.sleep_ms(Config.Timing.FAST_POLL_MS)
