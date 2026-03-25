@@ -27,7 +27,8 @@ from core.protocol import (
     format_capture_reply,
     format_hint_move,
     parse_uci_move,
-    piece_name,
+    piece_name_white,
+    piece_name_black,
     send_lcd_ack_for_payload,
 )
 from screen.display import Display
@@ -365,7 +366,11 @@ def handle_illegal_move(
         if frm:
             p = board.piece_at(chess.parse_square(frm))
             if p:
-                piece_txt = piece_name(p.symbol())
+                piece_txt = (
+                    piece_name_white(p.symbol())
+                    if board.turn == chess.WHITE
+                    else piece_name_black(p.symbol())
+                )
     except Exception:
         pass
 
@@ -568,7 +573,10 @@ def _wait_for_lichess(max_attempts: int = 5) -> bool:
             if r.status_code < 500:
                 return True
         except Exception as e:
-            print(f"[QR ANALYSIS] connectivity check {i + 1}/{max_attempts}: {e}", flush=True)
+            print(
+                f"[QR ANALYSIS] connectivity check {i + 1}/{max_attempts}: {e}",
+                flush=True,
+            )
         if i < max_attempts - 1:
             time.sleep(2)
     return False
@@ -637,9 +645,7 @@ def offer_analysis_qr(link: BoardLink, display: Display, board: "chess.Board") -
     wait_for_ok(link, display, send_prompt=False)
 
 
-def post_game_menu(
-    link: BoardLink, display: Display, board: "chess.Board"
-) -> None:
+def post_game_menu(link: BoardLink, display: Display, board: "chess.Board") -> None:
     """Show post-game flow: OK to view analysis QR, then return to menu.
 
     Always raises ReturnToMenu. Call this after notify_game_over().
@@ -785,7 +791,7 @@ def guide_board_setup(
         for side, sq, sym in steps:
             display.send(
                 f"PLACE {'WHITE' if side == 'w' else 'BLACK'}\n"
-                f"{piece_name(sym)} {sq}\nOK = next"
+                f"{piece_name_white(sym) if side == 'w' else piece_name_black(sym)} {sq}\nOK = next"
             )
             link.send_to_board(f"setup_place_{sq}_{side}")
             if not wait_for_ok(link, display):
@@ -846,6 +852,7 @@ def _configure_brightness(link: BoardLink, display: Display, cfg: GameConfig) ->
     Returns to the settings menu on cancel. After a confirmed brightness change,
     the Pico reboots and the caller should return to the main menu flow.
     """
+
     def _parse_brightness_msg(msg: str) -> Optional[int]:
         if not msg.startswith("brightness_"):
             return None
@@ -889,9 +896,7 @@ def _configure_brightness(link: BoardLink, display: Display, cfg: GameConfig) ->
             _sync_brightness_control(wake=now >= wake_after)
             last_sync = now
 
-    display.send(
-        f"LED Brightness\n1=dim  8=bright\nCurrent: {current}\nOK = cancel"
-    )
+    display.send(f"LED Brightness\n1=dim  8=bright\nCurrent: {current}\nOK = cancel")
 
     while True:
         msg = link.read_from_board()
@@ -1643,7 +1648,8 @@ def _run_update(link: BoardLink, display: Display) -> None:
 
     def _pico_signature() -> tuple[tuple[str, Optional[str]], ...]:
         return tuple(
-            (path.name, _file_sha256(path) if path.exists() else None) for path in pico_files
+            (path.name, _file_sha256(path) if path.exists() else None)
+            for path in pico_files
         )
 
     try:
@@ -1851,9 +1857,9 @@ def _run_puzzle_game(link: BoardLink, display: Display) -> None:
                 tag = next((k for k, v in PHASE_THEMES if v == label), None)
                 if not tag:
                     continue
-                PuzzleController(client, mode="theme", theme=tag, theme_label=label).run(
-                    link, display
-                )
+                PuzzleController(
+                    client, mode="theme", theme=tag, theme_label=label
+                ).run(link, display)
                 return
 
             if themes_top.startswith("Openings"):

@@ -102,16 +102,28 @@ def format_capture_reply(is_capture: bool) -> str:
     return f"capr_{1 if is_capture else 0}"
 
 
-def piece_name(sym: str) -> str:
+def piece_name_white(sym: str) -> str:
     """Return the display name for a piece symbol (e.g. 'P' -> 'PAWN')."""
     return {
-        "P": "PAWN",
-        "N": "KNIGHT",
-        "B": "BISHOP",
-        "R": "ROOK",
-        "Q": "QUEEN",
-        "K": "KING",
-    }.get((sym or "").upper(), "PIECE")
+        "P": "♟PAWN",
+        "N": "♞KNIGHT",
+        "B": "♝BISHOP",
+        "R": "♜ROOK",
+        "Q": "♛QUEEN",
+        "K": "♚KING",
+    }.get((sym or "").upper(), "EMPTY")
+
+
+def piece_name_black(sym: str) -> str:
+    """Return the display name for a piece symbol (e.g. 'P' -> 'PAWN')."""
+    return {
+        "P": "♙PAWN",
+        "N": "♘KNIGHT",
+        "B": "♗BISHOP",
+        "R": "♖ROOK",
+        "Q": "♕QUEEN",
+        "K": "♔KING",
+    }.get((sym or "").upper(), "EMPTY")
 
 
 def send_lcd_ack_for_payload(
