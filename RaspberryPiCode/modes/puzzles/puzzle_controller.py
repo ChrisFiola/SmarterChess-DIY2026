@@ -31,8 +31,7 @@ from core.protocol import (
     parse_uci_move,
     format_engine_move,
     format_hint_move,
-    piece_name_white,
-    piece_name_black,
+    piece_name_for_side,
     NEW_GAME_MSGS,
     OK_MSGS,
     HINT_MSGS,
@@ -897,7 +896,7 @@ class PuzzleController:
             else:
                 for side, sq, sym in steps:
                     display.send(
-                        f"PLACE {('WHITE' if side=='w' else 'BLACK')}\n{piece_name_white(sym) if side=='w' else piece_name_black(sym)} {sq}\nOK = next"
+                        f"PLACE {('WHITE' if side=='w' else 'BLACK')}\n{piece_name_for_side(sym, side)} {sq}\nOK = next"
                     )
                     link.send_to_board(f"setup_place_{sq}_{side}")
                     if not wait_for_ok(link, display):

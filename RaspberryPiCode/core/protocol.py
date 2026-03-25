@@ -102,28 +102,42 @@ def format_capture_reply(is_capture: bool) -> str:
     return f"capr_{1 if is_capture else 0}"
 
 
+_WHITE_PIECE_NAMES = {
+    "P": "♙PAWN",
+    "N": "♘KNIGHT",
+    "B": "♗BISHOP",
+    "R": "♖ROOK",
+    "Q": "♕QUEEN",
+    "K": "♔KING",
+}
+
+_BLACK_PIECE_NAMES = {
+    "P": "♟PAWN",
+    "N": "♞KNIGHT",
+    "B": "♝BISHOP",
+    "R": "♜ROOK",
+    "Q": "♛QUEEN",
+    "K": "♚KING",
+}
+
+
+def _piece_symbol_key(sym: str) -> str:
+    return (sym or "").strip().upper()
+
+
 def piece_name_white(sym: str) -> str:
-    """Return the display name for a piece symbol (e.g. 'P' -> 'PAWN')."""
-    return {
-        "P": "♟PAWN",
-        "N": "♞KNIGHT",
-        "B": "♝BISHOP",
-        "R": "♜ROOK",
-        "Q": "♛QUEEN",
-        "K": "♚KING",
-    }.get((sym or ""), "EMPTY")
+    """Return a white piece icon + name for a symbol like 'P' or 'p'."""
+    return _WHITE_PIECE_NAMES.get(_piece_symbol_key(sym), "EMPTY")
 
 
 def piece_name_black(sym: str) -> str:
-    """Return the display name for a piece symbol (e.g. 'P' -> 'PAWN')."""
-    return {
-        "P": "♙PAWN",
-        "N": "♘KNIGHT",
-        "B": "♗BISHOP",
-        "R": "♖ROOK",
-        "Q": "♕QUEEN",
-        "K": "♔KING",
-    }.get((sym or ""), "EMPTY")
+    """Return a black piece icon + name for a symbol like 'P' or 'p'."""
+    return _BLACK_PIECE_NAMES.get(_piece_symbol_key(sym), "EMPTY")
+
+
+def piece_name_for_side(sym: str, side: str) -> str:
+    """Return the icon + name for a piece symbol using side 'w' or 'b'."""
+    return piece_name_white(sym) if (side or "").lower().startswith("w") else piece_name_black(sym)
 
 
 def send_lcd_ack_for_payload(

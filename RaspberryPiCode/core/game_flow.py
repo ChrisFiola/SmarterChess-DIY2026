@@ -27,8 +27,7 @@ from core.protocol import (
     format_capture_reply,
     format_hint_move,
     parse_uci_move,
-    piece_name_white,
-    piece_name_black,
+    piece_name_for_side,
     send_lcd_ack_for_payload,
 )
 from screen.display import Display
@@ -366,10 +365,8 @@ def handle_illegal_move(
         if frm:
             p = board.piece_at(chess.parse_square(frm))
             if p:
-                piece_txt = (
-                    piece_name_white(p.symbol())
-                    if board.turn == chess.WHITE
-                    else piece_name_black(p.symbol())
+                piece_txt = piece_name_for_side(
+                    p.symbol(), "w" if p.color == chess.WHITE else "b"
                 )
     except Exception:
         pass
@@ -767,10 +764,7 @@ def guide_board_setup(
     Returns "ok" if setup completed, "skip" if skipped, or None if user backed out.
     The caller is responsible for confirming the board is EMPTY before calling.
     """
-    from core.protocol import (
-        piece_name_white,
-        piece_name_black,
-    )  # local import to avoid circular
+    from core.protocol import piece_name_for_side  # local import to avoid circular
 
     steps = compute_board_setup_steps(fen)
     try:
@@ -794,7 +788,7 @@ def guide_board_setup(
         for side, sq, sym in steps:
             display.send(
                 f"PLACE {'WHITE' if side == 'w' else 'BLACK'}\n"
-                f"{piece_name_white(sym) if side == 'w' else piece_name_black(sym)} {sq}\nOK = next"
+                f"{piece_name_for_side(sym, side)} {sq}\nOK = next"
             )
             link.send_to_board(f"setup_place_{sq}_{side}")
             if not wait_for_ok(link, display):
@@ -1080,18 +1074,11 @@ def prompt_next_turn(
 
 
 def _format_piece_name(piece: "chess.Piece") -> str:
-    """Return a short label like 'White Pawn' suitable for a small LCD."""
+    """Return an LCD-friendly icon + name for the actual piece color."""
     try:
-        color = "White" if piece.color == chess.WHITE else "Black"
-        p = {
-            chess.PAWN: "Pawn",
-            chess.KNIGHT: "Knight",
-            chess.BISHOP: "Bishop",
-            chess.ROOK: "Rook",
-            chess.QUEEN: "Queen",
-            chess.KING: "King",
-        }.get(piece.piece_type, "Piece")
-        return f"{color} {p}"
+        return piece_name_for_side(
+            piece.symbol(), "w" if piece.color == chess.WHITE else "b"
+        )
     except Exception:
         return "Piece"
 
