@@ -400,7 +400,7 @@ def handle_illegal_move(
     try:
         display.prompt_move(side)
     except Exception:
-        display.send(f"{side_prefix}\nPlay move")
+        display.show_header_panel(f"You are {side}", "Play move")
     return True
 
 
@@ -463,7 +463,13 @@ def _prompt_promotion_choice(link: BoardLink, display: Display) -> str:
     Ask Pico to collect promotion choice:
       1=Queen, 2=Rook, 3=Bishop, 4=Knight  -> 'q','r','b','n'
     """
-    display.send("Promotion!\n1=Queen\n2=Rook\n3=Bishop\n4=Knight")
+    display.show_header_panel(
+        "Promotion!",
+        "1=Queen",
+        "2=Rook",
+        "3=Bishop",
+        "4=Knight",
+    )
     link.send_to_board("promotion_choice_needed")
     while True:
         msg = link.read_from_board()
@@ -481,7 +487,13 @@ def _prompt_promotion_choice(link: BoardLink, display: Display) -> str:
             return "b"
         if m in ("btn_n", "btn_knight"):
             return "n"
-        display.send("Promotion!\n1=Queen\n2=Rook\n3=Bishop\n4=Knight")
+        display.show_header_panel(
+            "Promotion!",
+            "1=Queen",
+            "2=Rook",
+            "3=Bishop",
+            "4=Knight",
+        )
 
 
 # -------------------- UI helpers & engine handoff --------------------
@@ -503,10 +515,14 @@ def send_move_hint(
 ) -> None:
     if state.board.is_game_over():
         link.send_to_board("hint_gameover")
-        display.send("Game over\nNo hints available\nOK = menu")
+        display.show_header_panel(
+            "Game Over!",
+            "No hints available",
+            footer="OK=Menu",
+        )
         return
 
-    display.send("Engine thinking...")
+    display.show_header_panel("Hint", "Engine thinking...")
     best = ctx.hint(state.board, cfg.move_time_ms)
     if not best:
         link.send_to_board("hint_none")
@@ -620,7 +636,7 @@ def notify_game_over(link: BoardLink, display: Display, brd: chess.Board) -> str
     result = brd.result(claim_draw=True)
     winner = _result_to_winner_text(result)
     link.send_to_board(f"GameOver:{result}")
-    display.send(f"Game over\n{winner}")
+    display.show_header_panel("Game Over!", winner)
     return result
 
 
@@ -629,12 +645,17 @@ def offer_analysis_qr(link: BoardLink, display: Display, board: "chess.Board") -
     pgn = _export_game_pgn(board)
 
     if not pgn:
-        display.send("No moves yet\nNo analysis link\nOK = back")
+        display.show_header_panel(
+            "Analysis",
+            "No moves yet",
+            "No analysis link",
+            footer="OK=Back",
+        )
         link.send_to_board("MenuPaged")
         wait_for_ok(link, display, send_prompt=False)
         return
 
-    display.send("Connecting to\nLichess...")
+    display.show_header_panel("Analysis", "Connecting to", "Lichess...")
     analysis_url, url_source = run_in_bg(
         lambda: _build_post_game_analysis_url(pgn),
         link,
@@ -642,7 +663,12 @@ def offer_analysis_qr(link: BoardLink, display: Display, board: "chess.Board") -
     )
 
     if not analysis_url:
-        display.send("No analysis link\navailable\nOK = back")
+        display.show_header_panel(
+            "Analysis",
+            "No analysis link",
+            "available",
+            footer="OK=Back",
+        )
         link.send_to_board("MenuPaged")
         wait_for_ok(link, display, send_prompt=False)
         return
@@ -846,7 +872,13 @@ def confirm_board_ready_or_setup(
     """Handle the common "starting position vs guided setup" flow."""
     current_pieces = board.fen().split(" ")[0]
     if not board.move_stack or current_pieces == STARTING_FEN_PIECES:
-        display.send(start_message)
+        lines = [ln for ln in (start_message or "").split("\n") if ln]
+        header = lines[0] if lines else label
+        body = lines[1:]
+        footer = ""
+        if body and Display._is_footer_hint(body[-1]):
+            footer = body.pop()
+        display.show_header_panel(header, *body, footer=footer)
         return wait_for_ok(link, display)
 
     return guide_board_setup(link, display, board.fen(), label=label) is not None
@@ -892,7 +924,7 @@ def _configure_brightness(link: BoardLink, display: Display, cfg: GameConfig) ->
             link.send_to_board("ChooseMode")
         link.send_to_board("BrightnessControl")
 
-    display.send("Loading...")
+    display.show_header_panel("Settings", "Loading...")
     link.clear_input()
     _sync_brightness_control(wake=False)
 
@@ -915,14 +947,19 @@ def _configure_brightness(link: BoardLink, display: Display, cfg: GameConfig) ->
 
         now = time.monotonic()
         if now >= deadline:
-            display.send("Brightness menu\nnot responding")
+            display.show_header_panel("Brightness", "Menu not responding")
             time.sleep(1.5)
             return False
         if now - last_sync >= 2.5:
             _sync_brightness_control(wake=now >= wake_after)
             last_sync = now
 
-    display.send(f"LED Brightness\n1=dim  8=bright\nCurrent: {current}\nOK = cancel")
+    display.show_header_panel(
+        "LED Brightness",
+        "1=dim  8=bright",
+        f"Current: {current}",
+        footer="OK=Cancel",
+    )
 
     while True:
         msg = link.read_from_board()
@@ -932,15 +969,22 @@ def _configure_brightness(link: BoardLink, display: Display, cfg: GameConfig) ->
         level = _parse_brightness_msg(m)
         if level is not None:
             cfg.brightness = level
-            display.send(
-                f"LED Brightness\n1=dim  8=bright\nCurrent: {cfg.brightness}\nOK = cancel"
+            display.show_header_panel(
+                "LED Brightness",
+                "1=dim  8=bright",
+                f"Current: {cfg.brightness}",
+                footer="OK=Cancel",
             )
             continue
         if m in OK_MSGS or m.startswith("n"):
             return False
         if m.isdigit():
             val = max(1, min(int(m), 8))
-            display.send(f"New brightness: {val}\nReloading...")
+            display.show_header_panel(
+                "LED Brightness",
+                f"New brightness: {val}",
+                "Reloading...",
+            )
             link.send_to_board(f"SetBrightness_{val}")
             deadline = time.monotonic() + 4.0
             while time.monotonic() < deadline:
@@ -1000,7 +1044,7 @@ def _configure_vs_computer(link: BoardLink, display: Display, cfg: GameConfig) -
     Move time is fixed at 2s — difficulty is controlled by the level's depth
     cap and blunder chance instead.
     """
-    display.send("vs Computer\nHints enabled")
+    display.show_header_panel("vs Computer", "Hints enabled")
     time.sleep(0.5)
 
     # Difficulty — increment/decrement selector
@@ -1026,7 +1070,7 @@ def _configure_vs_computer(link: BoardLink, display: Display, cfg: GameConfig) -
                 display.show_header_panel(
                     "Choose Strength",
                     f"~{elo} Elo",
-                    footer="1=up 2=down OK=confirm",
+                    footer="1=up 2=down OK=back",
                 )
             except Exception:
                 pass
@@ -1034,7 +1078,11 @@ def _configure_vs_computer(link: BoardLink, display: Display, cfg: GameConfig) -
         if msg.isdigit():
             cfg.skill_level = max(1, min(int(msg), 8))
             elo = _ELO_LABELS[cfg.skill_level]
-            display.send(f"Level {cfg.skill_level}\n~{elo} Elo")
+            display.show_header_panel(
+                "Choose Strength",
+                f"Level {cfg.skill_level}",
+                f"~{elo} Elo",
+            )
             time.sleep(0.8)
             break
 
@@ -1070,7 +1118,7 @@ def _configure_vs_computer(link: BoardLink, display: Display, cfg: GameConfig) -
 
 
 def _configure_local_game(link: BoardLink, display: Display, cfg: GameConfig) -> None:
-    display.send("Local 2-player\nHints enabled")
+    display.show_header_panel("Local 2-player", "Hints enabled")
     time.sleep(0.5)
     cfg.skill_level = 8  # max hint skill for local
     cfg.move_time_ms = 1  # fastest think time for local
@@ -1806,7 +1854,11 @@ def _file_sha256(path: Path) -> str:
 
 
 def _restart_smartchess_service(display: Display, message: str) -> None:
-    display.send(message)
+    lines = [ln for ln in (message or "").split("\n") if ln]
+    if lines:
+        display.show_header_panel(lines[0], *lines[1:])
+    else:
+        display.show_header_panel("System", "Restarting...")
     time.sleep(1)
     subprocess.Popen(["sudo", "systemctl", "restart", "smartChess.service"])
 
@@ -1832,11 +1884,11 @@ def _run_update(link: BoardLink, display: Display) -> None:
         before_head = _git_head(repo)
         before_pico_hash = _pico_signature()
     except Exception as exc:
-        display.send(f"Update error\n{exc.__class__.__name__}")
+        display.show_header_panel("Update error", exc.__class__.__name__)
         time.sleep(3)
         return
 
-    display.send("Checking for\nupdates...")
+    display.show_header_panel("Update", "Checking for", "updates...")
     try:
         result = subprocess.run(
             ["git", "-C", str(repo), "pull"],
@@ -1845,7 +1897,7 @@ def _run_update(link: BoardLink, display: Display) -> None:
             timeout=60,
         )
     except Exception as exc:
-        display.send(f"Git error:\n{exc}")
+        display.show_header_panel("Git error", str(exc)[:40])
         time.sleep(3)
         return
 
@@ -1854,7 +1906,7 @@ def _run_update(link: BoardLink, display: Display) -> None:
             f"[UPDATE] git pull failed:\nstdout={result.stdout}\nstderr={result.stderr}",
             flush=True,
         )
-        display.send("Git pull failed\nSee logs")
+        display.show_header_panel("Update", "Git pull failed", "See logs")
         time.sleep(3)
         return
 
@@ -1862,7 +1914,7 @@ def _run_update(link: BoardLink, display: Display) -> None:
         after_head = _git_head(repo)
         after_pico_hash = _pico_signature()
     except Exception as exc:
-        display.send(f"Update error\n{exc.__class__.__name__}")
+        display.show_header_panel("Update error", exc.__class__.__name__)
         time.sleep(3)
         return
 
@@ -1878,7 +1930,7 @@ def _run_update(link: BoardLink, display: Display) -> None:
         repo_changed = bool(result.stdout.strip() or result.stderr.strip())
 
     if not repo_changed:
-        display.send("Already up\nto date!")
+        display.show_header_panel("Update", "Already up to date!")
         time.sleep(2)
         return
 
@@ -1890,7 +1942,7 @@ def _run_update(link: BoardLink, display: Display) -> None:
         link.send_to_board("ChooseMode")
         link.send_to_board("UpdateMode")
 
-    display.send("Uploading to\nPico...")
+    display.show_header_panel("Update", "Uploading to", "Pico...")
     link.clear_input()
     _sync_update_mode()
 
@@ -1904,7 +1956,7 @@ def _run_update(link: BoardLink, display: Display) -> None:
             _sync_update_mode()
             last_sync = time.monotonic()
         if time.monotonic() > deadline:
-            display.send("Pico timeout\nAbort.")
+            display.show_header_panel("Update", "Pico timeout", "Abort")
             link.send_to_board("UpdateAbort")
             time.sleep(2)
             return
@@ -1932,13 +1984,13 @@ def _run_update(link: BoardLink, display: Display) -> None:
             link.send_to_board(f"UpdateChunk_{encoded[i:i + chunk_size]}")
             sent_chunks += 1
             pct = (sent_chunks * 100) // total_chunks
-            display.send(f"Uploading...\n{pct}%")
+            display.show_header_panel("Update", "Uploading...", f"{pct}%")
             time.sleep(chunk_delay)
         link.send_to_board("UpdateFileDone")
         time.sleep(chunk_delay)
 
     link.send_to_board("UpdateDone")
-    display.send("Waiting for\nPico...")
+    display.show_header_panel("Update", "Waiting for", "Pico...")
 
     deadline = time.time() + 30
     while True:
@@ -1949,11 +2001,11 @@ def _run_update(link: BoardLink, display: Display) -> None:
             reason = "failed"
             if "_" in msg:
                 reason = msg.split("_", 1)[1] or reason
-            display.send(f"Pico update\n{reason[:16]}")
+            display.show_header_panel("Pico update", reason[:16])
             time.sleep(3)
             return
         if time.time() > deadline:
-            display.send("Pico timeout!")
+            display.show_header_panel("Update", "Pico timeout!")
             time.sleep(2)
             break
 
@@ -1968,13 +2020,22 @@ def _run_study_mode(link: BoardLink, display: Display) -> None:
     try:
         client = LichessClient()
     except RuntimeError as e:
-        display.send(f"Lichess error\n{str(e)[:20]}\nOK = back")
+        display.show_header_panel(
+            "Lichess error",
+            str(e)[:20],
+            footer="OK=Back",
+        )
         wait_for_ok(link, display)
         raise ReturnToMenu()
 
     studies = load_studies()
     if not studies:
-        display.send("No studies found\nAdd IDs to\nstudies.txt\nOK = back")
+        display.show_header_panel(
+            "Studies",
+            "No studies found",
+            "Add IDs to studies.txt",
+            footer="OK=Back",
+        )
         wait_for_ok(link, display)
         raise ReturnToMenu()
 
@@ -1996,7 +2057,7 @@ def _run_study_mode(link: BoardLink, display: Display) -> None:
 
 def _run_puzzle_game(link: BoardLink, display: Display) -> None:
     """Puzzle mode: show a submenu then launch the selected puzzle type."""
-    display.send("Loading...")
+    display.show_header_panel("Puzzles", "Loading...")
     from modes.online.lichess_client import LichessClient
     from modes.puzzles.puzzle_controller import PuzzleController
 
@@ -2062,11 +2123,11 @@ def run_selected_mode(
     cfg: GameConfig,
 ) -> None:
     """Dispatch to the correct game loop based on state.mode."""
-    display.send("Loading...")
+    display.show_header_panel("Loading")
     if state.mode in ("stockfish", "pc", "btn_mode_pc", "vs_computer", "vs"):
         _configure_vs_computer(link, display, cfg)
         link.send_to_board("SetupComplete")
-        display.send("Engine loading...")
+        display.show_header_panel("vs Computer", "Engine loading...")
         ctx.ensure()
 
         from modes.vs_computer.game_controller import GameController, GameDeps
@@ -2107,7 +2168,11 @@ def run_selected_mode(
             link.send_to_board("error_unknown_mode")
         except Exception:
             pass
-        display.send("Unknown mode\n" + str(state.mode)[:18] + "\nOK=menu")
+        display.show_header_panel(
+            "Unknown mode",
+            str(state.mode)[:18],
+            footer="OK=Menu",
+        )
         while True:
             msg = link.read_from_board()
             if msg is None:
@@ -2121,7 +2186,7 @@ def run_selected_mode(
 
 def shutdown_raspberry_pi(link: BoardLink, display: Display) -> None:
     if display:
-        display.send("Shutting Down...", force=True)
+        display.show_header_panel("System", "Shutting down...", force=True)
     time.sleep(0.5)
 
     commands = [

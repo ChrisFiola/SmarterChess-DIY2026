@@ -142,18 +142,22 @@ class StudyController:
 
     def run(self, link: BoardLink, display: Display) -> None:
         """Fetch study, show chapter menu, and play selected chapters."""
-        display.send(f"Loading\n{self.study_name[:20]}")
+        display.show_header_panel("Studies", "Loading", self.study_name[:20])
         pgn_text = run_in_bg(
             lambda: self.client.get_study_pgn(self.study_id), link, display
         )
         if not pgn_text:
-            display.send("Study error\nCould not load\nOK = back")
+            display.show_header_panel(
+                "Study error",
+                "Could not load",
+                footer="OK=Back",
+            )
             wait_for_ok(link, display)
             return
 
         chapters = _parse_chapters(pgn_text)
         if not chapters:
-            display.send("No chapters\nfound\nOK = back")
+            display.show_header_panel("Studies", "No chapters found", footer="OK=Back")
             wait_for_ok(link, display)
             return
 
@@ -437,7 +441,7 @@ class StudyController:
                 continue
 
             # Correct move
-            display.send(f"Good!\n{uci[:2]}→{uci[2:4]}")
+            display.show_header_panel("Good move!", f"{uci[:2]} → {uci[2:4]}")
             time.sleep(1.0)
             return matched
 
@@ -456,7 +460,7 @@ class StudyController:
 
         # Skip setup if the chapter starts from the standard starting position
         if board.board_fen() == chess.Board().board_fen():
-            display.send(f"{label}\nStandard start\nBoard ready")
+            display.show_header_panel(label, "Standard start", "Board ready")
             link.send_to_board("hint_disable")
             link.send_to_board("puzzle_setup_begin")
             time.sleep(0.2)
@@ -519,5 +523,5 @@ class StudyController:
                     return
 
         # Chapter complete
-        display.send(f"{label}\nChapter done!\nOK = chapters")
+        display.show_header_panel(label, "Chapter done!", footer="OK=Chapters")
         wait_for_ok(link, display)

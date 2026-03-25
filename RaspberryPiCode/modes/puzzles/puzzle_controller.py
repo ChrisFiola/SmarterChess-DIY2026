@@ -48,6 +48,7 @@ from core.game_flow import (
     handle_capq_message,
     check_move_captures,
     resolve_uci_promotion,
+    show_hint_move,
     show_received_move,
     send_turn_notification,
     send_check_signal,
@@ -843,7 +844,7 @@ class PuzzleController:
 
     def run(self, link: BoardLink, display: Display) -> None:
         # 1) Fetch puzzle — runs in background so serial stays live during HTTP wait.
-        display.send("Puzzle\nLoading…")
+        display.show_header_panel("Puzzles", "Loading...")
         if self.mode == "mix":
             result = run_in_bg(self._fetch_mix, link, display)
         elif self.mode == "theme":
@@ -855,7 +856,11 @@ class PuzzleController:
         st, err = result if result is not None else (None, "cancelled")
 
         if err or st is None:
-            display.send("Puzzle error\n" + (err or "unknown"))
+            display.show_header_panel(
+                "Puzzle error",
+                (err or "unknown")[:40],
+                footer="OK=Back",
+            )
             link.send_to_board("error_puzzle_fetch")
             wait_for_ok(link, display)
             return
@@ -896,7 +901,7 @@ class PuzzleController:
             if choice is None:
                 return
             if choice == "skip":
-                display.send(f"{label}\nPuzzle begins")
+                display.show_setup_panel(label, "Puzzle begins")
                 time.sleep(0.3)
             else:
                 for side, sq, sym in steps:
@@ -955,7 +960,11 @@ class PuzzleController:
                     )
                 except Exception:
                     pass
-                display.send(f"Puzzle solved!\nOK = menu")
+                display.show_header_panel(
+                    "Puzzle solved!",
+                    "Returning to menu",
+                    footer="OK=Continue",
+                )
                 link.send_to_board("GameOver:1-0")
                 wait_for_gameover_dismiss(link, display)
                 return
@@ -983,7 +992,7 @@ class PuzzleController:
                 link.send_to_board(
                     format_hint_move(expected, check_move_captures(board, expected))
                 )
-                display.send(f"Hint:\n{expected[:2]}→{expected[2:4]}")
+                show_hint_move(display, board, expected, force=True)
                 continue
 
             if msg.startswith("typing_"):
@@ -1051,7 +1060,7 @@ class PuzzleController:
             mv = chess.Move.from_uci(expected)
             if mv not in board.legal_moves:
                 link.send_to_board("error_puzzle_internal")
-                display.send("Puzzle error\nTry again")
+                display.show_header_panel("Puzzle error", "Try again")
                 time.sleep(0.5)
                 _rearm()
                 continue
@@ -1059,7 +1068,10 @@ class PuzzleController:
             board.push(mv)
             send_check_signal(link, board)
             st.idx += 1
-            display.send(f"Correct move!\n{expected[:2]}→{expected[2:4]}")
+            display.show_header_panel(
+                "Correct move!",
+                f"{expected[:2]} → {expected[2:4]}",
+            )
             time.sleep(1.5)
 
             # Auto-play opponent reply
@@ -1068,7 +1080,7 @@ class PuzzleController:
                 try:
                     rmv = chess.Move.from_uci(reply)
                 except Exception:
-                    display.send("Puzzle error")
+                    display.show_header_panel("Puzzle error", "Move parse failed")
                     link.send_to_board("error_puzzle_parse")
                     return
 

@@ -109,7 +109,10 @@ class GameController:
 
         try:
             if not self.human_is_white:
-                self.deps.display.send("Computer starts first.")
+                self.deps.display.show_header_panel(
+                    "vs Computer",
+                    "Computer starts first",
+                )
                 time.sleep(0.25)
                 self._play_one_engine_move()
             else:

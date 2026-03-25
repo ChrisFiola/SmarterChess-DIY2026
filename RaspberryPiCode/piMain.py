@@ -32,7 +32,7 @@ from screen.display import Display
 def main():
     display = Display()
     display.restart_server()
-    display.banner("SMARTCHESS")
+    display.show_header_panel("SMARTCHESS")
     display.wait_ready()
 
     ensure_wifi(display)
@@ -48,7 +48,7 @@ def main():
                 forced = (os.environ.get("SMARTCHESS_FORCE_MODE") or "").strip().lower()
                 if forced:
                     state.mode = forced
-                    display.send(f"Mode forced:\n{forced}")
+                    display.show_header_panel("SMARTCHESS", "Mode forced:", forced)
                     time.sleep(0.5)
                 else:
                     state.mode = wait_for_mode_selection(link, display, state, cfg)
@@ -62,7 +62,7 @@ def main():
                 except Exception:
                     pass
                 state.board = chess.Board()
-                display.send("SMARTCHESS")
+                display.show_header_panel("SMARTCHESS")
                 continue
 
             except KeyboardInterrupt:
@@ -76,7 +76,7 @@ def main():
                     pass
                 try:
                     short = (str(e) or e.__class__.__name__)[:18]
-                    display.send(f"Error\n{short}\nOK = menu")
+                    display.show_header_panel("Error", short, footer="OK=Menu")
                     t0 = time.monotonic()
                     while time.monotonic() - t0 < 2.0:
                         msg = link.read_from_board()
@@ -86,7 +86,7 @@ def main():
                     time.sleep(1.0)
 
                 state.board = chess.Board()
-                display.send("SMARTCHESS")
+                display.show_header_panel("SMARTCHESS")
 
     finally:
         try:

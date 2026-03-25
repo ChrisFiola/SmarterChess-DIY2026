@@ -452,12 +452,17 @@ def ensure_wifi(display=None, timeout_s: float = 120.0) -> bool:
 
     print("[WIFI AP] No WiFi connection — starting setup AP", flush=True)
     if display:
-        display.send(f"No WiFi found\nStarting setup AP\n{_AP_SSID}")
+        display.show_header_panel("WiFi setup", "No WiFi found", "Starting setup AP", _AP_SSID)
 
     if not _start_ap():
         print("[WIFI AP] Could not start AP", flush=True)
         if display:
-            display.send("AP setup failed\nCheck hostapd\n& dnsmasq")
+            display.show_header_panel(
+                "WiFi setup",
+                "AP setup failed",
+                "Check hostapd",
+                "& dnsmasq",
+            )
         time.sleep(3)
         return False
 
@@ -469,7 +474,12 @@ def ensure_wifi(display=None, timeout_s: float = 120.0) -> bool:
         if hasattr(display, "show_qr"):
             display.show_qr(url, f"Join WiFi: {_AP_SSID}", "then scan this code")
         else:
-            display.send(f"Join WiFi:\n{_AP_SSID}\nThen open:\n{url}")
+            display.show_header_panel(
+                "WiFi setup",
+                "Join WiFi:",
+                _AP_SSID,
+                f"Open: {url}",
+            )
 
     t0 = time.monotonic()
     while time.monotonic() - t0 < timeout_s:
@@ -478,7 +488,7 @@ def ensure_wifi(display=None, timeout_s: float = 120.0) -> bool:
             ssid = run_command(["iwgetid", _IFACE, "-r"], timeout_s=1.0)
             print(f"[WIFI AP] Now connected to {ssid!r}", flush=True)
             if display:
-                display.send(f"Connected!\n{ssid}")
+                display.show_header_panel("WiFi setup", "Connected!", ssid)
             time.sleep(2)
             return True
         time.sleep(2.0)
@@ -487,6 +497,10 @@ def ensure_wifi(display=None, timeout_s: float = 120.0) -> bool:
     print("[WIFI AP] Timeout waiting for WiFi config", flush=True)
     _stop_ap()
     if display:
-        display.send("WiFi setup\ntimed out\nContinuing offline")
+        display.show_header_panel(
+            "WiFi setup",
+            "Timed out",
+            "Continuing offline",
+        )
     time.sleep(2)
     return False

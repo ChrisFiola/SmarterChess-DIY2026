@@ -107,6 +107,29 @@ class OnlineController:
         self._game_color_hints: Dict[str, str] = {}
         self._active_clock_stop: Optional[threading.Event] = None
 
+    def _show_panel(
+        self,
+        header: str,
+        *body_lines: str,
+        footer: str = "",
+        force: bool = False,
+    ) -> None:
+        self.display.show_header_panel(
+            header,
+            *body_lines,
+            footer=footer,
+            force=force,
+        )
+
+    def _show_online_message(self, message: str, *, force: bool = False) -> None:
+        lines = [ln for ln in str(message or "").split("\n") if ln]
+        footer = ""
+        if lines and Display._is_footer_hint(lines[-1]):
+            footer = lines.pop()
+        if lines and lines[0].strip().lower() == "lichess online":
+            lines = lines[1:]
+        self._show_panel("Lichess Online", *lines, footer=footer, force=force)
+
     def _remember_game_color(self, game_id: Optional[str], color: Optional[str]) -> None:
         game_id = (game_id or "").strip()
         color = (color or "").strip().lower()
@@ -200,7 +223,7 @@ class OnlineController:
 
     def _resign_and_exit(self, game_id: str) -> None:
         """Resign the active game on Lichess and return to the main menu."""
-        self.display.send("Resigning...")
+        self._show_online_message("Resigning...")
         try:
             self.client.resign_game(game_id)
         except Exception:
@@ -209,7 +232,7 @@ class OnlineController:
 
     def _offer_draw(self, game_id: str) -> None:
         """Send a draw offer to the opponent on Lichess."""
-        self.display.send("Offering draw...")
+        self._show_online_message("Offering draw...")
         try:
             self.client.offer_draw(game_id)
         except Exception:
@@ -217,7 +240,7 @@ class OnlineController:
 
     def _decline_draw(self, game_id: str) -> None:
         """Decline an incoming draw offer on Lichess."""
-        self.display.send("Declining draw...")
+        self._show_online_message("Declining draw...")
         try:
             self.client.decline_draw(game_id)
         except Exception:
@@ -225,7 +248,7 @@ class OnlineController:
 
     def _cancel_to_menu(self) -> None:
         """Show 'Cancelling...', disable back button, raise ReturnToMenu."""
-        self.display.send("Cancelling...")
+        self._show_online_message("Cancelling...")
         self.link.send_to_board("ok_back_disable")
         self.link.send_to_board("wait_exit_disable")
         time.sleep(1.0)
@@ -298,7 +321,7 @@ class OnlineController:
         require_ok: bool = False,
     ) -> Optional[str]:
         """Run a cancelable request, show a standard error, then wait for game start."""
-        self.display.send(banner)
+        self._show_online_message(banner)
         self.link.send_to_board("ok_cancel_enable")
 
         resp = run_in_bg(
@@ -310,7 +333,11 @@ class OnlineController:
         ok = bool(resp and (resp.get("ok") if require_ok else not resp.get("_error")))
         if not ok:
             err = (resp or {}).get("_error") or error_fallback
-            self.display.send(f"Challenge error\n{str(err)[:18]}\nOK = back")
+            self._show_panel(
+                "Challenge error",
+                str(err)[:18],
+                footer="OK=Back",
+            )
             wait_for_ok(self.link, self.display)
             return None
 
@@ -341,7 +368,7 @@ class OnlineController:
             return True
 
         if msg in HINT_MSGS:
-            self.display.send("Online mode\nHints disabled")
+            self._show_panel("Lichess Online", "Hints disabled")
             return True
 
         return False
@@ -358,7 +385,11 @@ class OnlineController:
 
         link.send_to_board("SetupComplete")
         link.send_to_board("ok_cancel_enable")
-        display.send("Lichess\nConnecting...\nOK = cancel")
+        display.show_header_panel(
+            "Lichess Online",
+            "Connecting...",
+            footer="OK=Cancel",
+        )
 
         if is_ap_mode() or not ensure_wifi(display):
             if is_ap_mode():
@@ -366,9 +397,19 @@ class OnlineController:
                 if hasattr(display, "show_qr"):
                     display.show_qr(url, "Scan to setup WiFi", "OK = cancel")
                 else:
-                    display.send(f"AP mode\nOpen:\n{url}\nOK = cancel")
+                    display.show_header_panel(
+                        "WiFi setup",
+                        "AP mode",
+                        "Open:",
+                        url,
+                        footer="OK=Cancel",
+                    )
             else:
-                display.send("No WiFi\nconnection\nOK = cancel")
+                display.show_header_panel(
+                    "WiFi setup",
+                    "No WiFi connection",
+                    footer="OK=Cancel",
+                )
             while True:
                 m = link.read_from_board()
                 if not m:
@@ -394,7 +435,11 @@ class OnlineController:
             )
 
         if not acct or acct.get("_error"):
-            display.send("Lichess offline\nWiFi/DNS error\nOK = menu")
+            display.show_header_panel(
+                "Lichess offline",
+                "WiFi/DNS error",
+                footer="OK=Menu",
+            )
             while True:
                 m = link.read_from_board()
                 if not m:
@@ -450,7 +495,12 @@ class OnlineController:
 
                 now = int(time.time() * 1000)
                 if now - last_banner_ms > 1500:
-                    display.send("Waiting for\ngame to start...\nOK+Hint = menu")
+                    display.show_header_panel(
+                        "Lichess Online",
+                        "Waiting for",
+                        "game to start...",
+                        footer="OK+Hint=menu",
+                    )
                     last_banner_ms = now
                 time.sleep(0.05)
         finally:
@@ -479,7 +529,11 @@ class OnlineController:
             return None
         existing_game_ids = self._current_ongoing_game_ids()
 
-        display.send(f"Seeking {choice}\nOK = cancel")
+        display.show_header_panel(
+            "Lichess Online",
+            f"Seeking {choice}",
+            footer="OK=Cancel",
+        )
         link.send_to_board("ok_cancel_enable")
 
         seek_done = threading.Event()
@@ -564,7 +618,7 @@ class OnlineController:
         """Load followed users and return one selected username/id."""
         link, display = self.link, self.display
 
-        display.send("Loading friends...")
+        display.show_header_panel("Lichess Online", "Loading friends...")
         friends = run_in_bg(
             self.client.get_following, link, display,
             on_cancel=self._cancel_to_menu,
@@ -576,7 +630,11 @@ class OnlineController:
             if f.get("username") or f.get("id")
         ]
         if not full_names:
-            display.send("No friends found\nOK = back")
+            display.show_header_panel(
+                "Lichess Online",
+                "No friends found",
+                footer="OK=Back",
+            )
             wait_for_ok(link, display)
             return None
 
@@ -612,7 +670,7 @@ class OnlineController:
         """Fetch pending incoming challenges, let user accept one, return game ID."""
         link, display = self.link, self.display
 
-        display.send("Loading\nchallenges...")
+        display.show_header_panel("Lichess Online", "Loading challenges...")
         challenges = run_in_bg(
             self.client.get_incoming_challenges, link, display,
             on_cancel=self._cancel_to_menu,
@@ -622,7 +680,11 @@ class OnlineController:
         challenges = [c for c in challenges if isinstance(c, dict) and not c.get("_error")]
 
         if not challenges:
-            display.send("No challenges\nOK = back")
+            display.show_header_panel(
+                "Lichess Online",
+                "No challenges",
+                footer="OK=Back",
+            )
             wait_for_ok(link, display)
             return None
 
@@ -705,19 +767,27 @@ class OnlineController:
         """Fetch ongoing games, let user select one, return game ID or None."""
         link, display = self.link, self.display
 
-        display.send("Loading games...")
+        display.show_header_panel("Lichess Online", "Loading games...")
         data = run_in_bg(
             self.client.get_ongoing_games, link, display,
             on_cancel=self._cancel_to_menu,
         )
         if not data or data.get("_error"):
-            display.send("No ongoing games\nOK = back")
+            display.show_header_panel(
+                "Lichess Online",
+                "No ongoing games",
+                footer="OK=Back",
+            )
             wait_for_ok(link, display)
             return None
 
         game_list = data.get("nowPlaying") or []
         if not game_list:
-            display.send("No active games\nOK = back")
+            display.show_header_panel(
+                "Lichess Online",
+                "No active games",
+                footer="OK=Back",
+            )
             wait_for_ok(link, display)
             return None
 
@@ -757,11 +827,11 @@ class OnlineController:
         """
         link, display = self.link, self.display
 
-        display.send("Loading game...")
+        display.show_header_panel("Lichess Online", "Loading game...")
         try:
             stream = self.client.stream_game(game_id)
         except Exception:
-            display.send("Stream error\nOK = back")
+            display.show_header_panel("Stream error", footer="OK=Back")
             wait_for_ok(link, display)
             return None
 
@@ -776,16 +846,20 @@ class OnlineController:
                     on_cancel=self._cancel_to_menu,
                 ) or {}
             except StopIteration:
-                display.send("Lichess ended\nOK = back")
+                display.show_header_panel("Lichess ended", footer="OK=Back")
                 wait_for_ok(link, display)
                 return None
             except Exception:
-                display.send("Stream error\nOK = back")
+                display.show_header_panel("Stream error", footer="OK=Back")
                 wait_for_ok(link, display)
                 return None
 
             if not first and time.time() >= deadline:
-                display.send("Lichess error\nStream stalled\nOK = back")
+                display.show_header_panel(
+                    "Lichess error",
+                    "Stream stalled",
+                    footer="OK=Back",
+                )
                 wait_for_ok(link, display)
                 return None
 
@@ -860,7 +934,7 @@ class OnlineController:
                 if game_id not in self._game_color_hints:
                     self._current_ongoing_game_ids()
 
-                display.send("Lichess\nLoading game...")
+                display.show_header_panel("Lichess Online", "Loading game...")
                 link.send_to_board("ok_back_disable")
                 # Menus run the Pico in SETUP mode. Put it back into RUNNING
                 # before the online game starts so engine/turn messages and
@@ -1016,7 +1090,13 @@ class OnlineController:
             opponent_offered = offered_side == opponent_side
             if opponent_offered and not incoming_draw_offer:
                 incoming_draw_offer = True
-                display.send("Opponent offers\na draw\nOK+Hint = menu", force=True)
+                display.show_header_panel(
+                    "Lichess Online",
+                    "Opponent offers",
+                    "a draw",
+                    footer="OK+Hint=menu",
+                    force=True,
+                )
                 return
             if not opponent_offered:
                 incoming_draw_offer = False
@@ -1061,7 +1141,7 @@ class OnlineController:
 
             display.clear_online_clock()
             link.send_to_board(f"GameOver:{result}")
-            display.send(f"Game over\n{winner_text}\n{reason}")
+            display.show_header_panel("Game Over!", winner_text, reason)
             wait_for_gameover_dismiss(link, display)
             raise ReturnToMenu()
 
@@ -1123,12 +1203,20 @@ class OnlineController:
                 if smsg and smsg in OK_MSGS | NEW_GAME_MSGS:
                     self._confirm_resign_or_exit(game_id)
                 if time.time() >= startup_deadline:
-                    display.send("Lichess error\nStream stalled\nOK = menu")
+                    display.show_header_panel(
+                        "Lichess error",
+                        "Stream stalled",
+                        footer="OK=Menu",
+                    )
                     wait_for_ok(link, display)
                     raise ReturnToMenu()
 
             if error_box[0]:
-                display.send("Lichess error\nGame stream\nOK = menu")
+                display.show_header_panel(
+                    "Lichess error",
+                    "Game stream",
+                    footer="OK=Menu",
+                )
                 wait_for_ok(link, display)
                 raise ReturnToMenu()
 
@@ -1153,7 +1241,10 @@ class OnlineController:
         # For ongoing game resumes: board state already set up physically.
         # Replay past moves silently (no LED) to sync the Python board object.
         if pre_loaded_board is not None:
-            display.send(f"You are {'White' if you_are_white else 'Black'}")
+            display.show_header_panel(
+                "Lichess Online",
+                f"You are {'White' if you_are_white else 'Black'}",
+            )
             # Use pre_loaded_board as the starting board state and skip old moves
             board_moves = extract_moves(first)
             for uci in board_moves:
@@ -1163,7 +1254,11 @@ class OnlineController:
                 except Exception:
                     break
         else:
-            display.send(f"Connected\nYou are {'White' if you_are_white else 'Black'}")
+            display.show_header_panel(
+                "Lichess Online",
+                "Connected",
+                f"You are {'White' if you_are_white else 'Black'}",
+            )
             apply_new_moves(extract_moves(first), announce_new=False)
 
         sync_clock_from_payload(first)
@@ -1204,9 +1299,19 @@ class OnlineController:
                 now = int(time.time() * 1000)
                 if now - last_wait_banner_ms > 1500:
                     if incoming_draw_offer:
-                        display.send("Opponent offers\na draw\nOK+Hint = menu")
+                        display.show_header_panel(
+                            "Lichess Online",
+                            "Opponent offers",
+                            "a draw",
+                            footer="OK+Hint=menu",
+                        )
                     else:
-                        display.send("Waiting for\nopponent...\nOK+Hint = menu")
+                        display.show_header_panel(
+                            "Lichess Online",
+                            "Waiting for",
+                            "opponent...",
+                            footer="OK+Hint=menu",
+                        )
                     last_wait_banner_ms = now
 
                 ensure_stream_fetch()
@@ -1237,12 +1342,16 @@ class OnlineController:
 
                 if error == "stop":
                     set_waiting_exit_ui(False)
-                    display.send("Lichess ended\nOK = menu")
+                    display.show_header_panel("Lichess ended", footer="OK=Menu")
                     wait_for_ok(link, display)
                     raise ReturnToMenu()
                 if error:
                     set_waiting_exit_ui(False)
-                    display.send("Lichess error\nStream lost\nOK = menu")
+                    display.show_header_panel(
+                        "Lichess error",
+                        "Stream lost",
+                        footer="OK=Menu",
+                    )
                     wait_for_ok(link, display)
                     raise ReturnToMenu()
 
@@ -1273,11 +1382,15 @@ class OnlineController:
             done, payload, error = take_stream_fetch()
             if done:
                 if error == "stop":
-                    display.send("Lichess ended\nOK = menu")
+                    display.show_header_panel("Lichess ended", footer="OK=Menu")
                     wait_for_ok(link, display)
                     raise ReturnToMenu()
                 if error:
-                    display.send("Lichess error\nStream lost\nOK = menu")
+                    display.show_header_panel(
+                        "Lichess error",
+                        "Stream lost",
+                        footer="OK=Menu",
+                    )
                     wait_for_ok(link, display)
                     raise ReturnToMenu()
 
@@ -1303,7 +1416,12 @@ class OnlineController:
                 send_turn_if_human()
             if not prompted_for_this_turn and not awaiting_ok_ack and not in_move_entry:
                 if incoming_draw_offer:
-                    display.send("Draw offered\nYour move\nOK+Hint = menu")
+                    display.show_header_panel(
+                        "Lichess Online",
+                        "Draw offered",
+                        "Your move",
+                        footer="OK+Hint=menu",
+                    )
                 else:
                     side = "WHITE" if your_color == chess.WHITE else "BLACK"
                     display.prompt_move(side)
@@ -1372,10 +1490,13 @@ class OnlineController:
                 continue
 
             # Submit to Lichess before pushing locally
-            display.send("Sending move...", force=True)
+            display.show_header_panel("Lichess Online", "Sending move...", force=True)
             resp = self.client.make_move(game_id, uci)
             if not resp.get("ok"):
-                display.send("Move rejected\nOK = retry")
+                display.show_header_panel(
+                    "Move rejected",
+                    footer="OK=Retry",
+                )
                 if not wait_for_ok(link, display):
                     self._resign_and_exit(game_id)
                 prompted_for_this_turn = False
@@ -1392,7 +1513,13 @@ class OnlineController:
             send_turn_if_human()
             side_to_move = "WHITE" if board.turn == chess.WHITE else "BLACK"
             if board.turn != your_color:
-                display.send("Waiting for\nopponent...\nOK+Hint = menu", force=True)
+                display.show_header_panel(
+                    "Lichess Online",
+                    "Waiting for",
+                    "opponent...",
+                    footer="OK+Hint=menu",
+                    force=True,
+                )
             else:
                 display.show_arrow(
                     uci,
