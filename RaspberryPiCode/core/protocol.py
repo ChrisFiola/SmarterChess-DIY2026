@@ -111,7 +111,7 @@ def piece_name_white(sym: str) -> str:
         "R": "♜ROOK",
         "Q": "♛QUEEN",
         "K": "♚KING",
-    }.get((sym or "").upper(), "EMPTY")
+    }.get((sym or ""), "EMPTY")
 
 
 def piece_name_black(sym: str) -> str:
@@ -123,7 +123,7 @@ def piece_name_black(sym: str) -> str:
         "R": "♖ROOK",
         "Q": "♕QUEEN",
         "K": "♔KING",
-    }.get((sym or "").upper(), "EMPTY")
+    }.get((sym or ""), "EMPTY")
 
 
 def send_lcd_ack_for_payload(
