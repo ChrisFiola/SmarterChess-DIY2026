@@ -57,6 +57,7 @@ from core.game_flow import (
     handle_capq_message,
     handle_illegal_move,
     resolve_uci_promotion,
+    show_received_move,
     send_check_signal,
     send_turn_notification,
     shutdown_raspberry_pi,
@@ -1072,20 +1073,7 @@ class OnlineController:
                     link.send_to_board(format_engine_move(uci, is_cap))
                     time.sleep(0.3)
                     send_turn_if_human()
-                    side_to_move = "WHITE" if board.turn == chess.WHITE else "BLACK"
-                    promo_line = ""
-                    if mv.promotion:
-                        pl = chess.piece_symbol(mv.promotion)
-                        promo_line = display.format_promo_line(pl)
-                    display.show_arrow(
-                        uci,
-                        suffix=(
-                            f"{promo_line}\n{side_to_move} to move"
-                            if promo_line
-                            else f"{side_to_move} to move"
-                        ),
-                        force=True,
-                    )
+                    show_received_move(display, board, uci, force=True)
                     awaiting_ok_ack = True
                     in_move_entry = False
 

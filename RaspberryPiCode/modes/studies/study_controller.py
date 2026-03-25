@@ -31,6 +31,8 @@ from core.game_flow import (
     handle_typing_message,
     resolve_uci_promotion,
     run_in_bg,
+    show_hint_move,
+    show_received_move,
     send_check_signal,
     shutdown_raspberry_pi,
     wait_for_ok,
@@ -334,10 +336,19 @@ class StudyController:
                 f"turn_{'white' if board.turn == chess.WHITE else 'black'}"
             )
             if len(variations) == 1:
-                display.send(f"{side} to move\nHint = see move")
+                display.show_header_panel(
+                    f"You are {side}",
+                    "Enter move",
+                    footer="Hint = see move",
+                )
             else:
                 dests = " / ".join(chess.Move.uci(v.move)[2:4] for v in variations[:4])
-                display.send(f"{side} to move\n→{dests}\nHint = main line")
+                display.show_header_panel(
+                    f"You are {side}",
+                    "Enter move",
+                    f"→{dests}",
+                    footer="Hint = main line",
+                )
 
         _arm()
 
@@ -359,7 +370,7 @@ class StudyController:
 
             if msg in HINT_MSGS:
                 link.send_to_board(f"hint_{main_uci}")
-                display.send(f"Main line:\n{main_uci[:2]}→{main_uci[2:4]}")
+                show_hint_move(display, board, main_uci, force=True)
                 continue
 
             if msg in OK_MSGS:
@@ -488,9 +499,9 @@ class StudyController:
                 # the normal message loop (engine format triggers engine_ack_pending
                 # which auto-calls _collect_and_submit_move on OK, causing a deadlock
                 # when we then send WaitForOkConfirm for annotations).
-                display.send(f"{side_label} plays\n{uci[:2]}→{uci[2:4]}\nOK = continue")
                 link.send_to_board(f"study_move_{uci}{'_cap' if cap else ''}")
                 board.push(move)
+                show_received_move(display, board, uci, force=True)
                 send_check_signal(link, board)
                 node = main_var
                 if not wait_for_ok(link, display):

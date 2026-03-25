@@ -338,19 +338,19 @@ class Display:
         self.show_header_panel(f"You are {side.upper()}", "Enter move", force=force)
 
     def show_hint_result(self, uci: str) -> None:
-        """Show a hint in the format 'Hint received: e2 → e4'."""
+        """Fallback hint display using the shared header/footer layout."""
         try:
             frm, to = uci[:2], uci[2:4]
             if len(uci) >= 4:
-                self.show_panel(
-                    "Hint received:",
+                self.show_header_panel(
+                    "Hint received",
                     f"{frm} → {to}",
-                    footer="OK = clear",
+                    footer="OK = Clear",
                 )
             else:
-                self.send(f"Hint received:\n{uci}")
+                self.show_header_panel("Hint received", uci, footer="OK = Clear")
         except Exception:
-            self.send(f"Hint received:\n{uci}")
+            self.show_header_panel("Hint received", uci, footer="OK = Clear")
 
     def show_invalid(self, text: str) -> None:
         self.send(f"Invalid\n{text}\nTry again")

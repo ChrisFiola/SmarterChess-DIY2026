@@ -518,9 +518,9 @@ def send_move_hint(
     except Exception:
         is_cap = False
 
-    # Send to Pico and update OLED with arrow format
+    # Send to Pico and update LCD with the shared panel format.
     link.send_to_board(format_hint_move(best, is_cap))
-    display.show_hint_result(best)
+    show_hint_move(display, state.board, best)
     print(f"[Hint] {best}")
 
 
@@ -1074,25 +1074,7 @@ def prompt_next_turn(
     )
     if human_to_move:
         send_turn_notification(link, brd)
-        if mode == "stockfish":
-            show_received_move(display, brd, last_uci, force=True)
-        else:
-            promo_letter = (
-                last_uci[4].lower()
-                if isinstance(last_uci, str) and len(last_uci) >= 5
-                else ""
-            )
-            promo_line = (
-                f"{display.format_promo_line(promo_letter)}\n"
-                if promo_letter in ("q", "r", "b", "n")
-                else ""
-            )
-
-            display.show_arrow(
-                last_uci,
-                suffix=f"{promo_line}{'WHITE' if brd.turn == chess.WHITE else 'BLACK'} to move",
-                force=True,
-            )
+        show_received_move(display, brd, last_uci, force=True)
     else:
         display.show_arrow(last_uci, suffix="Engine thinking", force=True)
 
@@ -1156,16 +1138,46 @@ def _split_preview_move(text: str) -> tuple[str, str]:
 def _move_received_piece_label(
     board: Optional["chess.Board"], uci: str
 ) -> Optional[str]:
+    return _move_piece_label(board, uci, from_square=False)
+
+
+def _move_piece_label(
+    board: Optional["chess.Board"], uci: str, *, from_square: bool
+) -> Optional[str]:
     if board is None:
         return None
     try:
-        to_sq = chess.parse_square((uci or "")[2:4])
-        piece = board.piece_at(to_sq)
+        sq_text = (uci or "")[:2] if from_square else (uci or "")[2:4]
+        sq = chess.parse_square(sq_text)
+        piece = board.piece_at(sq)
         if piece is None:
             return None
         return _input_piece_label(_format_piece_name(piece))
     except Exception:
         return None
+
+
+def _show_move_panel(
+    display: Display,
+    board: Optional["chess.Board"],
+    uci: str,
+    *,
+    header: str,
+    footer: str,
+    piece_from_square: bool,
+    force: bool = False,
+) -> None:
+    move_line = ""
+    if isinstance(uci, str) and len(uci) >= 4:
+        move_line = f"{uci[:2]} → {uci[2:4]}"
+    piece_lbl = _move_piece_label(board, uci, from_square=piece_from_square)
+    body_lines = [ln for ln in [piece_lbl, move_line or (uci or "").strip()] if ln]
+    display.show_header_panel(
+        header,
+        *body_lines,
+        footer=footer,
+        force=force,
+    )
 
 
 def show_received_move(
@@ -1175,15 +1187,31 @@ def show_received_move(
     *,
     force: bool = False,
 ) -> None:
-    move_line = ""
-    if isinstance(uci, str) and len(uci) >= 4:
-        move_line = f"{uci[:2]} → {uci[2:4]}"
-    piece_lbl = _move_received_piece_label(board, uci)
-    body_lines = [ln for ln in [piece_lbl, move_line or (uci or "").strip()] if ln]
-    display.show_header_panel(
-        "Move received",
-        *body_lines,
+    _show_move_panel(
+        display,
+        board,
+        uci,
+        header="Move received",
         footer="OK = Confirm",
+        piece_from_square=False,
+        force=force,
+    )
+
+
+def show_hint_move(
+    display: Display,
+    board: Optional["chess.Board"],
+    uci: str,
+    *,
+    force: bool = False,
+) -> None:
+    _show_move_panel(
+        display,
+        board,
+        uci,
+        header="Hint received",
+        footer="OK = Clear",
+        piece_from_square=True,
         force=force,
     )
 
