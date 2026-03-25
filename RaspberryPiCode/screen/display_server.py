@@ -33,8 +33,24 @@ disp.clear()
 
 # Screen constants
 W, H = disp.width, disp.height
-FONT_PATH = "/home/king/SmarterChess-DIY2026/RaspberryPiCode/ChessSans.ttf"
-# FONT_PATH = "/home/king/LCD_Module_RPI_code/RaspberryPi/python/Font/Font00.ttf"
+FONT_CANDIDATES = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/freefont/FreeSerif.ttf",
+    "/home/king/SmarterChess-DIY2026/RaspberryPiCode/ChessSans.ttf",
+    "/home/king/SmarterChess-DIY2026/RaspberryPiCode/WorkSans-Medium.ttf",
+    "/home/king/LCD_Module_RPI_code/RaspberryPi/python/Font/Font00.ttf",
+]
+
+
+def _resolve_font_path() -> str:
+    for path in FONT_CANDIDATES:
+        if os.path.exists(path):
+            return path
+    raise FileNotFoundError(f"No LCD font found in candidates: {FONT_CANDIDATES}")
+
+
+FONT_PATH = _resolve_font_path()
+print(f"[LCD] using font: {FONT_PATH}", flush=True)
 
 FRAME = Image.new("RGB", (W, H), "BLACK")
 DRAW = ImageDraw.Draw(FRAME)
