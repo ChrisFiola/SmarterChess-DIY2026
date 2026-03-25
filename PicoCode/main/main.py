@@ -1212,6 +1212,9 @@ def _handle_wait_for_ok_confirm(_msg=None):
 
 def _handle_puzzle_setup_ok_confirm(_msg=None):
     """Wait for OK during puzzle setup without redrawing the board."""
+    cp.disarm_confirm_ok()
+    if cp.BTN_OK.value() == 0:
+        cp.wait_for_ok_release()
     cp.reset_edges()
     cp.only_ok(True, GREEN, border_on=True, force=True)
     while True:
@@ -1258,6 +1261,9 @@ def _handle_wait_for_annotation_page(_msg=None):
 
 
 def _handle_wait_for_ok_or_skip_setup(_msg=None):
+    cp.disarm_confirm_ok()
+    if cp.BTN_OK.value() == 0:
+        cp.wait_for_ok_release()
     cp.reset_edges()
     board.markings()
     cp.border(st.in_game or st.puzzle_setup_active, force=True, apply_now=False)
@@ -1722,7 +1728,8 @@ def _main_loop():
                 continue
             b = cp.detect_press_raw()
             if b == (Config.Buttons.OK_INDEX + 1):
-                link.send("btn_ok")
+                cp.wait_for_ok_release()
+                cp.reset_edges()
             time.sleep_ms(Config.Timing.POLL_MS)
             continue
         if _handle_hint_irq() == "new":

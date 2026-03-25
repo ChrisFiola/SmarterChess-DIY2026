@@ -320,8 +320,8 @@ def _draw_menu(lines, page_info="", *, font_key: str = "default"):
     disp.ShowImage(FRAME)
 
 
-def _draw_header_panel(lines):
-    """Draw a panel with a header line and optional footer."""
+def _draw_header_panel(lines, badge: str = ""):
+    """Draw a panel with a persistent header and footer area."""
     if not lines:
         return
 
@@ -336,19 +336,37 @@ def _draw_header_panel(lines):
 
     DRAW.rectangle((0, 0, W, H), fill="BLACK")
 
-    header_size = _fit_single_line_size(header, min_size=13, max_size=17, max_w=W - 20)
+    badge = (badge or "").strip()
+    badge_size = _fit_single_line_size(badge, min_size=11, max_size=14, max_w=52)
+    badge_font = _get_font(badge_size)
+    badge_w, badge_h = _measure(badge_size, badge, badge_font) if badge else (0, 0)
+
+    header_max_w = W - 20 - (badge_w + 10 if badge else 0)
+    header_size = _fit_single_line_size(
+        header,
+        min_size=13,
+        max_size=17,
+        max_w=header_max_w,
+    )
     header_font = _get_font(header_size)
     header_w, header_h = _measure(header_size, header, header_font)
     header_y = 6
     if header:
         DRAW.text(((W - header_w) // 2, header_y), header, font=header_font, fill="WHITE")
+    if badge:
+        DRAW.text((W - badge_w - 8, header_y + 1), badge, font=badge_font, fill="WHITE")
     divider_y = header_y + header_h + 6
     DRAW.line((10, divider_y, W - 10, divider_y), fill="WHITE", width=1)
 
-    footer_size = _fit_single_line_size(footer, min_size=11, max_size=14, max_w=W - 20)
+    footer_size = _fit_single_line_size(
+        footer or "OK = confirm",
+        min_size=11,
+        max_size=14,
+        max_w=W - 20,
+    )
     footer_font = _get_font(footer_size)
-    footer_h = _measure(footer_size, footer, footer_font)[1] if footer else 0
-    footer_reserved = (footer_h + 14) if footer else 0
+    footer_h = _measure(footer_size, footer or "Ag", footer_font)[1]
+    footer_reserved = footer_h + 14
 
     avail_top = divider_y + 8
     avail_h = H - avail_top - footer_reserved - 8
@@ -373,10 +391,10 @@ def _draw_header_panel(lines):
         DRAW.text(((W - w) // 2, y), ln, font=body_font, fill="WHITE")
         y += h + spacing
 
+    footer_y = H - footer_h - 4
+    DRAW.line((10, footer_y - 5, W - 10, footer_y - 5), fill="WHITE", width=1)
     if footer:
         fw = _measure(footer_size, footer, footer_font)[0]
-        footer_y = H - footer_h - 4
-        DRAW.line((10, footer_y - 5, W - 10, footer_y - 5), fill="WHITE", width=1)
         DRAW.text(((W - fw) // 2, footer_y), footer, font=footer_font, fill="WHITE")
 
     disp.ShowImage(FRAME)
@@ -619,8 +637,13 @@ def _render_current():
         _draw_menu(lines, page_info=page_info, font_key="annotation")
         return
 
-    if size_key in ("setup", "header"):
+    if size_key == "setup":
         _draw_header_panel(lines)
+        return
+
+    if size_key.startswith("header"):
+        badge = raw_size.split(":", 1)[1] if ":" in raw_size else ""
+        _draw_header_panel(lines, badge=badge)
         return
 
     if size_key == "online":

@@ -109,3 +109,57 @@ class EngineContext:
             pass
 
         return self.bestmove(board, time_ms)
+
+    def evaluation_label(
+        self,
+        board: "chess.Board",
+        *,
+        time_ms: int = 120,
+        pov_color=None,
+    ) -> Optional[str]:
+        """Return a compact eval label like '+0.8' or '#3' for *board*.
+
+        The score is shown from *pov_color* when provided, otherwise from the
+        side to move. Uses a short full-strength analysis and marks the engine
+        as needing reconfiguration afterwards, matching the existing hint flow.
+        """
+        if board.is_game_over():
+            return None
+
+        try:
+            import chess
+        except Exception:
+            chess = None
+
+        chess_engine = self._engine_mod()
+        engine = self.ensure()
+        limit = chess_engine.Limit(time=max(0.01, time_ms / 1000.0))
+
+        try:
+            engine.configure({"UCI_LimitStrength": False, "Skill Level": 20})
+            self.hint_override_active = True
+            info = engine.analyse(board, limit, multipv=1)
+            score = info.get("score")
+            if score is None:
+                return None
+
+            if pov_color is None:
+                pov = score.pov(board.turn)
+            elif chess is not None and pov_color in (chess.WHITE, chess.BLACK):
+                pov = score.pov(pov_color)
+            else:
+                pov = score.pov(board.turn)
+
+            mate = pov.mate()
+            if mate is not None:
+                return f"#{mate}"
+
+            cp = pov.score(mate_score=100000)
+            if cp is None:
+                return None
+
+            pawns = cp / 100.0
+            txt = f"{pawns:+.1f}"
+            return txt[:-2] if txt.endswith(".0") else txt
+        except Exception:
+            return None

@@ -111,6 +111,10 @@ def wait_for_gameover_dismiss(link: BoardLink, display: Display) -> bool:
 
 def wait_for_ok_or_skip_setup(link: BoardLink, display: Display):
     """Wait for setup-entry confirmation."""
+    try:
+        link.clear_input()
+    except Exception:
+        pass
     link.send_to_board("WaitForOkOrSkipSetup")
 
     while True:
@@ -395,7 +399,7 @@ def handle_illegal_move(
     try:
         display.prompt_move(side)
     except Exception:
-        display.send(f"{side_prefix}\nEnter move:")
+        display.send(f"{side_prefix}\nEnter move")
     return True
 
 
@@ -799,6 +803,10 @@ def guide_board_setup(
             return "skip"
 
         for side, sq, sym in steps:
+            try:
+                link.clear_input()
+            except Exception:
+                pass
             display.show_setup_panel(
                 f"Setup {'WHITE' if side == 'w' else 'BLACK'}",
                 piece_name_for_side(sym, side),
@@ -809,8 +817,9 @@ def guide_board_setup(
             if not wait_for_ok(link, display):
                 return None
 
-        display.show_setup_panel(label, "Setup done!")
-        time.sleep(0.5)
+        display.show_setup_panel(label, "Setup done", footer="OK = continue")
+        if not wait_for_ok(link, display):
+            return None
         return "ok"
     finally:
         link.send_to_board("puzzle_setup_done")
@@ -1065,22 +1074,25 @@ def prompt_next_turn(
     )
     if human_to_move:
         send_turn_notification(link, brd)
-        promo_letter = (
-            last_uci[4].lower()
-            if isinstance(last_uci, str) and len(last_uci) >= 5
-            else ""
-        )
-        promo_line = (
-            f"{display.format_promo_line(promo_letter)}\n"
-            if promo_letter in ("q", "r", "b", "n")
-            else ""
-        )
+        if mode == "stockfish":
+            show_received_move(display, brd, last_uci, force=True)
+        else:
+            promo_letter = (
+                last_uci[4].lower()
+                if isinstance(last_uci, str) and len(last_uci) >= 5
+                else ""
+            )
+            promo_line = (
+                f"{display.format_promo_line(promo_letter)}\n"
+                if promo_letter in ("q", "r", "b", "n")
+                else ""
+            )
 
-        display.show_arrow(
-            last_uci,
-            suffix=f"{promo_line}{'WHITE' if brd.turn == chess.WHITE else 'BLACK'} to move",
-            force=True,
-        )
+            display.show_arrow(
+                last_uci,
+                suffix=f"{promo_line}{'WHITE' if brd.turn == chess.WHITE else 'BLACK'} to move",
+                force=True,
+            )
     else:
         display.show_arrow(last_uci, suffix="Engine thinking", force=True)
 
@@ -1130,6 +1142,41 @@ def _input_piece_label(label: Optional[str]) -> Optional[str]:
     return f"{parts[0]} {' '.join(parts[1:]).upper()}"
 
 
+def _move_received_piece_label(
+    board: Optional["chess.Board"], uci: str
+) -> Optional[str]:
+    if board is None:
+        return None
+    try:
+        to_sq = chess.parse_square((uci or "")[2:4])
+        piece = board.piece_at(to_sq)
+        if piece is None:
+            return None
+        return _input_piece_label(_format_piece_name(piece))
+    except Exception:
+        return None
+
+
+def show_received_move(
+    display: Display,
+    board: Optional["chess.Board"],
+    uci: str,
+    *,
+    force: bool = False,
+) -> None:
+    move_line = ""
+    if isinstance(uci, str) and len(uci) >= 4:
+        move_line = f"{uci[:2]} -> {uci[2:4]}"
+    piece_lbl = _move_received_piece_label(board, uci)
+    body_lines = [ln for ln in [piece_lbl, move_line or (uci or "").strip()] if ln]
+    display.show_header_panel(
+        "Move received",
+        *body_lines,
+        footer="OK = confirm",
+        force=force,
+    )
+
+
 def _turn_header(board: Optional["chess.Board"]) -> str:
     if board is not None:
         try:
@@ -1175,15 +1222,13 @@ def _update_typing_display(
                 else:
                     display.show_header_panel(
                         header,
-                        "Enter from:",
-                        text,
+                        f"{text} ->",
                         footer=delete_footer,
                         force=True,
                     )
             else:
                 display.show_header_panel(
                     header,
-                    "Enter from:",
                     text,
                     footer=delete_footer,
                     force=True,

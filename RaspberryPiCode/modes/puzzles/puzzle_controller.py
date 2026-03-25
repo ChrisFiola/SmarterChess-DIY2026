@@ -48,6 +48,7 @@ from core.game_flow import (
     handle_capq_message,
     check_move_captures,
     resolve_uci_promotion,
+    show_received_move,
     send_turn_notification,
     send_check_signal,
     ReturnToMenu,
@@ -899,6 +900,10 @@ class PuzzleController:
                 time.sleep(0.3)
             else:
                 for side, sq, sym in steps:
+                    try:
+                        link.clear_input()
+                    except Exception:
+                        pass
                     display.show_setup_panel(
                         f"Setup {'WHITE' if side == 'w' else 'BLACK'}",
                         piece_name_for_side(sym, side),
@@ -909,8 +914,14 @@ class PuzzleController:
                     if not wait_for_ok(link, display):
                         return
 
-                display.show_setup_panel(label, "Setup done", "Puzzle begins")
-                time.sleep(0.3)
+                display.show_setup_panel(
+                    label,
+                    "Setup done",
+                    "Puzzle begins",
+                    footer="OK = continue",
+                )
+                if not wait_for_ok(link, display):
+                    return
         finally:
             link.send_to_board("puzzle_setup_done")
             link.send_to_board("hint_enable")
@@ -1062,20 +1073,10 @@ class PuzzleController:
                     return
 
                 if rmv in board.legal_moves:
-                    opp = "WHITE" if board.turn == chess.WHITE else "BLACK"
                     cap = board.is_capture(rmv)
-                    promo_line = ""
-                    try:
-                        pl = reply[4].lower() if len(reply) >= 5 else ""
-                        if pl in ("q", "r", "b", "n"):
-                            promo_line = f"{display.format_promo_line(pl)}\n"
-                    except Exception:
-                        pass
-                    display.send(
-                        f"{opp} played\n{reply[:2]}→{reply[2:4]}\n{promo_line}OK = continue"
-                    )
                     link.send_to_board(format_engine_move(reply, cap))
                     board.push(rmv)
+                    show_received_move(display, board, reply, force=True)
                     pending_check_sq = None
                     if board.is_check():
                         ksq = board.king(board.turn)

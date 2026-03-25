@@ -31,6 +31,7 @@ class Display:
         self._locked_category = None
         self._pipe = None
         self._online_clock = None
+        self._header_badge = ""
 
     def _format_clock_ms(self, ms: int) -> str:
         ms = max(0, int(ms or 0))
@@ -72,6 +73,10 @@ class Display:
     def _compose_payload(self, message: str, size: str) -> str:
         parts = message.split("\n")
         return "|".join(parts) + f"|{size}\n"
+
+    def _header_size_token(self) -> str:
+        badge = (self._header_badge or "").strip()
+        return f"header:{badge}" if badge else "header"
 
     @staticmethod
     def _is_footer_hint(line: str) -> bool:
@@ -120,7 +125,7 @@ class Display:
         # High-salience prompts while user is actively entering a move
         if any(
             k in m
-            for k in ["enter from", "enter to", "confirm", "ok to send", "press ok"]
+            for k in ["enter move", "enter to", "confirm", "ok to send", "press ok"]
         ):
             return "prompt"
         # Low-value transient status
@@ -317,7 +322,10 @@ class Display:
         lines = [header] + [ln for ln in body_lines if ln is not None]
         if footer:
             lines.append(footer)
-        self.send("\n".join(lines), size="header", force=force)
+        self.send("\n".join(lines), size=self._header_size_token(), force=force)
+
+    def set_header_badge(self, text: str | None) -> None:
+        self._header_badge = (text or "").strip()
 
     def show_arrow(self, uci: str, suffix: str = "", force: bool = False) -> None:
         arrow = f"{uci[:2]} → {uci[2:4]}"
@@ -327,7 +335,7 @@ class Display:
             self.send(arrow, force=force)
 
     def prompt_move(self, side: str, force: bool = False) -> None:
-        self.show_header_panel(f"You are {side.upper()}", "Enter move:", force=force)
+        self.show_header_panel(f"You are {side.upper()}", "Enter move", force=force)
 
     def show_hint_result(self, uci: str) -> None:
         """Show a hint in the format 'Hint received: e2 → e4'."""

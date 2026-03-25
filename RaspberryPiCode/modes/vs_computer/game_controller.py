@@ -60,6 +60,23 @@ class GameController:
         self.human_is_white = cfg.human_is_white
         self._pending_check_sq: Optional[str] = None
 
+    def _refresh_eval_badge(self) -> None:
+        try:
+            pov = chess.WHITE if self.human_is_white else chess.BLACK
+            badge = self.deps.opponent.ctx.evaluation_label(
+                self.board,
+                time_ms=min(int(self.deps.opponent.move_time_ms or 0), 150) or 120,
+                pov_color=pov,
+            )
+        except Exception:
+            badge = None
+        self.deps.display.set_header_badge(badge)
+
+    def _prompt_human(self, *, force: bool = False) -> None:
+        self._refresh_eval_badge()
+        side = "WHITE" if self.board.turn == chess.WHITE else "BLACK"
+        self.deps.display.prompt_move(side, force=force)
+
     def _is_human_turn(self) -> bool:
         if self.board.turn == chess.WHITE:
             return self.human_is_white
@@ -88,28 +105,32 @@ class GameController:
         self.deps.opponent.set_time_ms(move_time_ms)
         self.board = chess.Board()
         self.deps.link.send_to_board("GameStart")
+        self.deps.display.set_header_badge("")
 
-        if not self.human_is_white:
-            self.deps.display.send("Computer starts first.")
-            time.sleep(0.25)
-            self._play_one_engine_move()
-        else:
-            self._send_turn_notification()
-            self.deps.display.prompt_move("WHITE")
-
-        while True:
-            self._process_pending_messages()
-
-            if not self.board.is_game_over() and not self._is_human_turn():
-                # self.deps.display.send("Engine Thinking...")
+        try:
+            if not self.human_is_white:
+                self.deps.display.send("Computer starts first.")
+                time.sleep(0.25)
                 self._play_one_engine_move()
-                continue
+            else:
+                self._send_turn_notification()
+                self._prompt_human()
 
-            payload = self.deps.link.read_from_board()
-            if payload is None:
-                continue
-            evt = parse_payload(payload)
-            self._handle_event(evt.type, evt.payload)
+            while True:
+                self._process_pending_messages()
+
+                if not self.board.is_game_over() and not self._is_human_turn():
+                    # self.deps.display.send("Engine Thinking...")
+                    self._play_one_engine_move()
+                    continue
+
+                payload = self.deps.link.read_from_board()
+                if payload is None:
+                    continue
+                evt = parse_payload(payload)
+                self._handle_event(evt.type, evt.payload)
+        finally:
+            self.deps.display.set_header_badge("")
 
     def _handle_event(
         self, typ: EventType, payload: str, nonblocking: bool = False
@@ -124,8 +145,7 @@ class GameController:
             # Re-arm Pico for move collection if it's the human's turn
             if self._is_human_turn():
                 self._send_turn_notification()
-            side = "WHITE" if self.board.turn == chess.WHITE else "BLACK"
-            self.deps.display.prompt_move(side)
+            self._prompt_human()
             return
 
         if typ == EventType.TYPING:
@@ -145,8 +165,7 @@ class GameController:
             print("[PICO OK] prompt_move()", flush=True)
             # OK is used as an acknowledgement / "enter move" trigger from the Pico UI.
             # It should NEVER be treated as a move payload.
-            side = "WHITE" if self.board.turn == chess.WHITE else "BLACK"
-            self.deps.display.prompt_move(side)
+            self._prompt_human()
             return
 
         if typ == EventType.CAPTURE_QUERY:
@@ -225,6 +244,7 @@ class GameController:
                 self._pending_check_sq = chess.square_name(ksq)
 
         # Preserve OLED arrow/status behavior
+        self._refresh_eval_badge()
         prompt_next_turn(
             self.deps.link,
             self.deps.display,
