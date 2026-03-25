@@ -52,7 +52,14 @@ class GameState:
 # -------------------- Parsing & helpers --------------------
 
 
-def wait_for_ok(link: BoardLink, display: Display, *, send_prompt: bool = True) -> bool:
+def wait_for_ok(
+    link: BoardLink,
+    display: Display,
+    *,
+    send_prompt: bool = True,
+    allow_exit_menu: bool = False,
+    rearm_command: Optional[str] = None,
+) -> bool:
     """Wait for Pico OK acknowledgement (btn_ok/ok).
 
     Sends WaitForOkConfirm so the Pico enters a dedicated OK-confirm state
@@ -79,6 +86,14 @@ def wait_for_ok(link: BoardLink, display: Display, *, send_prompt: bool = True) 
             return False
 
         if m in NEW_GAME_MSGS:
+            if allow_exit_menu:
+                if confirm_exit_game(
+                    link,
+                    display,
+                    rearm_command=rearm_command,
+                ):
+                    return False
+                continue
             return False
 
         if m in OK_MSGS:
@@ -114,7 +129,12 @@ def wait_for_gameover_dismiss(link: BoardLink, display: Display) -> bool:
             continue
 
 
-def wait_for_ok_or_skip_setup(link: BoardLink, display: Display):
+def wait_for_ok_or_skip_setup(
+    link: BoardLink,
+    display: Display,
+    *,
+    allow_exit_menu: bool = False,
+):
     """Wait for setup-entry confirmation."""
     try:
         link.clear_input()
@@ -132,6 +152,14 @@ def wait_for_ok_or_skip_setup(link: BoardLink, display: Display):
             return None
 
         if m in NEW_GAME_MSGS:
+            if allow_exit_menu:
+                if confirm_exit_game(
+                    link,
+                    display,
+                    rearm_command="WaitForOkOrSkipSetup",
+                ):
+                    return None
+                continue
             return None
 
         if m in OK_MSGS:
@@ -148,6 +176,7 @@ def confirm_exit_game(
     link: BoardLink,
     display: Display,
     options: Optional[List[str]] = None,
+    rearm_command: Optional[str] = "SetupComplete",
 ) -> bool:
     """Show a paged 'Leave game?' confirmation menu.
 
@@ -168,7 +197,8 @@ def confirm_exit_game(
     )
     if choice is None:
         # User pressed Back — put Pico back into RUNNING state
-        link.send_to_board("SetupComplete")
+        if rearm_command:
+            link.send_to_board(rearm_command)
         return False
     return True
 
@@ -832,7 +862,7 @@ def guide_board_setup(
         time.sleep(0.3)
         link.send_to_board("setup_clear")
 
-        choice = wait_for_ok_or_skip_setup(link, display)
+        choice = wait_for_ok_or_skip_setup(link, display, allow_exit_menu=True)
         if choice is None:
             return None
         if choice == "skip":
@@ -850,11 +880,21 @@ def guide_board_setup(
                 footer="OK = next",
             )
             link.send_to_board(f"setup_place_{sq}_{side}")
-            if not wait_for_ok(link, display):
+            if not wait_for_ok(
+                link,
+                display,
+                allow_exit_menu=True,
+                rearm_command="WaitForOkConfirm",
+            ):
                 return None
 
         display.show_setup_panel(label, "Setup done", footer="OK = continue")
-        if not wait_for_ok(link, display):
+        if not wait_for_ok(
+            link,
+            display,
+            allow_exit_menu=True,
+            rearm_command="WaitForOkConfirm",
+        ):
             return None
         return "ok"
     finally:
@@ -2194,12 +2234,12 @@ def run_selected_mode(
     elif state.mode in ("puzzle", "puzzles", "btn_mode_puzzle", "btn_mode_puzzles"):
         link.send_to_board("SetupComplete")
         _run_puzzle_game(link, display)
-        raise ReturnToMenu()
+        return
 
     elif state.mode in ("studies", "study"):
         link.send_to_board("SetupComplete")
         _run_study_mode(link, display)
-        raise ReturnToMenu()
+        return
 
     elif state.mode == "online":
         _run_online_game(link, display, cfg)

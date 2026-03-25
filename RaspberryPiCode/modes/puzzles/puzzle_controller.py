@@ -897,7 +897,7 @@ class PuzzleController:
             time.sleep(0.3)
             link.send_to_board("setup_clear")
 
-            choice = wait_for_ok_or_skip_setup(link, display)
+            choice = wait_for_ok_or_skip_setup(link, display, allow_exit_menu=True)
             if choice is None:
                 return
             if choice == "skip":
@@ -916,7 +916,12 @@ class PuzzleController:
                         footer="OK = next",
                     )
                     link.send_to_board(f"setup_place_{sq}_{side}")
-                    if not wait_for_ok(link, display):
+                    if not wait_for_ok(
+                        link,
+                        display,
+                        allow_exit_menu=True,
+                        rearm_command="WaitForOkConfirm",
+                    ):
                         return
 
                 display.show_setup_panel(
@@ -925,7 +930,12 @@ class PuzzleController:
                     "Puzzle begins",
                     footer="OK = continue",
                 )
-                if not wait_for_ok(link, display):
+                if not wait_for_ok(
+                    link,
+                    display,
+                    allow_exit_menu=True,
+                    rearm_command="WaitForOkConfirm",
+                ):
                     return
         finally:
             link.send_to_board("puzzle_setup_done")

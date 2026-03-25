@@ -342,7 +342,13 @@ class StudyController:
                     shutdown_raspberry_pi(link, display)
                     return False
                 if msg in NEW_GAME_MSGS:
-                    return False
+                    if confirm_exit_game(
+                        link,
+                        display,
+                        rearm_command="WaitForAnnotationPage",
+                    ):
+                        return False
+                    continue
                 if msg in OK_MSGS:
                     return True
                 if msg in HINT_MSGS:
@@ -554,7 +560,12 @@ class StudyController:
                     if ksq is not None:
                         pending_check_sq = chess.square_name(ksq)
                 node = main_var
-                if not wait_for_ok(link, display):
+                if not wait_for_ok(
+                    link,
+                    display,
+                    allow_exit_menu=True,
+                    rearm_command="WaitForOkConfirm",
+                ):
                     return
                 if pending_check_sq is not None:
                     link.send_to_board(f"check_{pending_check_sq}")
