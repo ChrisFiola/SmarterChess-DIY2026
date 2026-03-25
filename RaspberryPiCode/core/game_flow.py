@@ -1719,6 +1719,7 @@ def _render_paged_menu(
     *,
     can_back: bool,
     per_page: int = 3,
+    back_label: str = "Back",
 ) -> str:
     """Format a paged menu for the graphical LCD display.
 
@@ -1738,9 +1739,9 @@ def _render_paged_menu(
 
     has_hint = pages > 1
     if can_back and has_hint:
-        footer = "OK=Back  Hint=Next"
+        footer = f"OK={back_label}  Hint=Next"
     elif can_back:
-        footer = "OK=Back"
+        footer = f"OK={back_label}"
     elif has_hint:
         footer = "Hint=Next"
     else:
@@ -1759,6 +1760,7 @@ def _paged_menu(
     wake_command: Optional[str] = None,
     resend_timeout: Optional[float] = None,
     per_page: int = 3,
+    back_label: str = "Back",
 ) -> Optional[str]:
     """Show a scrollable menu and return the user's selection.
 
@@ -1798,6 +1800,7 @@ def _paged_menu(
                 chunk,
                 can_back=can_back,
                 per_page=per_page,
+                back_label=back_label,
             ),
             size=f"menuheader{page_tag}",
         )

@@ -487,6 +487,22 @@ class StudyController:
             time.sleep(1.0)
             return matched
 
+    @staticmethod
+    def _fork_label(node: chess.pgn.GameNode, board_fen: str) -> str:
+        """Short menu label for a fork: 'Mv5: e4/d4'."""
+        try:
+            brd = chess.Board(board_fen)
+            fullmove = brd.fullmove_number
+            sans = []
+            for var in node.variations[:3]:
+                try:
+                    sans.append(brd.san(var.move))
+                except Exception:
+                    sans.append(chess.Move.uci(var.move)[2:4])
+            return f"Mv{fullmove}: {'/'.join(sans)}"
+        except Exception:
+            return "Fork"
+
     def _play_chapter(
         self,
         link: BoardLink,
@@ -520,7 +536,6 @@ class StudyController:
             if not self._show_annotation(link, display, game.comment):
                 return
 
-        node: chess.pgn.GameNode = game
         mode_label = (
             "Watch"
             if play_as is None
@@ -528,54 +543,89 @@ class StudyController:
         )
         print(f"[STUDY] chapter={chapter_name!r} mode={mode_label}", flush=True)
 
-        while node.variations:
-            current_turn = board.turn
-            main_var = node.variation(0)
-            move = main_var.move
-            uci = chess.Move.uci(move)
-            cap = board.is_capture(move)
-            side_label = "White" if current_turn == chess.WHITE else "Black"
-            is_human_turn = play_as is not None and current_turn == play_as
+        # fork_history tracks human decision points so the user can rewind and
+        # try a different variation after reaching the end of a chapter.
+        fork_history: List[Tuple[chess.pgn.GameNode, str]] = []
+        node: chess.pgn.GameNode = game
 
-            if is_human_turn:
-                # Human plays — let them choose a variation
-                chosen = self._collect_move(link, display, board, node)
-                if chosen is None:
-                    return
-                board.push(chosen.move)
-                send_check_signal(link, board)
-                node = chosen
-            else:
-                # Watch or opponent's turn — auto-play main line
-                # Use hint_ instead of engine move format so the Pico stays in
-                # the normal message loop (engine format triggers engine_ack_pending
-                # which auto-calls _collect_and_submit_move on OK, causing a deadlock
-                # when we then send WaitForOkConfirm for annotations).
-                link.send_to_board(f"study_move_{uci}{'_cap' if cap else ''}")
-                board.push(move)
-                show_received_move(display, board, uci, force=True)
-                pending_check_sq = None
-                if board.is_check():
-                    ksq = board.king(board.turn)
-                    if ksq is not None:
-                        pending_check_sq = chess.square_name(ksq)
-                node = main_var
-                if not wait_for_ok(
-                    link,
-                    display,
-                    allow_exit_menu=True,
-                    rearm_command="WaitForOkConfirm",
-                ):
-                    return
-                if pending_check_sq is not None:
-                    link.send_to_board(f"check_{pending_check_sq}")
+        while True:  # outer loop: supports rewinding to a fork
+            while node.variations:
+                current_turn = board.turn
+                main_var = node.variation(0)
+                move = main_var.move
+                uci = chess.Move.uci(move)
+                cap = board.is_capture(move)
+                side_label = "White" if current_turn == chess.WHITE else "Black"
+                is_human_turn = play_as is not None and current_turn == play_as
+
+                if is_human_turn:
+                    # Record fork before human chooses so we can rewind here later
+                    if len(node.variations) > 1:
+                        fork_history.append((node, board.fen()))
+                    # Human plays — let them choose a variation
+                    chosen = self._collect_move(link, display, board, node)
+                    if chosen is None:
+                        return
+                    board.push(chosen.move)
+                    send_check_signal(link, board)
+                    node = chosen
+                else:
+                    # Watch or opponent's turn — auto-play main line
+                    # Use hint_ instead of engine move format so the Pico stays in
+                    # the normal message loop (engine format triggers engine_ack_pending
+                    # which auto-calls _collect_and_submit_move on OK, causing a deadlock
+                    # when we then send WaitForOkConfirm for annotations).
+                    link.send_to_board(f"study_move_{uci}{'_cap' if cap else ''}")
+                    board.push(move)
+                    show_received_move(display, board, uci, force=True)
                     pending_check_sq = None
+                    if board.is_check():
+                        ksq = board.king(board.turn)
+                        if ksq is not None:
+                            pending_check_sq = chess.square_name(ksq)
+                    node = main_var
+                    if not wait_for_ok(
+                        link,
+                        display,
+                        allow_exit_menu=True,
+                        rearm_command="WaitForOkConfirm",
+                    ):
+                        return
+                    if pending_check_sq is not None:
+                        link.send_to_board(f"check_{pending_check_sq}")
+                        pending_check_sq = None
 
-            # Show move annotation if present
-            if node.comment:
-                if not self._show_annotation(link, display, node.comment):
-                    return
+                # Show move annotation if present
+                if node.comment:
+                    if not self._show_annotation(link, display, node.comment):
+                        return
 
-        # Chapter complete
-        display.show_header_panel(label, "Chapter done!", footer="OK=Chapters")
-        wait_for_ok(link, display)
+            # Chapter complete
+            if not fork_history:
+                display.show_header_panel(label, "Chapter done!", footer="OK=Chapters")
+                wait_for_ok(link, display)
+                return
+
+            # Build fork menu (most recent fork first)
+            fork_labels = [
+                self._fork_label(n, f) for n, f in reversed(fork_history)
+            ]
+            choice = _paged_menu(
+                link,
+                display,
+                fork_labels,
+                header="Study Menu",
+                can_back=True,
+                back_label="Chapters",
+            )
+            if choice is None:
+                return  # OK=Chapters
+
+            # Locate the chosen fork and discard everything explored after it
+            rev_idx = fork_labels.index(choice)
+            orig_idx = len(fork_history) - 1 - rev_idx
+            node, fork_fen = fork_history[orig_idx]
+            fork_history = fork_history[:orig_idx]
+            board = chess.Board(fork_fen)
+            if guide_board_setup(link, display, fork_fen, label=label) is None:
+                return  # user backed out during setup
