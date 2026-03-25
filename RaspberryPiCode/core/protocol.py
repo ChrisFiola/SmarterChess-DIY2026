@@ -103,21 +103,21 @@ def format_capture_reply(is_capture: bool) -> str:
 
 
 _WHITE_PIECE_NAMES = {
-    "P": "♟PAWN",
-    "N": "♞KNIGHT",
-    "B": "♝BISHOP",
-    "R": "♜ROOK",
-    "Q": "♛QUEEN",
-    "K": "♚KING",
+    "P": "♟\nPAWN",
+    "N": "♞\nKNIGHT",
+    "B": "♝\nBISHOP",
+    "R": "♜\nROOK",
+    "Q": "♛\nQUEEN",
+    "K": "♚\nKING",
 }
 
 _BLACK_PIECE_NAMES = {
-    "P": "♙PAWN",
-    "N": "♘KNIGHT",
-    "B": "♗BISHOP",
-    "R": "♖ROOK",
-    "Q": "♕QUEEN",
-    "K": "♔KING",
+    "P": "♙\nPAWN",
+    "N": "♘\nKNIGHT",
+    "B": "♗\nBISHOP",
+    "R": "♖\nROOK",
+    "Q": "♕\nQUEEN",
+    "K": "♔\nKING",
 }
 
 
