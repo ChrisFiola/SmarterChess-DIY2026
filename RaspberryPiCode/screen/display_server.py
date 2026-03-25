@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import re
 import select
 import sys
 import time
@@ -90,6 +91,17 @@ def _is_footer_hint(line: str) -> bool:
         or "hint=" in low
         or "ok+" in low
     )
+
+
+def _normalize_footer_text(line: str) -> str:
+    txt = (line or "").strip()
+    if not txt:
+        return ""
+    txt = re.sub(r"\bOK\s*=\s*", "OK=", txt)
+    txt = re.sub(r"\bHint\s*=\s*", "Hint=", txt)
+    txt = re.sub(r"\bHINT\s*=\s*", "HINT=", txt)
+    txt = re.sub(r"\s{2,}", " ", txt)
+    return txt
 
 
 def _fit_single_line_size(
@@ -303,7 +315,7 @@ def _draw_menu(lines, page_info="", *, font_key: str = "default"):
         DRAW.text((W - pg_w - 6, 4), page_info, font=pg_font, fill="GRAY")
         header_reserved = pg_h + 4
 
-    footer = raw_footer or ""
+    footer = _normalize_footer_text(raw_footer or "")
     footer_font = _get_font(FOOTER_SIZE, font_key=font_key)
     footer_h = (
         _measure(FOOTER_SIZE, footer, footer_font, font_key=font_key)[1]
@@ -366,8 +378,8 @@ def _draw_header_panel(lines, badge: str = ""):
 
     header = (lines[0] or "").strip()
     footer = (
-        (lines[-1] or "").strip()
-        if len(lines) > 2 and _is_footer_hint(lines[-1])
+        _normalize_footer_text(lines[-1])
+        if len(lines) > 1 and _is_footer_hint(lines[-1])
         else ""
     )
     raw_body = lines[1:-1] if footer else lines[1:]
@@ -697,7 +709,7 @@ def _render_current():
         return
 
     if size_key == "auto":
-        _draw_centered_text_auto(lines)
+        _draw_header_panel(lines)
         return
 
     try:
