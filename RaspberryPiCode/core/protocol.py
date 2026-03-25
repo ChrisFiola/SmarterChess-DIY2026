@@ -103,21 +103,21 @@ def format_capture_reply(is_capture: bool) -> str:
 
 
 _WHITE_PIECE_NAMES = {
-    "P": "♙PAWN",
-    "N": "♘KNIGHT",
-    "B": "♗BISHOP",
-    "R": "♖ROOK",
-    "Q": "♕QUEEN",
-    "K": "♔KING",
-}
-
-_BLACK_PIECE_NAMES = {
     "P": "♟PAWN",
     "N": "♞KNIGHT",
     "B": "♝BISHOP",
     "R": "♜ROOK",
     "Q": "♛QUEEN",
     "K": "♚KING",
+}
+
+_BLACK_PIECE_NAMES = {
+    "P": "♙PAWN",
+    "N": "♘KNIGHT",
+    "B": "♗BISHOP",
+    "R": "♖ROOK",
+    "Q": "♕QUEEN",
+    "K": "♔KING",
 }
 
 
@@ -137,7 +137,11 @@ def piece_name_black(sym: str) -> str:
 
 def piece_name_for_side(sym: str, side: str) -> str:
     """Return the icon + name for a piece symbol using side 'w' or 'b'."""
-    return piece_name_white(sym) if (side or "").lower().startswith("w") else piece_name_black(sym)
+    return (
+        piece_name_white(sym)
+        if (side or "").lower().startswith("w")
+        else piece_name_black(sym)
+    )
 
 
 def send_lcd_ack_for_payload(

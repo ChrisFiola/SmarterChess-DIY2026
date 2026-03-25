@@ -34,7 +34,7 @@ disp.clear()
 # Screen constants
 W, H = disp.width, disp.height
 FONT_CANDIDATES = [
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf",
     "/usr/share/fonts/truetype/freefont/FreeSerif.ttf",
     "/home/king/SmarterChess-DIY2026/RaspberryPiCode/ChessSans.ttf",
     "/home/king/SmarterChess-DIY2026/RaspberryPiCode/WorkSans-Medium.ttf",
@@ -289,8 +289,12 @@ def _draw_online(lines):
 
     label_size = 10
     label_font = _get_font(label_size)
-    left_prefix_w, left_prefix_h = _measure(label_size, left_prefix, label_font) if left_prefix else (0, 0)
-    right_prefix_w, right_prefix_h = _measure(label_size, right_prefix, label_font) if right_prefix else (0, 0)
+    left_prefix_w, left_prefix_h = (
+        _measure(label_size, left_prefix, label_font) if left_prefix else (0, 0)
+    )
+    right_prefix_w, right_prefix_h = (
+        _measure(label_size, right_prefix, label_font) if right_prefix else (0, 0)
+    )
 
     time_size = 18
     time_font = _get_font(time_size)
@@ -340,9 +344,13 @@ def _draw_online(lines):
     body_size = min_body
     for sz in range(max_body, min_body - 1, -1):
         font = _get_font(sz)
-        heights = [_measure(sz, ln, font)[1] for ln in display_body] if display_body else []
+        heights = (
+            [_measure(sz, ln, font)[1] for ln in display_body] if display_body else []
+        )
         total_h = sum(heights) + spacing * (len(heights) - 1) if heights else 0
-        widths = [_measure(sz, ln, font)[0] for ln in display_body] if display_body else []
+        widths = (
+            [_measure(sz, ln, font)[0] for ln in display_body] if display_body else []
+        )
         if total_h <= avail_h and all(w <= W - 12 for w in widths):
             body_size = sz
             break
@@ -427,6 +435,7 @@ def _draw_qr(data: str, caption_lines):
         disp.ShowImage(FRAME)
     except Exception as _qr_exc:
         import traceback
+
         print(f"[QR ERROR] {type(_qr_exc).__name__}: {_qr_exc}", flush=True)
         traceback.print_exc()
         _draw_centered_text_auto(["QR error", data[:18]])
@@ -505,6 +514,7 @@ def _render_current():
         _draw_centered_text_with_size(lines, size=size, spacing=6)
     except Exception:
         _draw_centered_text_auto(lines)
+
 
 while True:
     # Wait for input, but wake periodically so we can draw pending messages
