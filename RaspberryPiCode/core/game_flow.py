@@ -372,15 +372,19 @@ def handle_illegal_move(
         pass
 
     if frm and to:
-        display.show_panel(
+        display.show_header_panel(
             f"{label} move",
-            f"{piece_txt} {frm}->{to}",
-            "Put it back",
+            f"{piece_txt}",
+            f"{frm}->{to}",
             footer="OK = retry",
         )
         link.send_to_board(f"puzzle_wrong_{to}{frm}")
     else:
-        display.show_panel(side_prefix, f"{label} move", footer="OK = continue")
+        display.show_header_panel(
+            f"{label} move",
+            side_prefix,
+            footer="OK = continue",
+        )
 
     ok = wait_for_ok(link, display, send_prompt=False)
     if not ok:
@@ -769,7 +773,7 @@ def guide_board_setup(
     Returns "ok" if setup completed, "skip" if skipped, or None if user backed out.
     The caller is responsible for confirming the board is EMPTY before calling.
     """
-    from core.protocol import piece_name_for_side  # local import to avoid circular
+    from core.protocol import piece_name_for_side_stacked  # local import to avoid circular
 
     steps = compute_board_setup_steps(fen)
     try:
@@ -796,8 +800,9 @@ def guide_board_setup(
 
         for side, sq, sym in steps:
             display.show_setup_panel(
-                f"Setup {'White' if side == 'w' else 'Black'}",
-                f"{piece_name_for_side(sym, side)} {sq}",
+                f"Setup {'WHITE' if side == 'w' else 'BLACK'}",
+                piece_name_for_side_stacked(sym, side),
+                sq,
                 footer="OK = next",
             )
             link.send_to_board(f"setup_place_{sq}_{side}")
@@ -1113,6 +1118,15 @@ def _get_piece_label(board: Optional["chess.Board"], sq: str) -> Optional[str]:
         return None
 
 
+def _turn_header(board: Optional["chess.Board"]) -> str:
+    if board is not None:
+        try:
+            return f"You are {'WHITE' if board.turn == chess.WHITE else 'BLACK'}"
+        except Exception:
+            pass
+    return "Enter move"
+
+
 def _update_typing_display(
     display: Display, payload: str, board: Optional["chess.Board"] = None
 ) -> None:
@@ -1130,17 +1144,22 @@ def _update_typing_display(
             return
         label, text = parts[0], parts[1]
         label = label.lower()
+        header = _turn_header(board)
         if label == "from":
             # When a full square is entered (e.g. e2), show which piece is on that square.
             # If the user deletes back to 0/1 chars, we revert to the generic prompt.
             if _is_valid_square(text):
                 piece_lbl = _get_piece_label(board, text)
                 if piece_lbl:
-                    display.send(f"{piece_lbl}\n{text} →\nEnter to:")
+                    display.show_header_panel(
+                        header,
+                        piece_lbl,
+                        f"{text} ->",
+                    )
                 else:
-                    display.send("Enter from:\n" + text)
+                    display.show_header_panel(header, "Enter from:", text)
             else:
-                display.send("Enter from:\n" + text)
+                display.show_header_panel(header, "Enter from:", text)
 
         elif label == "to":
             # text format: "e2 → e" (partial) or "e2 → e4"
@@ -1152,9 +1171,13 @@ def _update_typing_display(
                 partial_to = right.strip()
             piece_lbl = _get_piece_label(board, frm)
             if piece_lbl:
-                display.send(f"{piece_lbl}\n{frm} → {partial_to}")
+                display.show_header_panel(
+                    header,
+                    piece_lbl,
+                    f"{frm} -> {partial_to}",
+                )
             else:
-                display.send("Enter to:\n" + text)
+                display.show_header_panel(header, "Enter to:", text)
 
         elif label == "confirm":
             # text format: "e2 → e4"
@@ -1166,13 +1189,15 @@ def _update_typing_display(
                 to = right.strip()
             piece_lbl = _get_piece_label(board, frm)
             if piece_lbl:
-                display.show_panel(
+                display.show_header_panel(
+                    header,
                     piece_lbl,
-                    f"{frm} → {to}",
+                    f"{frm} -> {to}",
                     footer="OK = confirm",
                 )
             else:
-                display.show_panel(
+                display.show_header_panel(
+                    header,
                     "Confirm move:",
                     text,
                     footer="OK = confirm",
@@ -1461,14 +1486,14 @@ def _render_paged_menu(
 ) -> str:
     """Format a paged menu for the graphical LCD display.
 
-    The display server handles uppercase and word-wrap, so we just pass
-    clean text without character-count constraints.
+    The display server handles word-wrap, so we just pass clean text without
+    character-count constraints.
     Page indicator is rendered separately by the display server via the
     size token (e.g. ``menu:1/2``).
     """
 
     def _fmt(i: int, s: str) -> str:
-        return f"{i}) {(s or '').strip().upper()}"
+        return f"{i}) {(s or '').strip()}"
 
     lines = [_fmt(i + 1, opt) for i, opt in enumerate(items[:per_page])]
 

@@ -8,6 +8,7 @@ display_server.py listens on PIPE_PATH for single-line messages in the format:
 Where size is one of:
   'auto'    — pick a font size that fits all lines on screen
   'menu'    — autosize and center the block, but left-align lines within it
+  'header'  — header/body/footer layout for in-game prompts
   'setup'   — header/body/footer layout for guided board setup screens
   'annotation' — menu-style layout using the annotation font
   integer   — fixed font size in points
