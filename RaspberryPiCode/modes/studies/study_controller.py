@@ -314,7 +314,8 @@ class StudyController:
         Hint scrolls down one line; at the bottom it wraps back to the top.
         OK = done. Returns False if user backs out to menu.
         """
-        lines = _wrap_text(_clean_comment(text), max_chars=30)
+        # lines = _wrap_text(_clean_comment(text), max_chars=30)
+        lines = _wrap_text(text, max_chars=30)
         if not lines or lines == [""]:
             return True
 
@@ -608,9 +609,7 @@ class StudyController:
                 return
 
             # Build fork menu (most recent fork first)
-            fork_labels = [
-                self._fork_label(n, f) for n, f in reversed(fork_history)
-            ]
+            fork_labels = [self._fork_label(n, f) for n, f in reversed(fork_history)]
             choice = _paged_menu(
                 link,
                 display,

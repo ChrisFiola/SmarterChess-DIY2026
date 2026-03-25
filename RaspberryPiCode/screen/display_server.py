@@ -42,7 +42,7 @@ DEFAULT_FONT_CANDIDATES = [
     "/home/king/LCD_Module_RPI_code/RaspberryPi/python/Font/Font00.ttf",
 ]
 ANNOTATION_FONT_CANDIDATES = [
-    "/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
     "/home/king/SmarterChess-DIY2026/RaspberryPiCode/WorkSans-Regular.ttf",
@@ -124,8 +124,15 @@ def _split_footer_parts(raw: str) -> list:
     return [_normalize_footer_text(p) for p in parts if p.strip()][:3]
 
 
-def _draw_footer_aligned(parts: list, font, size: int, footer_y: int,
-                         *, pad: int = 12, font_key: str = "default") -> None:
+def _draw_footer_aligned(
+    parts: list,
+    font,
+    size: int,
+    footer_y: int,
+    *,
+    pad: int = 12,
+    font_key: str = "default",
+) -> None:
     """Draw 1-3 footer parts: single=centred, two=left+right, three=left+centre+right."""
     if not parts:
         return
@@ -332,8 +339,14 @@ def _draw_centered_text_auto(lines, min_size=14, max_size=28, vpad=12, spacing=6
     _draw_centered_text_with_size(lines, size=size, spacing=spacing, vpad=vpad)
 
 
-def _draw_menu(lines, page_info="", *, font_key: str = "default", align: str = "center",
-               footer_font_key: str = None):
+def _draw_menu(
+    lines,
+    page_info="",
+    *,
+    font_key: str = "default",
+    align: str = "center",
+    footer_font_key: str = None,
+):
     """Draw menu lines with auto-sizing, footer pinned to the bottom.
 
     Expects lines = [item1, item2, item3, footer].  Footer may be empty string.
@@ -380,21 +393,16 @@ def _draw_menu(lines, page_info="", *, font_key: str = "default", align: str = "
     item_size = min_size
     for sz in range(max_size, min_size - 1, -1):
         font = _get_font(sz, font_key=font_key)
-        heights = [
-            _measure(sz, ln, font, font_key=font_key)[1] for ln in display_lines
-        ]
+        heights = [_measure(sz, ln, font, font_key=font_key)[1] for ln in display_lines]
         total_h = sum(heights) + spacing * (len(heights) - 1) if heights else 0
-        widths = [
-            _measure(sz, ln, font, font_key=font_key)[0] for ln in display_lines
-        ]
+        widths = [_measure(sz, ln, font, font_key=font_key)[0] for ln in display_lines]
         if total_h <= avail_h - 2 * vpad and all(w <= W - 16 for w in widths):
             item_size = sz
             break
 
     item_font = _get_font(item_size, font_key=font_key)
     heights = [
-        _measure(item_size, ln, item_font, font_key=font_key)[1]
-        for ln in display_lines
+        _measure(item_size, ln, item_font, font_key=font_key)[1] for ln in display_lines
     ]
     total_h = sum(heights) + spacing * (len(heights) - 1) if heights else 0
 
@@ -412,8 +420,9 @@ def _draw_menu(lines, page_info="", *, font_key: str = "default", align: str = "
     if footer_parts:
         footer_y = H - footer_h - 4
         DRAW.line((10, footer_y - 5, W - 10, footer_y - 5), fill="WHITE", width=1)
-        _draw_footer_aligned(footer_parts, footer_font, FOOTER_SIZE, footer_y,
-                             font_key=footer_font_key)
+        _draw_footer_aligned(
+            footer_parts, footer_font, FOOTER_SIZE, footer_y, font_key=footer_font_key
+        )
 
     disp.ShowImage(FRAME)
 
@@ -424,7 +433,9 @@ def _draw_header_panel(lines, badge: str = ""):
         return
 
     header = (lines[0] or "").strip()
-    raw_footer_line = lines[-1] if (len(lines) > 1 and _is_footer_hint(lines[-1])) else ""
+    raw_footer_line = (
+        lines[-1] if (len(lines) > 1 and _is_footer_hint(lines[-1])) else ""
+    )
     footer_parts = _split_footer_parts(raw_footer_line)
     footer = " ".join(footer_parts)  # kept for size-fitting below
     raw_body = lines[1:-1] if footer_parts else lines[1:]
@@ -448,7 +459,9 @@ def _draw_header_panel(lines, badge: str = ""):
     header_w, header_h = _measure(header_size, header, header_font)
     header_y = 6
     if header:
-        DRAW.text(((W - header_w) // 2, header_y), header, font=header_font, fill="WHITE")
+        DRAW.text(
+            ((W - header_w) // 2, header_y), header, font=header_font, fill="WHITE"
+        )
     if badge:
         DRAW.text((W - badge_w - 8, header_y + 1), badge, font=badge_font, fill="WHITE")
     divider_y = header_y + header_h + 6
@@ -732,8 +745,13 @@ def _render_current():
 
     if size_key.startswith("annotation"):
         page_info = size_key.split(":", 1)[1] if ":" in size_key else ""
-        _draw_menu(lines, page_info=page_info, font_key="annotation", align="left",
-                   footer_font_key="default")
+        _draw_menu(
+            lines,
+            page_info=page_info,
+            font_key="annotation",
+            align="left",
+            footer_font_key="default",
+        )
         return
 
     if size_key == "setup":
