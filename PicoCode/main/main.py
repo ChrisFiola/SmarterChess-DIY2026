@@ -1116,7 +1116,10 @@ def _handle_puzzle_setup_message(msg):
         cp.enable_hint_irq()
         return True
     if msg.startswith("heyArduinoWaitForOkConfirm"):
-        _handle_puzzle_setup_ok_confirm(msg)
+        if st.puzzle_setup_active:
+            _handle_puzzle_setup_ok_confirm(msg)
+        else:
+            _handle_wait_for_ok_confirm(msg)
         return True
     if msg.startswith("heyArduinoWaitForOkOrSkipSetup"):
         _handle_wait_for_ok_or_skip_setup(msg)
@@ -1232,6 +1235,7 @@ def _handle_puzzle_setup_ok_confirm(_msg=None):
             cp.reset_edges()
             if st.persistent_trail_active:
                 _clear_persistent_trail()
+                board.markings()
             link.send("btn_ok")
             return
         time.sleep_ms(Config.Timing.FAST_POLL_MS)
