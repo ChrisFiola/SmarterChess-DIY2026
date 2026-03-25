@@ -1097,7 +1097,7 @@ def _configure_vs_computer(link: BoardLink, display: Display, cfg: GameConfig) -
     display.show_header_panel(
         "Choose Strength",
         f"~{elo} Elo",
-        footer="1=up 2=down OK=back",
+        footer="1=up  2=down  OK=back",
     )
     link.send_to_board(f"default_strength_{cfg.skill_level}")
     link.send_to_board("DifficultySelect")
@@ -1115,7 +1115,7 @@ def _configure_vs_computer(link: BoardLink, display: Display, cfg: GameConfig) -
                 display.show_header_panel(
                     "Choose Strength",
                     f"~{elo} Elo",
-                    footer="1=up 2=down OK=back",
+                    footer="1=up  2=down  OK=back",
                 )
             except Exception:
                 pass

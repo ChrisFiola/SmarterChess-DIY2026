@@ -107,6 +107,38 @@ def _normalize_footer_text(line: str) -> str:
     return txt
 
 
+def _split_footer_parts(raw: str) -> list:
+    """Split a raw footer on 2+ spaces and normalize each part.
+
+    Returns a list of 0-3 non-empty strings.
+    """
+    raw = (raw or "").strip()
+    if not raw:
+        return []
+    parts = re.split(r"\s{2,}", raw)
+    return [_normalize_footer_text(p) for p in parts if p.strip()][:3]
+
+
+def _draw_footer_aligned(parts: list, font, size: int, footer_y: int,
+                         *, pad: int = 6, font_key: str = "default") -> None:
+    """Draw 1-3 footer parts: single=centred, two=left+right, three=left+centre+right."""
+    if not parts:
+        return
+    if len(parts) == 1:
+        w = _measure(size, parts[0], font, font_key=font_key)[0]
+        DRAW.text(((W - w) // 2, footer_y), parts[0], font=font, fill="WHITE")
+    elif len(parts) == 2:
+        rw = _measure(size, parts[1], font, font_key=font_key)[0]
+        DRAW.text((pad, footer_y), parts[0], font=font, fill="WHITE")
+        DRAW.text((W - rw - pad, footer_y), parts[1], font=font, fill="WHITE")
+    else:
+        cw = _measure(size, parts[1], font, font_key=font_key)[0]
+        rw = _measure(size, parts[2], font, font_key=font_key)[0]
+        DRAW.text((pad, footer_y), parts[0], font=font, fill="WHITE")
+        DRAW.text(((W - cw) // 2, footer_y), parts[1], font=font, fill="WHITE")
+        DRAW.text((W - rw - pad, footer_y), parts[2], font=font, fill="WHITE")
+
+
 def _fit_single_line_size(
     text: str,
     *,
@@ -318,15 +350,15 @@ def _draw_menu(lines, page_info="", *, font_key: str = "default"):
         DRAW.text((W - pg_w - 6, 4), page_info, font=pg_font, fill="GRAY")
         header_reserved = pg_h + 4
 
-    footer = _normalize_footer_text(raw_footer or "")
+    footer_parts = _split_footer_parts(raw_footer or "")
     footer_font = _get_font(FOOTER_SIZE, font_key=font_key)
     footer_h = (
-        _measure(FOOTER_SIZE, footer, footer_font, font_key=font_key)[1]
-        if footer
+        _measure(FOOTER_SIZE, footer_parts[0], footer_font, font_key=font_key)[1]
+        if footer_parts
         else 0
     )
     # Reserve: footer text + separator gap (5) + bottom pad (4)
-    footer_reserved = (footer_h + 14) if footer else 0
+    footer_reserved = (footer_h + 14) if footer_parts else 0
     avail_h = H - footer_reserved - header_reserved
 
     spacing = 6
@@ -364,12 +396,12 @@ def _draw_menu(lines, page_info="", *, font_key: str = "default"):
         DRAW.text(((W - w) // 2, y), ln, font=item_font, fill="WHITE")
         y += h + spacing
 
-    # Footer: separator line then text
-    if footer:
-        fw = _measure(FOOTER_SIZE, footer, footer_font, font_key=font_key)[0]
+    # Footer: separator line then aligned parts
+    if footer_parts:
         footer_y = H - footer_h - 4
         DRAW.line((10, footer_y - 5, W - 10, footer_y - 5), fill="WHITE", width=1)
-        DRAW.text(((W - fw) // 2, footer_y), footer, font=footer_font, fill="WHITE")
+        _draw_footer_aligned(footer_parts, footer_font, FOOTER_SIZE, footer_y,
+                             font_key=font_key)
 
     disp.ShowImage(FRAME)
 
@@ -380,12 +412,10 @@ def _draw_header_panel(lines, badge: str = ""):
         return
 
     header = (lines[0] or "").strip()
-    footer = (
-        _normalize_footer_text(lines[-1])
-        if len(lines) > 1 and _is_footer_hint(lines[-1])
-        else ""
-    )
-    raw_body = lines[1:-1] if footer else lines[1:]
+    raw_footer_line = lines[-1] if (len(lines) > 1 and _is_footer_hint(lines[-1])) else ""
+    footer_parts = _split_footer_parts(raw_footer_line)
+    footer = " ".join(footer_parts)  # kept for size-fitting below
+    raw_body = lines[1:-1] if footer_parts else lines[1:]
     body_lines = [(ln or "") for ln in raw_body if ln]
 
     DRAW.rectangle((0, 0, W, H), fill="BLACK")
@@ -445,9 +475,8 @@ def _draw_header_panel(lines, badge: str = ""):
 
     footer_y = H - footer_h - 4
     DRAW.line((10, footer_y - 5, W - 10, footer_y - 5), fill="WHITE", width=1)
-    if footer:
-        fw = _measure(footer_size, footer, footer_font)[0]
-        DRAW.text(((W - fw) // 2, footer_y), footer, font=footer_font, fill="WHITE")
+    if footer_parts:
+        _draw_footer_aligned(footer_parts, footer_font, footer_size, footer_y)
 
     disp.ShowImage(FRAME)
 

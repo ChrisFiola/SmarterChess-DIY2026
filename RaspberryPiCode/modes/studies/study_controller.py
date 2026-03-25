@@ -307,31 +307,30 @@ class StudyController:
         return True
 
     def _show_annotation(self, link: BoardLink, display: Display, text: str) -> bool:
-        """Show paginated annotation text (3 lines/page).
+        """Show annotation text in a 4-line scrolling window.
 
-        Hint = next page (cycles back from last), OK = done.
-        Returns False if user backs out to menu.
+        Hint scrolls down one line; at the bottom it wraps back to the top.
+        OK = done. Returns False if user backs out to menu.
         """
         lines = _wrap_text(_clean_comment(text), max_chars=20)
         if not lines or lines == [""]:
             return True
 
-        pages = self._paginate_lines(lines)
-        page_idx = 0
+        WINDOW = 4
+        total = len(lines)
+        offset = 0
 
         while True:
-            is_last = page_idx == len(pages) - 1
-            self._render_page(
-                display,
-                pages[page_idx],
-                footer=(
-                    "Hint=Back  OK=Done"
-                    if is_last
-                    else "Hint=Next  OK=Skip"
-                ),
-                page_idx=page_idx,
-                total_pages=len(pages),
-            )
+            at_bottom = offset + WINDOW >= total
+            visible = lines[offset : offset + WINDOW]
+            if total <= WINDOW:
+                footer = "OK=Done"
+            elif at_bottom:
+                footer = "Hint=Top  OK=Done"
+            else:
+                footer = "Hint=Scroll  OK=Done"
+
+            display.send("\n".join(visible) + "\n" + footer, size="annotation")
             link.send_to_board("WaitForAnnotationPage")
 
             while True:
@@ -352,7 +351,7 @@ class StudyController:
                 if msg in OK_MSGS:
                     return True
                 if msg in HINT_MSGS:
-                    page_idx = 0 if is_last else page_idx + 1
+                    offset = 0 if at_bottom else offset + 1
                     break  # redisplay
 
     def _collect_move(
