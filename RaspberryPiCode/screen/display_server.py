@@ -42,8 +42,11 @@ DEFAULT_FONT_CANDIDATES = [
     "/home/king/LCD_Module_RPI_code/RaspberryPi/python/Font/Font00.ttf",
 ]
 ANNOTATION_FONT_CANDIDATES = [
-    "/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed.ttf",
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf",
+    "/usr/share/fonts/truetype/freefont/FreeSerif.ttf",
+    "/home/king/SmarterChess-DIY2026/RaspberryPiCode/ChessSans.ttf",
+    "/home/king/SmarterChess-DIY2026/RaspberryPiCode/WorkSans-Medium.ttf",
+    "/home/king/LCD_Module_RPI_code/RaspberryPi/python/Font/Font00.ttf",
 ]
 
 

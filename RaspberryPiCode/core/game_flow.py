@@ -1481,9 +1481,13 @@ def _run_local_game(
             post_game_menu(link, display, state.board)
             # unreachable — post_game_menu always raises ReturnToMenu
         else:
-            prompt_next_turn(
-                link, display, state.board, state.mode, cfg, chess.Move.uci(move)
-            )
+            last_uci = chess.Move.uci(move)
+            show_received_move(display, state.board, last_uci, force=True)
+            if not wait_for_ok(link, display):
+                raise ReturnToMenu()
+            side = "WHITE" if state.board.turn == chess.WHITE else "BLACK"
+            send_turn_notification(link, state.board)
+            display.prompt_move(side, force=True)
 
 
 # -------------------- Online placeholder --------------------
@@ -2087,14 +2091,21 @@ def _run_study_mode(link: BoardLink, display: Display) -> None:
 
 def _run_puzzle_game(link: BoardLink, display: Display) -> None:
     """Puzzle mode: show a submenu then launch the selected puzzle type."""
-    display.show_header_panel("Puzzles", "Loading...")
     from modes.online.lichess_client import LichessClient
     from modes.puzzles.puzzle_controller import PuzzleController
 
+    display.show_header_panel("Puzzles", "Loading...")
     client = LichessClient()
 
     def menu(options: List[str]) -> Optional[str]:
-        return _paged_menu(link, display, options, header="Puzzles")
+        return _paged_menu(
+            link,
+            display,
+            options,
+            header="Puzzles",
+            wake_command="ChooseMode",
+            resend_timeout=3.0,
+        )
 
     while True:
         top = menu(["Daily Puzzle", "Mix and match", "Themes"])
