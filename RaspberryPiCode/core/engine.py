@@ -102,6 +102,8 @@ class EngineContext:
             engine.configure({"UCI_LimitStrength": False, "Skill Level": 20})
             self.hint_override_active = True
             info = engine.analyse(board, limit, multipv=1)
+            if isinstance(info, list):
+                info = info[0] if info else {}
             pv = info.get("pv")
             if pv:
                 return pv[0].uci()
@@ -139,6 +141,8 @@ class EngineContext:
             engine.configure({"UCI_LimitStrength": False, "Skill Level": 20})
             self.hint_override_active = True
             info = engine.analyse(board, limit, multipv=1)
+            if isinstance(info, list):
+                info = info[0] if info else {}
             score = info.get("score")
             if score is None:
                 return None

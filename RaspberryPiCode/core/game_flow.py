@@ -1142,6 +1142,17 @@ def _input_piece_label(label: Optional[str]) -> Optional[str]:
     return f"{parts[0]} {' '.join(parts[1:]).upper()}"
 
 
+def _split_preview_move(text: str) -> tuple[str, str]:
+    raw = (text or "").strip()
+    if "->" in raw:
+        left, right = raw.split("->", 1)
+        return left.strip(), right.strip()
+    if "→" in raw:
+        left, right = raw.split("→", 1)
+        return left.strip(), right.strip()
+    return "", raw
+
+
 def _move_received_piece_label(
     board: Optional["chess.Board"], uci: str
 ) -> Optional[str]:
@@ -1166,13 +1177,13 @@ def show_received_move(
 ) -> None:
     move_line = ""
     if isinstance(uci, str) and len(uci) >= 4:
-        move_line = f"{uci[:2]} -> {uci[2:4]}"
+        move_line = f"{uci[:2]} → {uci[2:4]}"
     piece_lbl = _move_received_piece_label(board, uci)
     body_lines = [ln for ln in [piece_lbl, move_line or (uci or "").strip()] if ln]
     display.show_header_panel(
         "Move received",
         *body_lines,
-        footer="OK = confirm",
+        footer="OK = Confirm",
         force=force,
     )
 
@@ -1215,14 +1226,14 @@ def _update_typing_display(
                     display.show_header_panel(
                         header,
                         piece_lbl,
-                        f"{text} ->",
+                        f"{text} →",
                         footer=delete_footer,
                         force=True,
                     )
                 else:
                     display.show_header_panel(
                         header,
-                        f"{text} ->",
+                        f"{text} →",
                         footer=delete_footer,
                         force=True,
                     )
@@ -1235,51 +1246,41 @@ def _update_typing_display(
                 )
 
         elif label == "to":
-            # text format: "e2 → e" (partial) or "e2 → e4"
-            frm = ""
-            partial_to = text
-            if "→" in text:
-                left, right = text.split("→", 1)
-                frm = left.strip()
-                partial_to = right.strip()
+            # text format: "e2 -> e" (partial) or "e2 -> e4"
+            frm, partial_to = _split_preview_move(text)
             piece_lbl = _input_piece_label(_get_piece_label(board, frm))
             if piece_lbl:
                 display.show_header_panel(
                     header,
                     piece_lbl,
-                    f"{frm} -> {partial_to}",
+                    f"{frm} → {partial_to}",
                     footer=delete_footer,
                     force=True,
                 )
             else:
                 display.show_header_panel(
                     header,
-                    text,
+                    text.replace("->", "→"),
                     footer=delete_footer,
                     force=True,
                 )
 
         elif label == "confirm":
-            # text format: "e2 → e4"
-            frm = ""
-            to = ""
-            if "→" in text:
-                left, right = text.split("→", 1)
-                frm = left.strip()
-                to = right.strip()
+            # text format: "e2 -> e4"
+            frm, to = _split_preview_move(text)
             piece_lbl = _input_piece_label(_get_piece_label(board, frm))
             if piece_lbl:
                 display.show_header_panel(
                     header,
                     piece_lbl,
-                    f"{frm} -> {to}",
+                    f"{frm} → {to}",
                     footer=confirm_footer,
                     force=True,
                 )
             else:
                 display.show_header_panel(
                     header,
-                    text,
+                    text.replace("->", "→"),
                     footer=confirm_footer,
                     force=True,
                 )
