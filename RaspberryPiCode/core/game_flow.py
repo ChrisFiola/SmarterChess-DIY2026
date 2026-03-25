@@ -2094,17 +2094,12 @@ def _run_puzzle_game(link: BoardLink, display: Display) -> None:
     from modes.online.lichess_client import LichessClient
     from modes.puzzles.puzzle_controller import PuzzleController
 
-    display.show_header_panel("Puzzles", "Loading...")
-    client = LichessClient()
-
     def menu(options: List[str]) -> Optional[str]:
         return _paged_menu(
             link,
             display,
             options,
             header="Puzzles",
-            wake_command="ChooseMode",
-            resend_timeout=3.0,
         )
 
     while True:
@@ -2113,11 +2108,11 @@ def _run_puzzle_game(link: BoardLink, display: Display) -> None:
             raise ReturnToMenu()
 
         if top.startswith("Daily"):
-            PuzzleController(client, mode="daily").run(link, display)
+            PuzzleController(LichessClient(), mode="daily").run(link, display)
             return
 
         if top.startswith("Mix"):
-            PuzzleController(client, mode="mix").run(link, display)
+            PuzzleController(LichessClient(), mode="mix").run(link, display)
             return
 
         if not top.startswith("Themes"):
@@ -2136,7 +2131,7 @@ def _run_puzzle_game(link: BoardLink, display: Display) -> None:
                 if not tag:
                     continue
                 PuzzleController(
-                    client, mode="theme", theme=tag, theme_label=label
+                    LichessClient(), mode="theme", theme=tag, theme_label=label
                 ).run(link, display)
                 return
 
@@ -2151,7 +2146,7 @@ def _run_puzzle_game(link: BoardLink, display: Display) -> None:
                 if label is None:
                     continue
                 PuzzleController(
-                    client, mode="theme", theme=label, theme_label=label
+                    LichessClient(), mode="theme", theme=label, theme_label=label
                 ).run(link, display)
                 return
 
