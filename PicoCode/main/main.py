@@ -328,9 +328,12 @@ def _wait_for_trail_clear():
             return "gameover"
         b = cp.detect_press_raw()
         if b is not None:
+            was_hint = st.persistent_trail_type == "hint"
             _clear_persistent_trail()
             cp.only_input()
             cp.reset_edges()
+            if was_hint and b == (Config.Buttons.OK_INDEX + 1):
+                link.send("btn_ok")
             return b if 1 <= b <= 8 else 0
         time.sleep_ms(Config.Timing.FAST_POLL_MS)
 
