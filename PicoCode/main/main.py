@@ -1708,6 +1708,7 @@ def _main_loop():
             st.ok_back_enabled
             and not st.puzzle_setup_active
             and not st.engine_ack_pending
+            and not st.persistent_trail_active
         ):
             b0 = cp.detect_press_raw()
             if b0 == (Config.Buttons.OK_INDEX + 1):
