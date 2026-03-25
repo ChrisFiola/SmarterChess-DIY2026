@@ -120,7 +120,7 @@ def _split_footer_parts(raw: str) -> list:
 
 
 def _draw_footer_aligned(parts: list, font, size: int, footer_y: int,
-                         *, pad: int = 6, font_key: str = "default") -> None:
+                         *, pad: int = 12, font_key: str = "default") -> None:
     """Draw 1-3 footer parts: single=centred, two=left+right, three=left+centre+right."""
     if not parts:
         return
@@ -327,11 +327,12 @@ def _draw_centered_text_auto(lines, min_size=14, max_size=28, vpad=12, spacing=6
     _draw_centered_text_with_size(lines, size=size, spacing=spacing, vpad=vpad)
 
 
-def _draw_menu(lines, page_info="", *, font_key: str = "default"):
-    """Draw menu lines with auto-sizing: items centered, footer pinned to the bottom.
+def _draw_menu(lines, page_info="", *, font_key: str = "default", align: str = "center"):
+    """Draw menu lines with auto-sizing, footer pinned to the bottom.
 
     Expects lines = [item1, item2, item3, footer].  Footer may be empty string.
     ``page_info`` is an optional string like "1/2" rendered top-right.
+    ``align`` controls body text alignment: "center" (default) or "left".
     """
     if not lines:
         return
@@ -388,12 +389,14 @@ def _draw_menu(lines, page_info="", *, font_key: str = "default"):
     ]
     total_h = sum(heights) + spacing * (len(heights) - 1) if heights else 0
 
-    # Center items in the available area between header and footer
+    # Position items in the available area between header and footer
     top = header_reserved
+    left_pad = 8
     y = top + max(vpad, (avail_h - total_h) // 2)
     for ln, h in zip(display_lines, heights):
         w = _measure(item_size, ln, item_font, font_key=font_key)[0]
-        DRAW.text(((W - w) // 2, y), ln, font=item_font, fill="WHITE")
+        x = left_pad if align == "left" else (W - w) // 2
+        DRAW.text((x, y), ln, font=item_font, fill="WHITE")
         y += h + spacing
 
     # Footer: separator line then aligned parts
@@ -720,7 +723,7 @@ def _render_current():
 
     if size_key.startswith("annotation"):
         page_info = size_key.split(":", 1)[1] if ":" in size_key else ""
-        _draw_menu(lines, page_info=page_info, font_key="annotation")
+        _draw_menu(lines, page_info=page_info, font_key="annotation", align="left")
         return
 
     if size_key == "setup":
