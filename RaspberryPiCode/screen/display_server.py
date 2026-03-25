@@ -699,6 +699,9 @@ def _render_current():
         return
 
     if size_key.startswith("header"):
+        if clock_lines:
+            _draw_online(list(clock_lines) + lines)
+            return
         badge = raw_size.split(":", 1)[1] if ":" in raw_size else ""
         _draw_header_panel(lines, badge=badge)
         return
