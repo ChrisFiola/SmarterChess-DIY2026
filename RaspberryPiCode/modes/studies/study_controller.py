@@ -327,7 +327,7 @@ class StudyController:
         main_uci = chess.Move.uci(main_var.move)
         side = "WHITE" if board.turn == chess.WHITE else "BLACK"
 
-        def _arm() -> None:
+        def _arm(*, force: bool = False) -> None:
             """Arm the Pico for move entry and update the LCD."""
             if len(variations) > 1:
                 ucis = "|".join(chess.Move.uci(v.move) for v in variations[:4])
@@ -338,16 +338,18 @@ class StudyController:
             if len(variations) == 1:
                 display.show_header_panel(
                     f"You are {side}",
-                    "Enter move",
+                    "Play move",
                     footer="Hint = see move",
+                    force=force,
                 )
             else:
                 dests = " / ".join(chess.Move.uci(v.move)[2:4] for v in variations[:4])
                 display.show_header_panel(
                     f"You are {side}",
-                    "Enter move",
+                    "Play move",
                     f"→{dests}",
                     footer="Hint = main line",
+                    force=force,
                 )
 
         _arm()
@@ -374,6 +376,7 @@ class StudyController:
                 continue
 
             if msg in OK_MSGS:
+                _arm(force=True)
                 continue
 
             if msg.startswith("typing_"):

@@ -335,7 +335,7 @@ class Display:
             self.send(arrow, force=force)
 
     def prompt_move(self, side: str, force: bool = False) -> None:
-        self.show_header_panel(f"You are {side.upper()}", "Enter move", force=force)
+        self.show_header_panel(f"You are {side.upper()}", "Play move", force=force)
 
     def show_hint_result(self, uci: str) -> None:
         """Fallback hint display using the shared header/footer layout."""

@@ -145,7 +145,7 @@ class GameController:
             # Re-arm Pico for move collection if it's the human's turn
             if self._is_human_turn():
                 self._send_turn_notification()
-            self._prompt_human()
+            self._prompt_human(force=True)
             return
 
         if typ == EventType.TYPING:
@@ -165,7 +165,7 @@ class GameController:
             print("[PICO OK] prompt_move()", flush=True)
             # OK is used as an acknowledgement / "enter move" trigger from the Pico UI.
             # It should NEVER be treated as a move payload.
-            self._prompt_human()
+            self._prompt_human(force=True)
             return
 
         if typ == EventType.CAPTURE_QUERY:

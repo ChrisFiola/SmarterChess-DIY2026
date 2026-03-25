@@ -69,6 +69,7 @@ DRAW = ImageDraw.Draw(FRAME)
 BLACK_BG = Image.new("RGB", (W, H), "BLACK")
 DRAW_MEASURE = ImageDraw.Draw(BLACK_BG)
 MEASURE_CACHE = {}  # (size, text) -> (w,h)
+_LAST_HEADER_BODY_SIZE = 18
 
 # Font cache
 FONTS = {}
@@ -153,6 +154,44 @@ def _get_font(size: int, *, font_key: str = "default"):
     if cache_key not in FONTS:
         FONTS[cache_key] = ImageFont.truetype(FONT_PATHS[font_key], size)
     return FONTS[cache_key]
+
+
+def _pick_header_body_size(
+    body_lines,
+    *,
+    avail_h: int,
+    max_w: int,
+    spacing: int,
+    min_size: int,
+    max_size: int,
+):
+    global _LAST_HEADER_BODY_SIZE
+
+    if not body_lines:
+        return min_size
+
+    def _fits(sz: int) -> bool:
+        font = _get_font(sz)
+        heights = [_measure(sz, ln, font)[1] for ln in body_lines]
+        widths = [_measure(sz, ln, font)[0] for ln in body_lines]
+        total_h = sum(heights) + spacing * (len(heights) - 1)
+        return total_h <= avail_h and all(w <= max_w for w in widths)
+
+    start = min(max(_LAST_HEADER_BODY_SIZE, min_size), max_size)
+    body_size = min_size
+
+    if _fits(start):
+        body_size = start
+        while body_size < max_size and _fits(body_size + 1):
+            body_size += 1
+    else:
+        for sz in range(start - 1, min_size - 1, -1):
+            if _fits(sz):
+                body_size = sz
+                break
+
+    _LAST_HEADER_BODY_SIZE = body_size
+    return body_size
 
 
 # ------------------------------------------------------
@@ -372,16 +411,14 @@ def _draw_header_panel(lines, badge: str = ""):
     avail_h = H - avail_top - footer_reserved - 8
     spacing = 5
     min_size, max_size = 12, 24
-
-    body_size = min_size
-    for sz in range(max_size, min_size - 1, -1):
-        font = _get_font(sz)
-        heights = [_measure(sz, ln, font)[1] for ln in body_lines] if body_lines else []
-        total_h = sum(heights) + spacing * (len(heights) - 1) if heights else 0
-        widths = [_measure(sz, ln, font)[0] for ln in body_lines] if body_lines else []
-        if total_h <= avail_h and all(w <= W - 16 for w in widths):
-            body_size = sz
-            break
+    body_size = _pick_header_body_size(
+        body_lines,
+        avail_h=avail_h,
+        max_w=W - 16,
+        spacing=spacing,
+        min_size=min_size,
+        max_size=max_size,
+    )
 
     body_font = _get_font(body_size)
     sized = [(ln, _measure(body_size, ln, body_font)) for ln in body_lines]
@@ -605,7 +642,7 @@ with open(READY_FLAG_PATH, "w") as f:
 # Main loop
 # ------------------------------------------------------
 pipe = _open_fifo_blocking(PIPE_PATH)
-FPS_CAP = 10.0
+FPS_CAP = 15.0
 MIN_DT = 1.0 / FPS_CAP
 
 last_draw_t = 0.0

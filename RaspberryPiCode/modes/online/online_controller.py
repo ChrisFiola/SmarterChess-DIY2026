@@ -1326,7 +1326,7 @@ class OnlineController:
                 awaiting_ok_ack = False
                 in_move_entry = False
                 side = "WHITE" if your_color == chess.WHITE else "BLACK"
-                display.prompt_move(side)
+                display.prompt_move(side, force=True)
                 prompted_for_this_turn = True
                 continue
 

@@ -934,8 +934,8 @@ class PuzzleController:
         board = chess.Board(st.fen_start)
         player_color = "WHITE" if board.turn == chess.WHITE else "BLACK"
 
-        def _prompt():
-            display.prompt_move(player_color)
+        def _prompt(*, force: bool = False):
+            display.prompt_move(player_color, force=force)
 
         def _rearm():
             send_turn_notification(link, board)
@@ -1002,7 +1002,7 @@ class PuzzleController:
                     if pending_check_sq is not None:
                         link.send_to_board(f"check_{pending_check_sq}")
                         pending_check_sq = None
-                    _prompt()
+                _prompt(force=True)
                 continue
 
             # Parse move

@@ -399,7 +399,7 @@ def handle_illegal_move(
     try:
         display.prompt_move(side)
     except Exception:
-        display.send(f"{side_prefix}\nEnter move")
+        display.send(f"{side_prefix}\nPlay move")
     return True
 
 
@@ -1222,7 +1222,7 @@ def _turn_header(board: Optional["chess.Board"]) -> str:
             return f"You are {'WHITE' if board.turn == chess.WHITE else 'BLACK'}"
         except Exception:
             pass
-    return "Enter move"
+    return "Play move"
 
 
 def _update_typing_display(
