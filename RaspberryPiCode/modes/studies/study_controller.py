@@ -256,12 +256,13 @@ class StudyController:
         footer: str,
         page_idx: int,
         total_pages: int,
+        size_prefix: str = "annotation",
     ) -> None:
         padded = list(page_lines)
         while len(padded) < 3:
             padded.append("")
         page_tag = f":{page_idx + 1}/{total_pages}" if total_pages > 1 else ""
-        display.send("\n".join(padded) + "\n" + footer, size=f"annotation{page_tag}")
+        display.send("\n".join(padded) + "\n" + footer, size=f"{size_prefix}{page_tag}")
 
     def _show_chapter_title(
         self, link: BoardLink, display: Display, title: str
@@ -281,6 +282,7 @@ class StudyController:
                 footer="1=Play  OK=Back",
                 page_idx=page_idx,
                 total_pages=len(pages),
+                size_prefix="menu",
             )
             link.send_to_board("WaitForOkOrSkipSetup")
 
@@ -312,7 +314,7 @@ class StudyController:
         Hint scrolls down one line; at the bottom it wraps back to the top.
         OK = done. Returns False if user backs out to menu.
         """
-        lines = _wrap_text(_clean_comment(text), max_chars=20)
+        lines = _wrap_text(_clean_comment(text), max_chars=30)
         if not lines or lines == [""]:
             return True
 

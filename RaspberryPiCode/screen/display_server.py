@@ -42,6 +42,11 @@ DEFAULT_FONT_CANDIDATES = [
     "/home/king/LCD_Module_RPI_code/RaspberryPi/python/Font/Font00.ttf",
 ]
 ANNOTATION_FONT_CANDIDATES = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+    "/home/king/SmarterChess-DIY2026/RaspberryPiCode/WorkSans-Regular.ttf",
+    # Bold fallbacks if no regular variant is available
     "/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf",
     "/usr/share/fonts/truetype/freefont/FreeSerif.ttf",
     "/home/king/SmarterChess-DIY2026/RaspberryPiCode/ChessSans.ttf",
@@ -327,13 +332,17 @@ def _draw_centered_text_auto(lines, min_size=14, max_size=28, vpad=12, spacing=6
     _draw_centered_text_with_size(lines, size=size, spacing=spacing, vpad=vpad)
 
 
-def _draw_menu(lines, page_info="", *, font_key: str = "default", align: str = "center"):
+def _draw_menu(lines, page_info="", *, font_key: str = "default", align: str = "center",
+               footer_font_key: str = None):
     """Draw menu lines with auto-sizing, footer pinned to the bottom.
 
     Expects lines = [item1, item2, item3, footer].  Footer may be empty string.
     ``page_info`` is an optional string like "1/2" rendered top-right.
     ``align`` controls body text alignment: "center" (default) or "left".
+    ``footer_font_key`` overrides the font used for the footer and page indicator;
+    defaults to ``font_key``.
     """
+    footer_font_key = footer_font_key or font_key
     if not lines:
         return
 
@@ -346,15 +355,15 @@ def _draw_menu(lines, page_info="", *, font_key: str = "default", align: str = "
     header_reserved = 0
     if page_info:
         pg_size = FOOTER_SIZE
-        pg_font = _get_font(pg_size, font_key=font_key)
-        pg_w, pg_h = _measure(pg_size, page_info, pg_font, font_key=font_key)
+        pg_font = _get_font(pg_size, font_key=footer_font_key)
+        pg_w, pg_h = _measure(pg_size, page_info, pg_font, font_key=footer_font_key)
         DRAW.text((W - pg_w - 6, 4), page_info, font=pg_font, fill="GRAY")
         header_reserved = pg_h + 4
 
     footer_parts = _split_footer_parts(raw_footer or "")
-    footer_font = _get_font(FOOTER_SIZE, font_key=font_key)
+    footer_font = _get_font(FOOTER_SIZE, font_key=footer_font_key)
     footer_h = (
-        _measure(FOOTER_SIZE, footer_parts[0], footer_font, font_key=font_key)[1]
+        _measure(FOOTER_SIZE, footer_parts[0], footer_font, font_key=footer_font_key)[1]
         if footer_parts
         else 0
     )
@@ -404,7 +413,7 @@ def _draw_menu(lines, page_info="", *, font_key: str = "default", align: str = "
         footer_y = H - footer_h - 4
         DRAW.line((10, footer_y - 5, W - 10, footer_y - 5), fill="WHITE", width=1)
         _draw_footer_aligned(footer_parts, footer_font, FOOTER_SIZE, footer_y,
-                             font_key=font_key)
+                             font_key=footer_font_key)
 
     disp.ShowImage(FRAME)
 
@@ -723,7 +732,8 @@ def _render_current():
 
     if size_key.startswith("annotation"):
         page_info = size_key.split(":", 1)[1] if ":" in size_key else ""
-        _draw_menu(lines, page_info=page_info, font_key="annotation", align="left")
+        _draw_menu(lines, page_info=page_info, font_key="annotation", align="left",
+                   footer_font_key="default")
         return
 
     if size_key == "setup":
