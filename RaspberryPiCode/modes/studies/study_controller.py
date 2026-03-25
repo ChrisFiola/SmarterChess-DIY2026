@@ -42,6 +42,7 @@ from core.protocol import (
     NEW_GAME_MSGS,
     OK_MSGS,
     parse_uci_move,
+    piece_name_for_side,
 )
 from modes.online.lichess_client import LichessClient
 from screen.display import Display
@@ -49,24 +50,67 @@ from screen.display import Display
 STUDIES_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "studies.txt")
 
 
-def load_studies() -> List[Tuple[str, str]]:
-    """Return a list of (study_id, display_name) from studies.txt."""
-    studies: List[Tuple[str, str]] = []
+class BackToChoice(Exception):
+    """Raised when the user wants to return to the last study variation choice."""
+
+
+def _looks_like_study_id(token: str) -> bool:
+    token = (token or "").strip()
+    return bool(re.fullmatch(r"[A-Za-z0-9]{8}", token))
+
+
+def load_study_subjects() -> List[Tuple[str, List[Tuple[str, str]]]]:
+    """Return grouped studies from studies.txt.
+
+    Subject headings are plain lines that do not start with a Lichess study ID.
+    Study rows keep the existing format:
+        study_id  Display Name
+
+    If the file is flat with no subject headings, entries are grouped under
+    a default `Studies` subject so older files still work.
+    """
+    groups: List[Tuple[str, List[Tuple[str, str]]]] = []
+    current_subject = "Studies"
+    current_items: List[Tuple[str, str]] = []
+
+    def _flush() -> None:
+        nonlocal current_items
+        if current_items:
+            groups.append((current_subject, current_items))
+            current_items = []
+
     try:
         with open(STUDIES_PATH, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
+            for raw_line in f:
+                line = raw_line.strip()
                 if not line or line.startswith("#"):
                     continue
+
                 parts = line.split(None, 1)
-                if not parts:
+                head = parts[0].strip() if parts else ""
+                if len(parts) == 1 and not _looks_like_study_id(head):
+                    _flush()
+                    current_subject = head
                     continue
-                study_id = parts[0].strip()
+
+                if not _looks_like_study_id(head):
+                    continue
+
+                study_id = head
                 name = parts[1].strip() if len(parts) > 1 else study_id
-                if study_id:
-                    studies.append((study_id, name))
+                current_items.append((study_id, name))
     except FileNotFoundError:
-        pass
+        return []
+
+    _flush()
+    return groups
+
+
+def load_studies() -> List[Tuple[str, str]]:
+    """Return a flat list of (study_id, display_name) from studies.txt."""
+    studies: List[Tuple[str, str]] = []
+    for _, items in load_study_subjects():
+        studies.extend(items)
     return studies
 
 
@@ -313,18 +357,80 @@ class StudyController:
                     page_idx = 0 if is_last else page_idx + 1
                     break  # redisplay
 
+    def _study_nav_action(
+        self,
+        link: BoardLink,
+        display: Display,
+        *,
+        can_go_back: bool,
+    ) -> str:
+        """Return 'continue', 'back', or 'exit' from the in-study nav menu."""
+        options = ["Back to choice", "Exit to menu"] if can_go_back else ["Exit to menu"]
+        choice = _paged_menu(
+            link,
+            display,
+            options,
+            header="Studies",
+            wake_command="ChooseMode",
+            resend_timeout=3.0,
+        )
+        if choice is None:
+            link.send_to_board("SetupComplete")
+            return "continue"
+        if choice == "Back to choice":
+            return "back"
+        return "exit"
+
+    def _rewind_to_choice(
+        self,
+        link: BoardLink,
+        display: Display,
+        board: chess.Board,
+        *,
+        target_ply: int,
+    ) -> bool:
+        """Undo moves on the physical board until the last variation-choice node."""
+        while len(board.move_stack) > target_ply:
+            mv = board.peek()
+            uci = chess.Move.uci(mv)
+            piece = board.piece_at(mv.to_square)
+            piece_line = ""
+            if piece is not None:
+                piece_line = piece_name_for_side(
+                    piece.symbol(),
+                    "w" if piece.color == chess.WHITE else "b",
+                )
+
+            body_lines = [ln for ln in (piece_line, f"{uci[2:4]} → {uci[:2]}") if ln]
+            display.show_header_panel(
+                "Back to choice",
+                *body_lines,
+                footer="OK=Undo",
+            )
+            link.send_to_board(f"puzzle_wrong_{uci[2:4]}{uci[:2]}")
+            if not wait_for_ok(link, display, send_prompt=False):
+                return False
+            board.pop()
+
+        display.show_header_panel("Studies", "Back at last choice")
+        time.sleep(0.4)
+        return True
+
     def _collect_move(
         self,
         link: BoardLink,
         display: Display,
         board: chess.Board,
         node: chess.pgn.GameNode,
+        *,
+        can_go_back: bool = False,
     ) -> Optional[chess.pgn.GameNode]:
         """Wait for the human to enter a move matching one of node's variations.
 
         Returns the matched variation node, or None if the user backed out.
         Raises ReturnToMenu if the user pressed the back/new-game button and
-        confirmed exit.
+        confirmed exit. Raises BackToChoice if the user wants to revisit the
+        previous variation branch.
         """
         variations = node.variations
         if not variations:
@@ -371,6 +477,19 @@ class StudyController:
                 return None
 
             if msg in NEW_GAME_MSGS:
+                if can_go_back:
+                    action = self._study_nav_action(
+                        link,
+                        display,
+                        can_go_back=True,
+                    )
+                    if action == "back":
+                        raise BackToChoice()
+                    if action == "exit":
+                        raise ReturnToMenu()
+                    _arm()
+                    link.send_to_board(f"hint_{main_uci}")
+                    continue
                 if not confirm_exit_game(link, display):
                     _arm()
                     link.send_to_board(f"hint_{main_uci}")
@@ -479,6 +598,7 @@ class StudyController:
                 return
 
         node: chess.pgn.GameNode = game
+        variation_history: List[Tuple[chess.pgn.GameNode, int]] = []
         mode_label = (
             "Watch"
             if play_as is None
@@ -497,9 +617,29 @@ class StudyController:
 
             if is_human_turn:
                 # Human plays — let them choose a variation
-                chosen = self._collect_move(link, display, board, node)
+                try:
+                    chosen = self._collect_move(
+                        link,
+                        display,
+                        board,
+                        node,
+                        can_go_back=bool(variation_history),
+                    )
+                except BackToChoice:
+                    branch_node, branch_ply = variation_history.pop()
+                    if not self._rewind_to_choice(
+                        link,
+                        display,
+                        board,
+                        target_ply=branch_ply,
+                    ):
+                        return
+                    node = branch_node
+                    continue
                 if chosen is None:
                     return
+                if len(node.variations) > 1:
+                    variation_history.append((node, len(board.move_stack)))
                 board.push(chosen.move)
                 send_check_signal(link, board)
                 node = chosen

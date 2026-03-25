@@ -2,12 +2,18 @@
 # Format: study_id  Display Name
 # Example:
 # i7hMEq7h  My Opening Study
+Opening
 LDCZvBvp  Fried Liver
 XYDNJi1R  The London System
+8c8bmUfy  Sicilian Defense
 jtlLwUvh  Caro-Kann Defense
 Of3mcPk8  Opening Traps
-1POKgJWJ  Road to Mastery
+
+MiddleGame
+kjBSgqoA  Developing plans
 kKRTP1Ft  Avoid Blunders
+
+Endgame
 wukLYIXj  Beginner Endgames
 UsqmCsgC  Intermediate Endgames
 UO2zqigQ  Advanced Endgames

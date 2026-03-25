@@ -2015,7 +2015,11 @@ def _run_update(link: BoardLink, display: Display) -> None:
 def _run_study_mode(link: BoardLink, display: Display) -> None:
     """Study mode: select a Lichess study and play through its chapters."""
     from modes.online.lichess_client import LichessClient
-    from modes.studies.study_controller import StudyController, load_studies
+    from modes.studies.study_controller import (
+        StudyController,
+        load_studies,
+        load_study_subjects,
+    )
 
     try:
         client = LichessClient()
@@ -2028,6 +2032,7 @@ def _run_study_mode(link: BoardLink, display: Display) -> None:
         wait_for_ok(link, display)
         raise ReturnToMenu()
 
+    study_groups = load_study_subjects()
     studies = load_studies()
     if not studies:
         display.show_header_panel(
@@ -2040,19 +2045,44 @@ def _run_study_mode(link: BoardLink, display: Display) -> None:
         raise ReturnToMenu()
 
     while True:
-        study_names = [name for _, name in studies]
-        choice = _paged_menu(link, display, study_names, header="Studies")
-        if choice is None:
-            raise ReturnToMenu()
+        selected_group = studies
+        if len(study_groups) > 1:
+            subject_names = [subject for subject, items in study_groups if items]
+            subject_choice = _paged_menu(
+                link,
+                display,
+                subject_names,
+                header="Studies",
+            )
+            if subject_choice is None:
+                raise ReturnToMenu()
+            selected_group = next(
+                (
+                    items
+                    for subject, items in study_groups
+                    if subject == subject_choice and items
+                ),
+                [],
+            )
+            if not selected_group:
+                continue
 
-        study = next((s for s in studies if s[1] == choice), None)
-        if not study:
-            continue
+        while True:
+            study_names = [name for _, name in selected_group]
+            choice = _paged_menu(link, display, study_names, header="Studies")
+            if choice is None:
+                if len(study_groups) > 1:
+                    break
+                raise ReturnToMenu()
 
-        study_id, study_name = study
-        ctrl = StudyController(client, study_id, study_name)
-        ctrl.run(link, display)
-        # After run() returns (user pressed Back from chapter list), loop to study selection
+            study = next((s for s in selected_group if s[1] == choice), None)
+            if not study:
+                continue
+
+            study_id, study_name = study
+            ctrl = StudyController(client, study_id, study_name)
+            ctrl.run(link, display)
+            # After run() returns (user pressed Back from chapter list), loop to study selection
 
 
 def _run_puzzle_game(link: BoardLink, display: Display) -> None:
