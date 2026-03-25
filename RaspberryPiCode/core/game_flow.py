@@ -767,7 +767,10 @@ def guide_board_setup(
     Returns "ok" if setup completed, "skip" if skipped, or None if user backed out.
     The caller is responsible for confirming the board is EMPTY before calling.
     """
-    from core.protocol import piece_name  # local import to avoid circular
+    from core.protocol import (
+        piece_name_white,
+        piece_name_black,
+    )  # local import to avoid circular
 
     steps = compute_board_setup_steps(fen)
     try:

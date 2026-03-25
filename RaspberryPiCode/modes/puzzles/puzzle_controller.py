@@ -31,7 +31,8 @@ from core.protocol import (
     parse_uci_move,
     format_engine_move,
     format_hint_move,
-    piece_name,
+    piece_name_white,
+    piece_name_black,
     NEW_GAME_MSGS,
     OK_MSGS,
     HINT_MSGS,
@@ -330,7 +331,6 @@ def _board_from_pgn_at_ply(pgn_text: str, initial_ply: int) -> chess.Board:
     return board
 
 
-
 def _play_solution_prefix_len(b: chess.Board, sol: List[str]) -> int:
     tmp = b.copy()
     n = 0
@@ -524,9 +524,7 @@ class PuzzleController:
                 pass
 
         return (
-            _build_puzzle_state(
-                puzzle_id, pgn, initial_ply, solution, themes, rating
-            ),
+            _build_puzzle_state(puzzle_id, pgn, initial_ply, solution, themes, rating),
             None,
         )
 
@@ -780,7 +778,12 @@ class PuzzleController:
                 self._last_next_angle = angle
                 self._last_next_id = puzzle_id
                 self._last_next_id_by_angle[angle] = puzzle_id
-                return _build_puzzle_state(puzzle_id, pgn, initial_ply, solution, themes, rating), None
+                return (
+                    _build_puzzle_state(
+                        puzzle_id, pgn, initial_ply, solution, themes, rating
+                    ),
+                    None,
+                )
 
         # 2) Fallback path: only works for THEME TAGS (because it filters by 'themes')
         if not os.path.exists(PUZZLE_IDS_PATH):
@@ -829,7 +832,12 @@ class PuzzleController:
             if not puzzle_id or not pgn or not solution:
                 continue
 
-            return _build_puzzle_state(puzzle_id, pgn, initial_ply, solution, themes, rating), None
+            return (
+                _build_puzzle_state(
+                    puzzle_id, pgn, initial_ply, solution, themes, rating
+                ),
+                None,
+            )
 
         return None, last_err
 
@@ -839,7 +847,9 @@ class PuzzleController:
         if self.mode == "mix":
             result = run_in_bg(self._fetch_mix, link, display)
         elif self.mode == "theme":
-            result = run_in_bg(lambda: self._fetch_theme(self.theme or ""), link, display)
+            result = run_in_bg(
+                lambda: self._fetch_theme(self.theme or ""), link, display
+            )
         else:
             result = run_in_bg(self._fetch_daily, link, display)
         st, err = result if result is not None else (None, "cancelled")
@@ -887,7 +897,7 @@ class PuzzleController:
             else:
                 for side, sq, sym in steps:
                     display.send(
-                        f"PLACE {('WHITE' if side=='w' else 'BLACK')}\n{piece_name(sym)} {sq}\nOK = next"
+                        f"PLACE {('WHITE' if side=='w' else 'BLACK')}\n{piece_name_white(sym) if side=='w' else piece_name_black(sym)} {sq}\nOK = next"
                     )
                     link.send_to_board(f"setup_place_{sq}_{side}")
                     if not wait_for_ok(link, display):
