@@ -61,6 +61,11 @@ def wait_for_ok(link: BoardLink, display: Display, *, send_prompt: bool = True) 
 
     Returns False if the user exits to menu (new game) or shutdown is triggered.
     """
+    try:
+        link.clear_input()
+    except Exception:
+        pass
+
     if send_prompt:
         link.send_to_board("WaitForOkConfirm")
 
@@ -2091,8 +2096,10 @@ def _run_study_mode(link: BoardLink, display: Display) -> None:
 
 def _run_puzzle_game(link: BoardLink, display: Display) -> None:
     """Puzzle mode: show a submenu then launch the selected puzzle type."""
+    display.show_header_panel("Puzzles", "Loading...")
     from modes.online.lichess_client import LichessClient
     from modes.puzzles.puzzle_controller import PuzzleController
+    client = LichessClient()
 
     def menu(options: List[str]) -> Optional[str]:
         return _paged_menu(
@@ -2108,11 +2115,11 @@ def _run_puzzle_game(link: BoardLink, display: Display) -> None:
             raise ReturnToMenu()
 
         if top.startswith("Daily"):
-            PuzzleController(LichessClient(), mode="daily").run(link, display)
+            PuzzleController(client, mode="daily").run(link, display)
             return
 
         if top.startswith("Mix"):
-            PuzzleController(LichessClient(), mode="mix").run(link, display)
+            PuzzleController(client, mode="mix").run(link, display)
             return
 
         if not top.startswith("Themes"):
@@ -2131,7 +2138,7 @@ def _run_puzzle_game(link: BoardLink, display: Display) -> None:
                 if not tag:
                     continue
                 PuzzleController(
-                    LichessClient(), mode="theme", theme=tag, theme_label=label
+                    client, mode="theme", theme=tag, theme_label=label
                 ).run(link, display)
                 return
 
@@ -2146,7 +2153,7 @@ def _run_puzzle_game(link: BoardLink, display: Display) -> None:
                 if label is None:
                     continue
                 PuzzleController(
-                    LichessClient(), mode="theme", theme=label, theme_label=label
+                    client, mode="theme", theme=label, theme_label=label
                 ).run(link, display)
                 return
 
