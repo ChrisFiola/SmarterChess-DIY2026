@@ -2159,7 +2159,6 @@ def run_selected_mode(
     cfg: GameConfig,
 ) -> None:
     """Dispatch to the correct game loop based on state.mode."""
-    display.show_header_panel("Loading")
     if state.mode in ("stockfish", "pc", "btn_mode_pc", "vs_computer", "vs"):
         _configure_vs_computer(link, display, cfg)
         link.send_to_board("SetupComplete")
