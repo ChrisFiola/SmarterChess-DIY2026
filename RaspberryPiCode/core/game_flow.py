@@ -1118,6 +1118,18 @@ def _get_piece_label(board: Optional["chess.Board"], sq: str) -> Optional[str]:
         return None
 
 
+def _input_piece_label(label: Optional[str]) -> Optional[str]:
+    """Flatten a piece label for move-entry previews, e.g. '♟ Pawn'."""
+    if not label:
+        return None
+    parts = (label or "").replace("\n", " ").split()
+    if not parts:
+        return None
+    if len(parts) == 1:
+        return parts[0]
+    return f"{parts[0]} {' '.join(parts[1:]).upper()}"
+
+
 def _turn_header(board: Optional["chess.Board"]) -> str:
     if board is not None:
         try:
@@ -1138,6 +1150,8 @@ def _update_typing_display(
     Displays short contextual prompts.
     """
     try:
+        delete_footer = "Hold OK = Delete"
+        confirm_footer = "OK = confirm   Hold OK = Delete"
         # label, text
         parts = payload.split("_", 1)
         if len(parts) != 2:
@@ -1149,18 +1163,31 @@ def _update_typing_display(
             # When a full square is entered (e.g. e2), show which piece is on that square.
             # If the user deletes back to 0/1 chars, we revert to the generic prompt.
             if _is_valid_square(text):
-                piece_lbl = _get_piece_label(board, text)
+                piece_lbl = _input_piece_label(_get_piece_label(board, text))
                 if piece_lbl:
                     display.show_header_panel(
                         header,
                         piece_lbl,
                         f"{text} ->",
+                        footer=delete_footer,
                         force=True,
                     )
                 else:
-                    display.show_header_panel(header, "Enter from:", text, force=True)
+                    display.show_header_panel(
+                        header,
+                        "Enter from:",
+                        text,
+                        footer=delete_footer,
+                        force=True,
+                    )
             else:
-                display.show_header_panel(header, "Enter from:", text, force=True)
+                display.show_header_panel(
+                    header,
+                    "Enter from:",
+                    text,
+                    footer=delete_footer,
+                    force=True,
+                )
 
         elif label == "to":
             # text format: "e2 → e" (partial) or "e2 → e4"
@@ -1170,16 +1197,22 @@ def _update_typing_display(
                 left, right = text.split("→", 1)
                 frm = left.strip()
                 partial_to = right.strip()
-            piece_lbl = _get_piece_label(board, frm)
+            piece_lbl = _input_piece_label(_get_piece_label(board, frm))
             if piece_lbl:
                 display.show_header_panel(
                     header,
                     piece_lbl,
                     f"{frm} -> {partial_to}",
+                    footer=delete_footer,
                     force=True,
                 )
             else:
-                display.show_header_panel(header, "Enter to:", text, force=True)
+                display.show_header_panel(
+                    header,
+                    text,
+                    footer=delete_footer,
+                    force=True,
+                )
 
         elif label == "confirm":
             # text format: "e2 → e4"
@@ -1189,21 +1222,20 @@ def _update_typing_display(
                 left, right = text.split("→", 1)
                 frm = left.strip()
                 to = right.strip()
-            piece_lbl = _get_piece_label(board, frm)
+            piece_lbl = _input_piece_label(_get_piece_label(board, frm))
             if piece_lbl:
                 display.show_header_panel(
                     header,
                     piece_lbl,
                     f"{frm} -> {to}",
-                    footer="OK = confirm",
+                    footer=confirm_footer,
                     force=True,
                 )
             else:
                 display.show_header_panel(
                     header,
-                    "Confirm move:",
                     text,
-                    footer="OK = confirm",
+                    footer=confirm_footer,
                     force=True,
                 )
     except Exception:
