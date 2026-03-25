@@ -372,10 +372,15 @@ def handle_illegal_move(
         pass
 
     if frm and to:
-        display.send(f"{label} move:\n{piece_txt} {frm}->{to}\nPut it back + OK")
+        display.show_panel(
+            f"{label} move",
+            f"{piece_txt} {frm}->{to}",
+            "Put it back",
+            footer="OK = retry",
+        )
         link.send_to_board(f"puzzle_wrong_{to}{frm}")
     else:
-        display.send(f"{side_prefix}\n{label} move\nPress OK")
+        display.show_panel(side_prefix, f"{label} move", footer="OK = continue")
 
     ok = wait_for_ok(link, display, send_prompt=False)
     if not ok:
@@ -775,7 +780,11 @@ def guide_board_setup(
     link.send_to_board("hint_disable")
     link.send_to_board("puzzle_setup_begin")
     try:
-        display.send(f"{label}\nSetup position\nOK=setup 1=skip")
+        display.show_setup_panel(
+            label,
+            "Setup position",
+            footer="OK = setup   1 = skip",
+        )
         time.sleep(0.3)
         link.send_to_board("setup_clear")
 
@@ -786,15 +795,16 @@ def guide_board_setup(
             return "skip"
 
         for side, sq, sym in steps:
-            display.send(
-                f"PLACE {'WHITE' if side == 'w' else 'BLACK'}\n"
-                f"{piece_name_for_side(sym, side)} {sq}\nOK = next"
+            display.show_setup_panel(
+                f"Setup {'White' if side == 'w' else 'Black'}",
+                f"{piece_name_for_side(sym, side)} {sq}",
+                footer="OK = next",
             )
             link.send_to_board(f"setup_place_{sq}_{side}")
             if not wait_for_ok(link, display):
                 return None
 
-        display.send(f"{label}\nSetup done!")
+        display.show_setup_panel(label, "Setup done!")
         time.sleep(0.5)
         return "ok"
     finally:
@@ -1156,9 +1166,17 @@ def _update_typing_display(
                 to = right.strip()
             piece_lbl = _get_piece_label(board, frm)
             if piece_lbl:
-                display.send(f"{piece_lbl}\n{frm} → {to}\nOK to send")
+                display.show_panel(
+                    piece_lbl,
+                    f"{frm} → {to}",
+                    footer="OK = confirm",
+                )
             else:
-                display.send("Confirm move:\n" + text + "\nPress OK or re-enter")
+                display.show_panel(
+                    "Confirm move:",
+                    text,
+                    footer="OK = confirm",
+                )
     except Exception:
         # swallow malformed previews quietly
         pass
@@ -1450,7 +1468,7 @@ def _render_paged_menu(
     """
 
     def _fmt(i: int, s: str) -> str:
-        return f"{i}) {(s or '').strip()}"
+        return f"{i}) {(s or '').strip().upper()}"
 
     lines = [_fmt(i + 1, opt) for i, opt in enumerate(items[:per_page])]
 

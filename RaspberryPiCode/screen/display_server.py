@@ -33,24 +33,35 @@ disp.clear()
 
 # Screen constants
 W, H = disp.width, disp.height
-FONT_CANDIDATES = [
+DEFAULT_FONT_CANDIDATES = [
     "/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf",
     "/usr/share/fonts/truetype/freefont/FreeSerif.ttf",
     "/home/king/SmarterChess-DIY2026/RaspberryPiCode/ChessSans.ttf",
     "/home/king/SmarterChess-DIY2026/RaspberryPiCode/WorkSans-Medium.ttf",
     "/home/king/LCD_Module_RPI_code/RaspberryPi/python/Font/Font00.ttf",
 ]
+ANNOTATION_FONT_CANDIDATES = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+]
 
 
-def _resolve_font_path() -> str:
-    for path in FONT_CANDIDATES:
+def _resolve_font_path(candidates, label: str) -> str:
+    for path in candidates:
         if os.path.exists(path):
             return path
-    raise FileNotFoundError(f"No LCD font found in candidates: {FONT_CANDIDATES}")
+    raise FileNotFoundError(f"No {label} font found in candidates: {candidates}")
 
 
-FONT_PATH = _resolve_font_path()
-print(f"[LCD] using font: {FONT_PATH}", flush=True)
+FONT_PATHS = {
+    "default": _resolve_font_path(DEFAULT_FONT_CANDIDATES, "default"),
+    "annotation": _resolve_font_path(
+        ANNOTATION_FONT_CANDIDATES + DEFAULT_FONT_CANDIDATES,
+        "annotation",
+    ),
+}
+print(f"[LCD] using default font: {FONT_PATHS['default']}", flush=True)
+print(f"[LCD] using annotation font: {FONT_PATHS['annotation']}", flush=True)
 
 FRAME = Image.new("RGB", (W, H), "BLACK")
 DRAW = ImageDraw.Draw(FRAME)
@@ -63,6 +74,21 @@ MEASURE_CACHE = {}  # (size, text) -> (w,h)
 FONTS = {}
 
 FOOTER_SIZE = 15
+
+
+def _is_footer_hint(line: str) -> bool:
+    low = (line or "").strip().lower()
+    if not low:
+        return False
+    return (
+        low.startswith("press ok")
+        or low.startswith("press hint")
+        or "ok =" in low
+        or "ok=" in low
+        or "hint =" in low
+        or "hint=" in low
+        or "ok+" in low
+    )
 
 
 def _word_wrap(text, size, max_w):
@@ -93,9 +119,9 @@ def _open_fifo_blocking(path: str):
     return os.fdopen(fd, "r", buffering=1)
 
 
-def _measure(size: int, text: str, font) -> tuple:
+def _measure(size: int, text: str, font, *, font_key: str = "default") -> tuple:
     """Return (width, height) of text at the given font size, using the cache."""
-    key = (size, text)
+    key = (font_key, size, text)
     wh = MEASURE_CACHE.get(key)
     if wh is None:
         bbox = DRAW_MEASURE.textbbox((0, 0), text, font=font)
@@ -104,10 +130,11 @@ def _measure(size: int, text: str, font) -> tuple:
     return wh
 
 
-def _get_font(size: int):
-    if size not in FONTS:
-        FONTS[size] = ImageFont.truetype(FONT_PATH, size)
-    return FONTS[size]
+def _get_font(size: int, *, font_key: str = "default"):
+    cache_key = (font_key, size)
+    if cache_key not in FONTS:
+        FONTS[cache_key] = ImageFont.truetype(FONT_PATHS[font_key], size)
+    return FONTS[cache_key]
 
 
 # ------------------------------------------------------
@@ -125,7 +152,7 @@ def _find_best_font_size(lines, min_size=14, max_size=28, vpad=4, spacing=6):
                 w = 0
                 h = size
             else:
-                key = (size, ln)
+                key = ("default", size, ln)
                 wh = MEASURE_CACHE.get(key)
                 if wh is None:
                     bbox = DRAW_MEASURE.textbbox((0, 0), ln, font=font)
@@ -161,7 +188,7 @@ def _draw_centered_text_with_size(lines, size: int, spacing: int = 6, vpad: int 
         if not ln:
             h = size
         else:
-            key = (size, ln)
+            key = ("default", size, ln)
             wh = MEASURE_CACHE.get(key)
             if wh is None:
                 bbox = DRAW_MEASURE.textbbox((0, 0), ln, font=font)
@@ -176,7 +203,7 @@ def _draw_centered_text_with_size(lines, size: int, spacing: int = 6, vpad: int 
 
     for ln, h in zip(lines, heights):
         if ln:
-            key = (size, ln)
+            key = ("default", size, ln)
             wh = MEASURE_CACHE.get(key)
             if wh is None:
                 bbox = DRAW_MEASURE.textbbox((0, 0), ln, font=font)
@@ -196,7 +223,7 @@ def _draw_centered_text_auto(lines, min_size=14, max_size=28, vpad=12, spacing=6
     _draw_centered_text_with_size(lines, size=size, spacing=spacing, vpad=vpad)
 
 
-def _draw_menu(lines, page_info=""):
+def _draw_menu(lines, page_info="", *, font_key: str = "default"):
     """Draw menu lines with auto-sizing: items centered, footer pinned to the bottom.
 
     Expects lines = [item1, item2, item3, footer].  Footer may be empty string.
@@ -215,14 +242,18 @@ def _draw_menu(lines, page_info=""):
     header_reserved = 0
     if page_info:
         pg_size = FOOTER_SIZE
-        pg_font = _get_font(pg_size)
-        pg_w, pg_h = _measure(pg_size, page_info, pg_font)
+        pg_font = _get_font(pg_size, font_key=font_key)
+        pg_w, pg_h = _measure(pg_size, page_info, pg_font, font_key=font_key)
         DRAW.text((W - pg_w - 6, 4), page_info, font=pg_font, fill="GRAY")
         header_reserved = pg_h + 4
 
     footer = raw_footer or ""
-    footer_font = _get_font(FOOTER_SIZE)
-    footer_h = _measure(FOOTER_SIZE, footer, footer_font)[1] if footer else 0
+    footer_font = _get_font(FOOTER_SIZE, font_key=font_key)
+    footer_h = (
+        _measure(FOOTER_SIZE, footer, footer_font, font_key=font_key)[1]
+        if footer
+        else 0
+    )
     # Reserve: footer text + separator gap (5) + bottom pad (4)
     footer_reserved = (footer_h + 14) if footer else 0
     avail_h = H - footer_reserved - header_reserved
@@ -235,27 +266,94 @@ def _draw_menu(lines, page_info=""):
 
     item_size = min_size
     for sz in range(max_size, min_size - 1, -1):
-        font = _get_font(sz)
-        heights = [_measure(sz, ln, font)[1] for ln in display_lines]
+        font = _get_font(sz, font_key=font_key)
+        heights = [
+            _measure(sz, ln, font, font_key=font_key)[1] for ln in display_lines
+        ]
         total_h = sum(heights) + spacing * (len(heights) - 1) if heights else 0
-        widths = [_measure(sz, ln, font)[0] for ln in display_lines]
+        widths = [
+            _measure(sz, ln, font, font_key=font_key)[0] for ln in display_lines
+        ]
         if total_h <= avail_h - 2 * vpad and all(w <= W - 16 for w in widths):
             item_size = sz
             break
 
-    item_font = _get_font(item_size)
-    heights = [_measure(item_size, ln, item_font)[1] for ln in display_lines]
+    item_font = _get_font(item_size, font_key=font_key)
+    heights = [
+        _measure(item_size, ln, item_font, font_key=font_key)[1]
+        for ln in display_lines
+    ]
     total_h = sum(heights) + spacing * (len(heights) - 1) if heights else 0
 
     # Center items in the available area between header and footer
     top = header_reserved
     y = top + max(vpad, (avail_h - total_h) // 2)
     for ln, h in zip(display_lines, heights):
-        w = _measure(item_size, ln, item_font)[0]
+        w = _measure(item_size, ln, item_font, font_key=font_key)[0]
         DRAW.text(((W - w) // 2, y), ln, font=item_font, fill="WHITE")
         y += h + spacing
 
     # Footer: separator line then text
+    if footer:
+        fw = _measure(FOOTER_SIZE, footer, footer_font, font_key=font_key)[0]
+        footer_y = H - footer_h - 4
+        DRAW.line((10, footer_y - 5, W - 10, footer_y - 5), fill="WHITE", width=1)
+        DRAW.text(((W - fw) // 2, footer_y), footer, font=footer_font, fill="WHITE")
+
+    disp.ShowImage(FRAME)
+
+
+def _draw_setup(lines):
+    """Draw a setup panel with a header line and optional footer."""
+    if not lines:
+        return
+
+    header = (lines[0] or "").strip()
+    footer = (
+        (lines[-1] or "").strip()
+        if len(lines) > 2 and _is_footer_hint(lines[-1])
+        else ""
+    )
+    raw_body = lines[1:-1] if footer else lines[1:]
+    body_lines = [(ln or "") for ln in raw_body if ln]
+
+    DRAW.rectangle((0, 0, W, H), fill="BLACK")
+
+    header_font = _get_font(16)
+    header_w, header_h = _measure(16, header, header_font)
+    header_y = 6
+    if header:
+        DRAW.text(((W - header_w) // 2, header_y), header, font=header_font, fill="WHITE")
+    divider_y = header_y + header_h + 6
+    DRAW.line((10, divider_y, W - 10, divider_y), fill="WHITE", width=1)
+
+    footer_font = _get_font(FOOTER_SIZE)
+    footer_h = _measure(FOOTER_SIZE, footer, footer_font)[1] if footer else 0
+    footer_reserved = (footer_h + 14) if footer else 0
+
+    avail_top = divider_y + 8
+    avail_h = H - avail_top - footer_reserved - 8
+    spacing = 5
+    min_size, max_size = 12, 24
+
+    body_size = min_size
+    for sz in range(max_size, min_size - 1, -1):
+        font = _get_font(sz)
+        heights = [_measure(sz, ln, font)[1] for ln in body_lines] if body_lines else []
+        total_h = sum(heights) + spacing * (len(heights) - 1) if heights else 0
+        widths = [_measure(sz, ln, font)[0] for ln in body_lines] if body_lines else []
+        if total_h <= avail_h and all(w <= W - 16 for w in widths):
+            body_size = sz
+            break
+
+    body_font = _get_font(body_size)
+    sized = [(ln, _measure(body_size, ln, body_font)) for ln in body_lines]
+    total_h = sum(h for _, (_, h) in sized) + spacing * (len(sized) - 1) if sized else 0
+    y = avail_top + max(0, (avail_h - total_h) // 2)
+    for ln, (w, h) in sized:
+        DRAW.text(((W - w) // 2, y), ln, font=body_font, fill="WHITE")
+        y += h + spacing
+
     if footer:
         fw = _measure(FOOTER_SIZE, footer, footer_font)[0]
         footer_y = H - footer_h - 4
@@ -495,6 +593,15 @@ def _render_current():
     if size_key.startswith("menu"):
         page_info = size_key.split(":", 1)[1] if ":" in size_key else ""
         _draw_menu(lines, page_info=page_info)
+        return
+
+    if size_key.startswith("annotation"):
+        page_info = size_key.split(":", 1)[1] if ":" in size_key else ""
+        _draw_menu(lines, page_info=page_info, font_key="annotation")
+        return
+
+    if size_key == "setup":
+        _draw_setup(lines)
         return
 
     if size_key == "online":

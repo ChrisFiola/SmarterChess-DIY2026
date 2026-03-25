@@ -883,7 +883,11 @@ class PuzzleController:
                     )
                 ),
             )
-            display.send(f"{label}\nSetup position\nOK=setup 1=skip")
+            display.show_setup_panel(
+                label,
+                "Setup position",
+                footer="OK = setup   1 = skip",
+            )
             time.sleep(0.3)
             link.send_to_board("setup_clear")
 
@@ -895,14 +899,16 @@ class PuzzleController:
                 time.sleep(0.3)
             else:
                 for side, sq, sym in steps:
-                    display.send(
-                        f"PLACE {('WHITE' if side=='w' else 'BLACK')}\n{piece_name_for_side(sym, side)} {sq}\nOK = next"
+                    display.show_setup_panel(
+                        f"Setup {'White' if side == 'w' else 'Black'}",
+                        f"{piece_name_for_side(sym, side)} {sq}",
+                        footer="OK = next",
                     )
                     link.send_to_board(f"setup_place_{sq}_{side}")
                     if not wait_for_ok(link, display):
                         return
 
-                display.send(f"{label}\nSetup done\nPuzzle begins")
+                display.show_setup_panel(label, "Setup done", "Puzzle begins")
                 time.sleep(0.3)
         finally:
             link.send_to_board("puzzle_setup_done")
@@ -915,10 +921,9 @@ class PuzzleController:
         # 3) Load board state
         board = chess.Board(st.fen_start)
         player_color = "WHITE" if board.turn == chess.WHITE else "BLACK"
-        side_prefix = f"You are {player_color}"
 
         def _prompt():
-            display.send(f"{side_prefix}\nEnter move:")
+            display.prompt_move(player_color)
 
         def _rearm():
             send_turn_notification(link, board)
@@ -926,6 +931,8 @@ class PuzzleController:
 
         send_turn_notification(link, board)
         _prompt()
+        awaiting_ok_ack = False
+        pending_check_sq = None
 
         # 4) Solve loop
         while True:
@@ -978,6 +985,12 @@ class PuzzleController:
                 continue
 
             if msg in OK_MSGS:
+                if awaiting_ok_ack:
+                    awaiting_ok_ack = False
+                    if pending_check_sq is not None:
+                        link.send_to_board(f"check_{pending_check_sq}")
+                        pending_check_sq = None
+                    _prompt()
                 continue
 
             # Parse move
@@ -1062,10 +1075,14 @@ class PuzzleController:
                     )
                     link.send_to_board(format_engine_move(reply, cap))
                     board.push(rmv)
-                    send_check_signal(link, board)
+                    pending_check_sq = None
+                    if board.is_check():
+                        ksq = board.king(board.turn)
+                        if ksq is not None:
+                            pending_check_sq = chess.square_name(ksq)
                     st.idx += 1
-                    if not wait_for_ok(link, display):
-                        return
-                    _prompt()
+                    send_turn_notification(link, board)
+                    awaiting_ok_ack = True
+                    continue
 
             _rearm()

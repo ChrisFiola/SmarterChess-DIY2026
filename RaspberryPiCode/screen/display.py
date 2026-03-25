@@ -73,6 +73,29 @@ class Display:
         parts = message.split("\n")
         return "|".join(parts) + f"|{size}\n"
 
+    @staticmethod
+    def _is_footer_hint(line: str) -> bool:
+        low = (line or "").strip().lower()
+        if not low:
+            return False
+        return (
+            low.startswith("press ok")
+            or low.startswith("press hint")
+            or "ok =" in low
+            or "ok=" in low
+            or "hint =" in low
+            or "hint=" in low
+            or "ok+" in low
+        )
+
+    def _resolve_size(self, message: str, size: str) -> str:
+        if (size or "auto") != "auto":
+            return size
+        parts = message.split("\n")
+        if len(parts) >= 2 and self._is_footer_hint(parts[-1]):
+            return "menu"
+        return size
+
     def _compose_clock_payload(self) -> str:
         return "|".join(["__clock__"] + self._clock_overlay_lines()) + "|clock\n"
 
@@ -181,6 +204,7 @@ class Display:
 
     def send(self, message: str, size: str = "auto", force: bool = False) -> None:
         self._last_message = message
+        size = self._resolve_size(message, size or "auto")
         self._last_size = size
         payload = self._compose_payload(message, size)
 
@@ -259,6 +283,30 @@ class Display:
         if delay_s > 0:
             time.sleep(delay_s)
 
+    def show_panel(
+        self,
+        *body_lines: str,
+        footer: str = "",
+        force: bool = False,
+        size: str = "menu",
+    ) -> None:
+        lines = [ln for ln in body_lines if ln is not None]
+        if footer:
+            lines.append(footer)
+        self.send("\n".join(lines), size=size if footer else "auto", force=force)
+
+    def show_setup_panel(
+        self,
+        header: str,
+        *body_lines: str,
+        footer: str = "",
+        force: bool = False,
+    ) -> None:
+        lines = [header] + [ln for ln in body_lines if ln is not None]
+        if footer:
+            lines.append(footer)
+        self.send("\n".join(lines), size="setup", force=force)
+
     def show_arrow(self, uci: str, suffix: str = "", force: bool = False) -> None:
         arrow = f"{uci[:2]} → {uci[2:4]}"
         if suffix:
@@ -267,14 +315,18 @@ class Display:
             self.send(arrow, force=force)
 
     def prompt_move(self, side: str, force: bool = False) -> None:
-        self.send(f"You are {side.lower()}\nEnter move:", force=force)
+        self.send(f"You are {side.upper()}\nEnter move:", force=force)
 
     def show_hint_result(self, uci: str) -> None:
         """Show a hint in the format 'Hint received: e2 → e4'."""
         try:
             frm, to = uci[:2], uci[2:4]
             if len(uci) >= 4:
-                self.send(f"Hint received:\n{frm} → {to}\nPress OK")
+                self.show_panel(
+                    "Hint received:",
+                    f"{frm} → {to}",
+                    footer="OK = clear",
+                )
             else:
                 self.send(f"Hint received:\n{uci}")
         except Exception:
@@ -285,10 +337,10 @@ class Display:
 
     def promo_name(self, promo_letter: str) -> str:
         return {
-            "q": "QUEEN",
-            "r": "ROOK",
-            "b": "BISHOP",
-            "n": "KNIGHT",
+            "q": "Queen",
+            "r": "Rook",
+            "b": "Bishop",
+            "n": "Knight",
         }.get((promo_letter or "").lower(), (promo_letter or "").upper())
 
     def format_promo_line(self, promo_letter: str) -> str:

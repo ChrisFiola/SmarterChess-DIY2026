@@ -216,7 +216,7 @@ class StudyController:
         while len(padded) < 3:
             padded.append("")
         page_tag = f":{page_idx + 1}/{total_pages}" if total_pages > 1 else ""
-        display.send("\n".join(padded) + "\n" + footer, size=f"menu{page_tag}")
+        display.send("\n".join(padded) + "\n" + footer, size=f"annotation{page_tag}")
 
     def _show_chapter_title(
         self, link: BoardLink, display: Display, title: str
@@ -233,7 +233,7 @@ class StudyController:
             self._render_page(
                 display,
                 page_lines,
-                footer="1=play  OK=back",
+                footer="1 = play   OK = back",
                 page_idx=page_idx,
                 total_pages=len(pages),
             )
@@ -279,7 +279,11 @@ class StudyController:
             self._render_page(
                 display,
                 pages[page_idx],
-                footer="Hint=back  OK=done" if is_last else "Hint=next  OK=skip",
+                footer=(
+                    "Hint = back   OK = done"
+                    if is_last
+                    else "Hint = next   OK = skip"
+                ),
                 page_idx=page_idx,
                 total_pages=len(pages),
             )
@@ -319,7 +323,7 @@ class StudyController:
 
         main_var = variations[0]
         main_uci = chess.Move.uci(main_var.move)
-        side = "White" if board.turn == chess.WHITE else "Black"
+        side = "WHITE" if board.turn == chess.WHITE else "BLACK"
 
         def _arm() -> None:
             """Arm the Pico for move entry and update the LCD."""
@@ -333,7 +337,7 @@ class StudyController:
                 display.send(f"{side} to move\nHint = see move")
             else:
                 dests = " / ".join(chess.Move.uci(v.move)[2:4] for v in variations[:4])
-                display.send(f"{side} to move\n→{dests}\nHint=main line")
+                display.send(f"{side} to move\n→{dests}\nHint = main line")
 
         _arm()
 
