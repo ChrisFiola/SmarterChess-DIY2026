@@ -773,7 +773,7 @@ def guide_board_setup(
     Returns "ok" if setup completed, "skip" if skipped, or None if user backed out.
     The caller is responsible for confirming the board is EMPTY before calling.
     """
-    from core.protocol import piece_name_for_side_stacked  # local import to avoid circular
+    from core.protocol import piece_name_for_side  # local import to avoid circular
 
     steps = compute_board_setup_steps(fen)
     try:
@@ -801,7 +801,7 @@ def guide_board_setup(
         for side, sq, sym in steps:
             display.show_setup_panel(
                 f"Setup {'WHITE' if side == 'w' else 'BLACK'}",
-                piece_name_for_side_stacked(sym, side),
+                piece_name_for_side(sym, side),
                 sq,
                 footer="OK = next",
             )
@@ -1155,11 +1155,12 @@ def _update_typing_display(
                         header,
                         piece_lbl,
                         f"{text} ->",
+                        force=True,
                     )
                 else:
-                    display.show_header_panel(header, "Enter from:", text)
+                    display.show_header_panel(header, "Enter from:", text, force=True)
             else:
-                display.show_header_panel(header, "Enter from:", text)
+                display.show_header_panel(header, "Enter from:", text, force=True)
 
         elif label == "to":
             # text format: "e2 → e" (partial) or "e2 → e4"
@@ -1175,9 +1176,10 @@ def _update_typing_display(
                     header,
                     piece_lbl,
                     f"{frm} -> {partial_to}",
+                    force=True,
                 )
             else:
-                display.show_header_panel(header, "Enter to:", text)
+                display.show_header_panel(header, "Enter to:", text, force=True)
 
         elif label == "confirm":
             # text format: "e2 → e4"
@@ -1194,6 +1196,7 @@ def _update_typing_display(
                     piece_lbl,
                     f"{frm} -> {to}",
                     footer="OK = confirm",
+                    force=True,
                 )
             else:
                 display.show_header_panel(
@@ -1201,6 +1204,7 @@ def _update_typing_display(
                     "Confirm move:",
                     text,
                     footer="OK = confirm",
+                    force=True,
                 )
     except Exception:
         # swallow malformed previews quietly

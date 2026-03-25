@@ -32,7 +32,6 @@ from core.protocol import (
     format_engine_move,
     format_hint_move,
     piece_name_for_side,
-    piece_name_for_side_stacked,
     NEW_GAME_MSGS,
     OK_MSGS,
     HINT_MSGS,
@@ -902,7 +901,7 @@ class PuzzleController:
                 for side, sq, sym in steps:
                     display.show_setup_panel(
                         f"Setup {'WHITE' if side == 'w' else 'BLACK'}",
-                        piece_name_for_side_stacked(sym, side),
+                        piece_name_for_side(sym, side),
                         sq,
                         footer="OK = next",
                     )

@@ -336,7 +336,7 @@ def _draw_header_panel(lines):
 
     DRAW.rectangle((0, 0, W, H), fill="BLACK")
 
-    header_size = _fit_single_line_size(header, min_size=15, max_size=20, max_w=W - 20)
+    header_size = _fit_single_line_size(header, min_size=13, max_size=17, max_w=W - 20)
     header_font = _get_font(header_size)
     header_w, header_h = _measure(header_size, header, header_font)
     header_y = 6
@@ -345,7 +345,7 @@ def _draw_header_panel(lines):
     divider_y = header_y + header_h + 6
     DRAW.line((10, divider_y, W - 10, divider_y), fill="WHITE", width=1)
 
-    footer_size = _fit_single_line_size(footer, min_size=14, max_size=18, max_w=W - 20)
+    footer_size = _fit_single_line_size(footer, min_size=11, max_size=14, max_w=W - 20)
     footer_font = _get_font(footer_size)
     footer_h = _measure(footer_size, footer, footer_font)[1] if footer else 0
     footer_reserved = (footer_h + 14) if footer else 0

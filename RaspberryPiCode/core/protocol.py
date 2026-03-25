@@ -103,21 +103,21 @@ def format_capture_reply(is_capture: bool) -> str:
 
 
 _WHITE_PIECE_NAMES = {
-    "P": "♟ PAWN",
-    "N": "♞ KNIGHT",
-    "B": "♝ BISHOP",
-    "R": "♜ ROOK",
-    "Q": "♛ QUEEN",
-    "K": "♚ KING",
+    "P": "♟\nPawn",
+    "N": "♞\nKnight",
+    "B": "♝\nBishop",
+    "R": "♜\nRook",
+    "Q": "♛\nQueen",
+    "K": "♚\nKing",
 }
 
 _BLACK_PIECE_NAMES = {
-    "P": "♙ PAWN",
-    "N": "♘ KNIGHT",
-    "B": "♗ BISHOP",
-    "R": "♖ ROOK",
-    "Q": "♕ QUEEN",
-    "K": "♔ KING",
+    "P": "♙\nPawn",
+    "N": "♘\nKnight",
+    "B": "♗\nBishop",
+    "R": "♖\nRook",
+    "Q": "♕\nQueen",
+    "K": "♔\nKing",
 }
 
 
@@ -142,15 +142,6 @@ def piece_name_for_side(sym: str, side: str) -> str:
         if (side or "").lower().startswith("w")
         else piece_name_black(sym)
     )
-
-
-def piece_name_for_side_stacked(sym: str, side: str) -> str:
-    """Return the icon on one line and the piece name on the next."""
-    label = piece_name_for_side(sym, side)
-    if " " not in label:
-        return label
-    icon, name = label.split(" ", 1)
-    return f"{icon}\n{name.title()}"
 
 
 def send_lcd_ack_for_payload(
