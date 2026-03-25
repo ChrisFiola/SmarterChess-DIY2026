@@ -237,6 +237,7 @@ class OnlineController:
             self.link,
             self.display,
             ["Cancel pairing"],
+            header="Lichess Online",
             wake_command="ChooseMode",
             resend_timeout=3.0,
         )
@@ -264,6 +265,7 @@ class OnlineController:
             self.link,
             self.display,
             options,
+            header="Lichess Online",
             wake_command="ChooseMode",
             resend_timeout=3.0,
         )
@@ -465,6 +467,7 @@ class OnlineController:
             link,
             display,
             labels,
+            header="Lichess Online",
             wake_command="ChooseMode",
             resend_timeout=3.0,
         )
@@ -517,6 +520,7 @@ class OnlineController:
             link,
             display,
             tc_labels,
+            header="Lichess Online",
             wake_command="ChooseMode",
             resend_timeout=3.0,
         )
@@ -595,6 +599,7 @@ class OnlineController:
             link,
             display,
             labels,
+            header="Lichess Online",
             wake_command="ChooseMode",
             resend_timeout=3.0,
         )
@@ -650,6 +655,7 @@ class OnlineController:
             link,
             display,
             labels,
+            header="Lichess Online",
             wake_command="ChooseMode",
             resend_timeout=3.0,
         )
@@ -679,6 +685,7 @@ class OnlineController:
         choice = _paged_menu(
             link, display,
             ["Challenge Friend", "Quick Pairing", "Correspondence"],
+            header="Lichess Online",
             wake_command="ChooseMode",
             resend_timeout=3.0,
         )
@@ -721,7 +728,13 @@ class OnlineController:
             opp = (g.get("opponent") or {}).get("username") or "Unknown"
             labels.append(f"{color} vs {opp[:15]}")
 
-        choice = _paged_menu(link, display, labels, wake_command="ChooseMode")
+        choice = _paged_menu(
+            link,
+            display,
+            labels,
+            header="Lichess Online",
+            wake_command="ChooseMode",
+        )
         if choice is None:
             return None
 
@@ -819,6 +832,7 @@ class OnlineController:
                 choice = _paged_menu(
                     link, display,
                     ["New Game", "Ongoing Games", "Challenge Received"],
+                    header="Lichess Online",
                     wake_command="ChooseMode",
                     resend_timeout=3.0,
                 )

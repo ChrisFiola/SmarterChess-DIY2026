@@ -664,6 +664,11 @@ def _render_current():
         _draw_qr(qr_data, captions)
         return
 
+    if size_key.startswith("menuheader"):
+        badge = raw_size.split(":", 1)[1] if ":" in raw_size else ""
+        _draw_header_panel(lines, badge=badge)
+        return
+
     if size_key.startswith("menu"):
         page_info = size_key.split(":", 1)[1] if ":" in size_key else ""
         _draw_menu(lines, page_info=page_info)

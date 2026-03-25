@@ -167,7 +167,7 @@ class StudyController:
 
         # Chapter selection loop — pressing Back returns to study list
         while True:
-            choice = _paged_menu(link, display, display_names)
+            choice = _paged_menu(link, display, display_names, header="Studies")
             if choice is None:
                 return  # user pressed Back → back to study selection
 
@@ -184,7 +184,10 @@ class StudyController:
 
             # Play mode selection
             mode_choice = _paged_menu(
-                link, display, ["Play as White", "Play as Black", "Watch"]
+                link,
+                display,
+                ["Play as White", "Play as Black", "Watch"],
+                header="Studies",
             )
             if mode_choice is None:
                 continue  # back to chapter selection

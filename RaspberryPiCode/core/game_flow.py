@@ -157,6 +157,7 @@ def confirm_exit_game(
         link,
         display,
         options or ["Exit to menu"],
+        header="Leave Game",
         wake_command="ChooseMode",
         resend_timeout=3.0,
     )
@@ -410,7 +411,7 @@ def _parse_color_choice(s: str) -> Optional[bool]:
     if s.startswith("s2"):
         return False
     if s.startswith("s3"):
-        return bool(random.getrandbits(1))
+        return random.choice((True, False))
     return None
 
 
@@ -666,7 +667,11 @@ def post_game_menu(link: BoardLink, display: Display, board: "chess.Board") -> N
     if not wait_for_gameover_dismiss(link, display):
         raise ReturnToMenu()
 
-    display.send("Press OK\nto view analysis")
+    display.show_header_panel(
+        "Game Over!",
+        "Press OK to view analysis",
+        footer="OK=Continue",
+    )
     link.send_to_board("ChooseMode")
     wait_for_ok(link, display)
     offer_analysis_qr(link, display, board)
@@ -970,6 +975,7 @@ def _run_settings_menu(link: BoardLink, display: Display, cfg: GameConfig) -> No
             link,
             display,
             ["Brightness", "Update"],
+            header="Settings",
             resend_timeout=3.0,
         )
         if choice is None:
@@ -999,7 +1005,11 @@ def _configure_vs_computer(link: BoardLink, display: Display, cfg: GameConfig) -
 
     # Difficulty — increment/decrement selector
     elo = _ELO_LABELS.get(cfg.skill_level, 200)
-    display.send(f"Difficulty:\n~{elo} Elo\n1=Up 2=Down\nOK=Go  Hint=Back")
+    display.show_header_panel(
+        "Choose Strength",
+        f"~{elo} Elo",
+        footer="1=up 2=down OK=back",
+    )
     link.send_to_board(f"default_strength_{cfg.skill_level}")
     link.send_to_board("DifficultySelect")
     while True:
@@ -1013,7 +1023,11 @@ def _configure_vs_computer(link: BoardLink, display: Display, cfg: GameConfig) -
                 lvl = max(1, min(int(msg.split("_")[1]), 8))
                 cfg.skill_level = lvl
                 elo = _ELO_LABELS.get(lvl, 200)
-                display.send(f"Difficulty:\n~{elo} Elo\n1=Up 2=Down\nOK=Go  Hint=Back")
+                display.show_header_panel(
+                    "Choose Strength",
+                    f"~{elo} Elo",
+                    footer="1=up 2=down OK=confirm",
+                )
             except Exception:
                 pass
             continue
@@ -1027,7 +1041,13 @@ def _configure_vs_computer(link: BoardLink, display: Display, cfg: GameConfig) -
     cfg.move_time_ms = 2000  # used for hint calculations
 
     # Color
-    display.send("Select a colour:\n1=White 2=Black\n3=Random\nOK = cancel")
+    display.show_header_panel(
+        "Select side",
+        "1) White",
+        "2) Black",
+        "3) Random",
+        footer="OK=Back",
+    )
     link.send_to_board("PlayerColor")
     while True:
         msg = link.read_from_board()
@@ -1038,6 +1058,14 @@ def _configure_vs_computer(link: BoardLink, display: Display, cfg: GameConfig) -
         side = _parse_color_choice(msg)
         if side is not None:
             cfg.human_is_white = side
+            if (msg or "").strip().lower().startswith("s3"):
+                display.show_header_panel(
+                    "Select side",
+                    f"Random: {'White' if side else 'Black'}",
+                    footer="Starting game",
+                    force=True,
+                )
+                time.sleep(0.5)
             break
 
 
@@ -1192,7 +1220,7 @@ def show_received_move(
         board,
         uci,
         header="Move received",
-        footer="OK = Confirm",
+        footer="OK=Confirm",
         piece_from_square=False,
         force=force,
     )
@@ -1210,7 +1238,7 @@ def show_hint_move(
         board,
         uci,
         header="Hint received",
-        footer="OK = Clear",
+        footer="OK=Clear",
         piece_from_square=True,
         force=force,
     )
@@ -1236,8 +1264,8 @@ def _update_typing_display(
     Displays short contextual prompts.
     """
     try:
-        delete_footer = "Hold OK = Delete"
-        confirm_footer = "OK = confirm   Hold OK = Delete"
+        delete_footer = "Hold OK=Delete"
+        confirm_footer = "OK=Confirm   Hold OK=Delete"
         # label, text
         parts = payload.split("_", 1)
         if len(parts) != 2:
@@ -1587,6 +1615,7 @@ OPENING_GROUPS: List[Tuple[str, List[str]]] = [
 
 
 def _render_paged_menu(
+    header: str,
     page: int,
     pages: int,
     items: List[str],
@@ -1605,9 +1634,9 @@ def _render_paged_menu(
     def _fmt(i: int, s: str) -> str:
         return f"{i}) {(s or '').strip()}"
 
-    lines = [_fmt(i + 1, opt) for i, opt in enumerate(items[:per_page])]
+    lines = [header] + [_fmt(i + 1, opt) for i, opt in enumerate(items[:per_page])]
 
-    while len(lines) < 3:
+    while len(lines) < 4:
         lines.append("")
 
     has_hint = pages > 1
@@ -1628,6 +1657,7 @@ def _paged_menu(
     display: Display,
     options: List[str],
     *,
+    header: str = "Menu",
     can_back: bool = True,
     wake_command: Optional[str] = None,
     resend_timeout: Optional[float] = None,
@@ -1665,13 +1695,14 @@ def _paged_menu(
         page_tag = f":{page + 1}/{pages}" if pages > 1 else ""
         display.send(
             _render_paged_menu(
+                header,
                 page,
                 pages,
                 chunk,
                 can_back=can_back,
                 per_page=per_page,
             ),
-            size=f"menu{page_tag}",
+            size=f"menuheader{page_tag}",
         )
         msg = link.read_from_board()
         if msg is None:
@@ -1717,6 +1748,7 @@ def wait_for_mode_selection(
             link,
             display,
             [label for label, _ in _TOP_MENU_OPTIONS],
+            header="Main Menu",
             can_back=False,
             wake_command="ChooseMode",
             resend_timeout=3.0,
@@ -1742,6 +1774,7 @@ def wait_for_mode_selection(
             link,
             display,
             [label for label, _ in _PLAY_CHESS_MENU_OPTIONS],
+            header="Play Chess",
             wake_command="ChooseMode",
             resend_timeout=3.0,
         )
@@ -1947,7 +1980,7 @@ def _run_study_mode(link: BoardLink, display: Display) -> None:
 
     while True:
         study_names = [name for _, name in studies]
-        choice = _paged_menu(link, display, study_names)
+        choice = _paged_menu(link, display, study_names, header="Studies")
         if choice is None:
             raise ReturnToMenu()
 
@@ -1970,7 +2003,7 @@ def _run_puzzle_game(link: BoardLink, display: Display) -> None:
     client = LichessClient()
 
     def menu(options: List[str]) -> Optional[str]:
-        return _paged_menu(link, display, options)
+        return _paged_menu(link, display, options, header="Puzzles")
 
     while True:
         top = menu(["Daily Puzzle", "Mix and match", "Themes"])

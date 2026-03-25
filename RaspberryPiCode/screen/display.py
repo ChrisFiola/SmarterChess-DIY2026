@@ -345,12 +345,12 @@ class Display:
                 self.show_header_panel(
                     "Hint received",
                     f"{frm} → {to}",
-                    footer="OK = Clear",
+                    footer="OK=Clear",
                 )
             else:
-                self.show_header_panel("Hint received", uci, footer="OK = Clear")
+                self.show_header_panel("Hint received", uci, footer="OK=Clear")
         except Exception:
-            self.show_header_panel("Hint received", uci, footer="OK = Clear")
+            self.show_header_panel("Hint received", uci, footer="OK=Clear")
 
     def show_invalid(self, text: str) -> None:
         self.send(f"Invalid\n{text}\nTry again")
