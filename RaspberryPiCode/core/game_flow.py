@@ -2237,11 +2237,13 @@ def run_selected_mode(
         _run_local_game(link, display, ctx, state, cfg)
 
     elif state.mode in ("puzzle", "puzzles", "btn_mode_puzzle", "btn_mode_puzzles"):
+        display.show_header_panel("Puzzles", "Loading...")
         link.send_to_board("SetupComplete")
         _run_puzzle_game(link, display)
         return
 
     elif state.mode in ("studies", "study"):
+        display.show_header_panel("Studies", "Loading...")
         link.send_to_board("SetupComplete")
         _run_study_mode(link, display)
         return

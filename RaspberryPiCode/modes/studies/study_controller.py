@@ -598,10 +598,28 @@ class StudyController:
                     send_check_signal(link, board)
                     node = chosen
                 else:
-                    # Watch or opponent's turn — record fork if opponent has alternatives
+                    # Watch or opponent's turn.
+                    # If the PGN has multiple variations at this node, let the user
+                    # pick which line to follow right now (inline), and record the
+                    # fork so they can come back later via the fork menu.
                     if len(node.variations) > 1:
                         fork_history.append((node, board.fen(), False))
-                    # Auto-play main line.
+                        brd_tmp = chess.Board(board.fen())
+                        var_options = []
+                        for var in node.variations[:4]:
+                            try:
+                                var_options.append(brd_tmp.san(var.move))
+                            except Exception:
+                                var_options.append(chess.Move.uci(var.move)[2:4])
+                        var_choice = _paged_menu(
+                            link, display, var_options, header="Opp plays"
+                        )
+                        if var_choice is not None:
+                            main_var = node.variations[var_options.index(var_choice)]
+                            move = main_var.move
+                            uci = chess.Move.uci(move)
+                            cap = board.is_capture(move)
+                        # If user backs out of picker, fall through to main line
                     # Use study_move_ so the Pico stays in the normal message loop
                     # (engine format triggers engine_ack_pending which causes a
                     # deadlock when WaitForOkConfirm is sent for annotations).
