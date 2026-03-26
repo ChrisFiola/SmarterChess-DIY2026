@@ -695,16 +695,27 @@ class StudyController:
                 self._fork_label(n, f, is_human=h)
                 for n, f, h in reversed(fork_history)
             ]
+            can_vs_cpu = (
+                self.ctx is not None
+                and play_as is not None
+                and not board.is_game_over()
+            )
+            VS_CPU_LABEL = "vs Computer"
+            menu_items = ([VS_CPU_LABEL] if can_vs_cpu else []) + fork_labels
             choice = _paged_menu(
                 link,
                 display,
-                fork_labels,
+                menu_items,
                 header="Study Menu",
                 can_back=True,
-                back_label="Chapters",
+                back_label="Main line",
             )
             if choice is None:
-                return  # Back=Chapters
+                return  # OK=Main line → back to chapters
+
+            if choice == VS_CPU_LABEL:
+                self._continue_vs_computer(link, display, board, play_as)
+                return
 
             # Locate the chosen fork
             rev_idx = fork_labels.index(choice)
