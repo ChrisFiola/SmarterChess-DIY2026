@@ -404,6 +404,9 @@ class StudyController:
 
         def _arm(*, force: bool = False) -> None:
             """Arm the Pico for move entry and update the LCD."""
+            if len(variations) > 1:
+                ucis = "|".join(chess.Move.uci(v.move) for v in variations[:4])
+                link.send_to_board(f"study_vars_{ucis}")
             link.send_to_board(
                 f"turn_{'white' if board.turn == chess.WHITE else 'black'}"
             )
@@ -432,9 +435,6 @@ class StudyController:
                 raise ReturnToMenu()
 
             if msg in HINT_MSGS:
-                if len(variations) > 1:
-                    ucis = "|".join(chess.Move.uci(v.move) for v in variations[:4])
-                    link.send_to_board(f"study_vars_{ucis}")
                 link.send_to_board(f"hint_{main_uci}")
                 show_hint_move(display, board, main_uci, force=True)
                 continue
@@ -676,8 +676,12 @@ class StudyController:
                     continue
                 opp_chosen_var = node.variations[var_options.index(var_choice)]
 
-            # Now discard everything explored after the chosen fork and setup board
+            # Discard everything explored after the chosen fork and setup board.
+            # For opponent forks, re-insert the fork at the current end of history
+            # so the user can come back and try a different variation later.
             fork_history = fork_history[:orig_idx]
+            if opp_chosen_var is not None:
+                fork_history.append((node, fork_fen, False))
             board = chess.Board(fork_fen)
             if guide_board_setup(link, display, fork_fen, label=label) is None:
                 return  # user backed out during setup
