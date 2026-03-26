@@ -623,7 +623,8 @@ class StudyController:
                             except Exception:
                                 var_options.append(chess.Move.uci(var.move)[2:4])
                         var_choice = _paged_menu(
-                            link, display, var_options, header="Opp plays"
+                            link, display, var_options, header="Opp plays",
+                            back_label="Main line",
                         )
                         if var_choice is not None:
                             main_var = node.variations[var_options.index(var_choice)]
@@ -700,7 +701,7 @@ class StudyController:
                 and play_as is not None
                 and not board.is_game_over()
             )
-            VS_CPU_LABEL = "vs Computer"
+            VS_CPU_LABEL = "Continue VS CPU"
             menu_items = ([VS_CPU_LABEL] if can_vs_cpu else []) + fork_labels
             choice = _paged_menu(
                 link,
@@ -708,12 +709,13 @@ class StudyController:
                 menu_items,
                 header="Study Menu",
                 can_back=True,
-                back_label="Main line",
+                back_label="Chapters",
             )
             if choice is None:
-                return  # OK=Main line → back to chapters
+                return  # OK=Chapters
 
             if choice == VS_CPU_LABEL:
+                display.show_header_panel("vs Computer", "Engine loading...")
                 self._continue_vs_computer(link, display, board, play_as)
                 return
 
@@ -734,7 +736,8 @@ class StudyController:
                     except Exception:
                         var_options.append(chess.Move.uci(var.move)[2:4])
                 var_choice = _paged_menu(
-                    link, display, var_options, header="Opp variation"
+                    link, display, var_options, header="Opp variation",
+                    back_label="Main line",
                 )
                 if var_choice is None:
                     # User backed out — leave fork in history and show menu again
