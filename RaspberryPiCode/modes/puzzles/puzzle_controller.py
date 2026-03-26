@@ -440,11 +440,15 @@ class PuzzleController:
         *,
         theme: Optional[str] = None,
         theme_label: Optional[str] = None,
+        ctx=None,
+        cfg=None,
     ):
         self.client = client
         self.mode = (mode or "daily").strip().lower()
         self.theme = (theme or "").strip() or None
         self.theme_label = (theme_label or "").strip() or None
+        self.ctx = ctx  # EngineContext — enables "Continue VS CPU" at puzzle end
+        self.cfg = cfg
         # Track last /api/puzzle/next result to avoid returning the exact same
         # puzzle when the user switches angles quickly.
         self._last_next_angle: Optional[str] = None
@@ -842,6 +846,41 @@ class PuzzleController:
 
         return None, last_err
 
+    def _continue_vs_computer(
+        self,
+        link: BoardLink,
+        display: Display,
+        board: chess.Board,
+        play_as: chess.Color,
+    ) -> None:
+        """Continue the puzzle position against the engine at max difficulty."""
+        from core.game_flow import GameConfig
+        from modes.vs_computer.game_controller import GameController, GameDeps
+        from modes.vs_computer.stockfish_opponent import StockfishOpponent
+
+        assert self.ctx is not None
+        self.ctx.ensure()
+
+        cfg = self.cfg or GameConfig()
+        cfg.skill_level = 8
+        cfg.move_time_ms = 3000
+        cfg.human_is_white = play_as == chess.WHITE
+
+        opponent = StockfishOpponent(
+            self.ctx,
+            move_time_ms=cfg.move_time_ms,
+            skill_level=cfg.skill_level,
+        )
+        controller = GameController(
+            GameDeps(link=link, display=display, opponent=opponent),
+            cfg=cfg,
+        )
+        controller.run_from_position(
+            board,
+            play_as=play_as,
+            move_time_ms=cfg.move_time_ms,
+        )
+
     def run(self, link: BoardLink, display: Display) -> None:
         # 1) Fetch puzzle — runs in background so serial stays live during HTTP wait.
         display.show_header_panel("Puzzles", "Loading...")
@@ -947,6 +986,7 @@ class PuzzleController:
 
         # 3) Load board state
         board = chess.Board(st.fen_start)
+        play_as = board.turn  # human's color — captured before any moves are pushed
         player_color = "WHITE" if board.turn == chess.WHITE else "BLACK"
 
         def _prompt(*, force: bool = False):
@@ -970,13 +1010,36 @@ class PuzzleController:
                     )
                 except Exception:
                     pass
-                display.show_header_panel(
-                    "Puzzle solved!",
-                    "Returning to menu",
-                    footer="OK=Continue",
+                can_vs_cpu = (
+                    self.ctx is not None and not board.is_game_over()
                 )
-                link.send_to_board("GameOver:1-0")
-                wait_for_gameover_dismiss(link, display)
+                if can_vs_cpu:
+                    display.show_header_panel(
+                        "Puzzle solved!",
+                        footer="1=vs CPU  OK=Menu",
+                    )
+                    link.send_to_board("WaitForOkOrSkipSetup")
+                    while True:
+                        msg = link.read_from_board()
+                        if msg is None:
+                            continue
+                        if msg == "shutdown":
+                            shutdown_raspberry_pi(link, display)
+                            return
+                        if msg in NEW_GAME_MSGS or msg in OK_MSGS:
+                            return
+                        if (msg or "").strip() == "1":
+                            display.show_header_panel("vs Computer", "Engine loading...")
+                            self._continue_vs_computer(link, display, board, play_as)
+                            return
+                else:
+                    display.show_header_panel(
+                        "Puzzle solved!",
+                        "Returning to menu",
+                        footer="OK=Continue",
+                    )
+                    link.send_to_board("GameOver:1-0")
+                    wait_for_gameover_dismiss(link, display)
                 return
 
             expected = st.solution[st.idx]
@@ -1078,11 +1141,6 @@ class PuzzleController:
             board.push(mv)
             send_check_signal(link, board)
             st.idx += 1
-            display.show_header_panel(
-                "Correct move!",
-                f"{expected[:2]} → {expected[2:4]}",
-            )
-            time.sleep(1.5)
 
             # Auto-play opponent reply
             if st.idx < len(st.solution):

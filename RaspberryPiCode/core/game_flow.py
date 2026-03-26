@@ -2144,7 +2144,12 @@ def _run_study_mode(
             # After run() returns (user pressed Back from chapter list), loop to study selection
 
 
-def _run_puzzle_game(link: BoardLink, display: Display) -> None:
+def _run_puzzle_game(
+    link: BoardLink,
+    display: Display,
+    ctx: Optional[EngineContext] = None,
+    cfg: Optional[GameConfig] = None,
+) -> None:
     """Puzzle mode: show a submenu then launch the selected puzzle type."""
     display.show_header_panel("Puzzles", "Loading...")
     from modes.online.lichess_client import LichessClient
@@ -2165,11 +2170,11 @@ def _run_puzzle_game(link: BoardLink, display: Display) -> None:
             raise ReturnToMenu()
 
         if top.startswith("Daily"):
-            PuzzleController(client, mode="daily").run(link, display)
+            PuzzleController(client, mode="daily", ctx=ctx, cfg=cfg).run(link, display)
             return
 
         if top.startswith("Mix"):
-            PuzzleController(client, mode="mix").run(link, display)
+            PuzzleController(client, mode="mix", ctx=ctx, cfg=cfg).run(link, display)
             return
 
         if not top.startswith("Themes"):
@@ -2188,7 +2193,7 @@ def _run_puzzle_game(link: BoardLink, display: Display) -> None:
                 if not tag:
                     continue
                 PuzzleController(
-                    client, mode="theme", theme=tag, theme_label=label
+                    client, mode="theme", theme=tag, theme_label=label, ctx=ctx, cfg=cfg
                 ).run(link, display)
                 return
 
@@ -2203,7 +2208,7 @@ def _run_puzzle_game(link: BoardLink, display: Display) -> None:
                 if label is None:
                     continue
                 PuzzleController(
-                    client, mode="theme", theme=label, theme_label=label
+                    client, mode="theme", theme=label, theme_label=label, ctx=ctx, cfg=cfg
                 ).run(link, display)
                 return
 
@@ -2244,7 +2249,7 @@ def run_selected_mode(
     elif state.mode in ("puzzle", "puzzles", "btn_mode_puzzle", "btn_mode_puzzles"):
         display.show_header_panel("Puzzles", "Loading...")
         link.send_to_board("SetupComplete")
-        _run_puzzle_game(link, display)
+        _run_puzzle_game(link, display, ctx=ctx, cfg=cfg)
         return
 
     elif state.mode in ("studies", "study"):
