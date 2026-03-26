@@ -2,35 +2,24 @@
 # Format: study_id  Display Name
 # Example:
 # i7hMEq7h  My Opening Study
-Opening
+Opening White
 LDCZvBvp  Fried Liver
 XYDNJi1R  The London System
+
+Opening Black
+zxAijQ90  Three Check Opening Guide
 8c8bmUfy  Sicilian Defense
 jtlLwUvh  Caro-Kann Defense
-Of3mcPk8  Opening Traps
 
 Middle Game
 kjBSgqoA  Developing plans
-kKRTP1Ft  Avoid Blunders
 
 End game
 wukLYIXj  Beginner Endgames
 UsqmCsgC  Intermediate Endgames
 UO2zqigQ  Advanced Endgames
 
-Chess Tips
-Y6V2kvbF  Chess Tips I
-vPP9B6ks  Chess Tips II
-0O80noiz  Chess Tips III
-qh6X5hLD  Chess Tips IV
-u5h4SYfj  Chess Tips V
-4ZAE63H2  Chess Tips VI
-6pnusXr4  Chess Tips VII
-FkekigmW  Chess Tips VIII
-v9vmpdAP  Chess Tips IX
-q4WGfUEc  Chess Tips X
-
 Capablanca
-gfZY383j  Part 1
-CaZ01HLL  Part 2
-MLvmSIiK  Part 3
+FFhq0jyU  Part 1
+VAoVX8iN  Part 2
+IkHscDW1  Part 3

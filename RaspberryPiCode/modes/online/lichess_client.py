@@ -402,6 +402,7 @@ class LichessClient:
             r = requests.get(
                 f"{LICHESS_BASE}/api/study/{study_id}.pgn",
                 headers={**self.headers, "Accept": "application/x-chess-pgn"},
+                params={"orientation": "true"},
                 timeout=timeout_s,
             )
             if not r.ok:

@@ -106,15 +106,18 @@ def load_studies() -> List[Tuple[str, str]]:
     return studies
 
 
-def _parse_chapters(pgn_text: str) -> List[Tuple[str, chess.pgn.Game]]:
+def _parse_chapters(
+    pgn_text: str,
+) -> List[Tuple[str, chess.pgn.Game, Optional[chess.Color]]]:
     """Parse all chapters from a study PGN export.
 
-    Returns a list of (chapter_name, game) tuples.
+    Returns a list of (chapter_name, game, orientation) tuples.
+    orientation is chess.WHITE, chess.BLACK, or None if not specified.
     Chapter name is taken from the PGN Event header.
     Lichess exports use "Study Name: Chapter Name" format; we extract
     just the chapter name (the part after the last ": ").
     """
-    chapters: List[Tuple[str, chess.pgn.Game]] = []
+    chapters: List[Tuple[str, chess.pgn.Game, Optional[chess.Color]]] = []
     reader = io.StringIO(pgn_text)
     idx = 0
     while True:
@@ -127,7 +130,14 @@ def _parse_chapters(pgn_text: str) -> List[Tuple[str, chess.pgn.Game]]:
         if ": " in event:
             event = event.rsplit(": ", 1)[1].strip() or event
         name = event or f"Chapter {idx}"
-        chapters.append((name, game))
+        orientation_str = str(game.headers.get("Orientation") or "").strip().lower()
+        if orientation_str == "white":
+            orientation: Optional[chess.Color] = chess.WHITE
+        elif orientation_str == "black":
+            orientation = chess.BLACK
+        else:
+            orientation = None
+        chapters.append((name, game, orientation))
     return chapters
 
 
@@ -201,7 +211,7 @@ class StudyController:
         # page indicator " 1/4" takes ~4 — leave ~18 chars for the name itself)
         MAX_NAME = 18
         display_names = []
-        for name, _ in chapters:
+        for name, _, _ in chapters:
             s = name.strip()
             display_names.append(s if len(s) <= MAX_NAME else s[: MAX_NAME - 1] + "…")
 
@@ -213,7 +223,7 @@ class StudyController:
 
             try:
                 idx = display_names.index(choice)
-                chapter_name, chapter_game = chapters[idx]
+                chapter_name, chapter_game, chapter_orientation = chapters[idx]
             except (ValueError, IndexError):
                 continue
 
@@ -222,11 +232,19 @@ class StudyController:
                 if not self._show_chapter_title(link, display, chapter_name):
                     continue  # user pressed OK — return to chapter list
 
-            # Play mode selection
+            # Play mode selection — put the Lichess orientation colour first so
+            # the user can just press OK to play the intended side.
+            if chapter_orientation == chess.WHITE:
+                mode_options = ["Play as White", "Play as Black", "Watch"]
+            elif chapter_orientation == chess.BLACK:
+                mode_options = ["Play as Black", "Play as White", "Watch"]
+            else:
+                mode_options = ["Play as White", "Play as Black", "Watch"]
+
             mode_choice = _paged_menu(
                 link,
                 display,
-                ["Play as White", "Play as Black", "Watch"],
+                mode_options,
                 header="Studies",
             )
             if mode_choice is None:
