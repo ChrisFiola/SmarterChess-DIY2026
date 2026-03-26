@@ -417,6 +417,7 @@ def handle_illegal_move(
             f"{piece_txt}",
             f"{frm}->{to}",
             footer="OK = retry",
+            force=True,
         )
         link.send_to_board(f"puzzle_wrong_{to}{frm}")
     else:
@@ -424,6 +425,7 @@ def handle_illegal_move(
             f"{label} move",
             side_prefix,
             footer="OK = continue",
+            force=True,
         )
 
     ok = wait_for_ok(link, display, send_prompt=False)

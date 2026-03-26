@@ -327,23 +327,29 @@ class StudyController:
         return True
 
     def _show_annotation(self, link: BoardLink, display: Display, text: str) -> bool:
-        """Show annotation text in a 4-line scrolling window.
+        """Show annotation text in a 3-line scrolling window.
 
         Hint scrolls down one line; at the bottom it wraps back to the top.
         OK = done. Returns False if user backs out to menu.
         """
-        lines = _wrap_text(_clean_comment(text), max_chars=30)
-        # lines = _wrap_text(text, max_chars=30)
+        cleaned = _clean_comment(text)
+        # Break at sentence boundaries ('. ' not preceded by digit or dot)
+        cleaned = re.sub(r"(?<![.\d])\. ", ".\n", cleaned)
+        lines = _wrap_text(cleaned, max_chars=20)
         if not lines or lines == [""]:
             return True
 
-        WINDOW = 4
+        WINDOW = 3
         total = len(lines)
         offset = 0
 
         while True:
             at_bottom = offset + WINDOW >= total
             visible = lines[offset : offset + WINDOW]
+            # Pad to WINDOW lines so font size stays consistent
+            padded = list(visible)
+            while len(padded) < WINDOW:
+                padded.append("")
             if total <= WINDOW:
                 footer = "OK=Done"
             elif at_bottom:
@@ -351,7 +357,7 @@ class StudyController:
             else:
                 footer = "Hint=Scroll  OK=Done"
 
-            display.send("\n".join(visible) + "\n" + footer, size="annotation")
+            display.send("\n".join(padded) + "\n" + footer, size="annotation")
             link.send_to_board("WaitForAnnotationPage")
 
             while True:
@@ -398,28 +404,15 @@ class StudyController:
 
         def _arm(*, force: bool = False) -> None:
             """Arm the Pico for move entry and update the LCD."""
-            if len(variations) > 1:
-                ucis = "|".join(chess.Move.uci(v.move) for v in variations[:4])
-                link.send_to_board(f"study_vars_{ucis}")
             link.send_to_board(
                 f"turn_{'white' if board.turn == chess.WHITE else 'black'}"
             )
-            if len(variations) == 1:
-                display.show_header_panel(
-                    f"You are {side}",
-                    "Play move",
-                    footer="Hint=See move",
-                    force=force,
-                )
-            else:
-                dests = " / ".join(chess.Move.uci(v.move)[2:4] for v in variations[:4])
-                display.show_header_panel(
-                    f"You are {side}",
-                    "Play move",
-                    f"→{dests}",
-                    footer="Hint=Main line",
-                    force=force,
-                )
+            display.show_header_panel(
+                f"You are {side}",
+                "Play move",
+                footer="Hint=See move",
+                force=force,
+            )
 
         _arm()
 
@@ -435,11 +428,13 @@ class StudyController:
             if msg in NEW_GAME_MSGS:
                 if not confirm_exit_game(link, display):
                     _arm()
-                    link.send_to_board(f"hint_{main_uci}")
                     continue
                 raise ReturnToMenu()
 
             if msg in HINT_MSGS:
+                if len(variations) > 1:
+                    ucis = "|".join(chess.Move.uci(v.move) for v in variations[:4])
+                    link.send_to_board(f"study_vars_{ucis}")
                 link.send_to_board(f"hint_{main_uci}")
                 show_hint_move(display, board, main_uci, force=True)
                 continue
@@ -503,13 +498,13 @@ class StudyController:
                 continue
 
             # Correct move
-            display.show_header_panel("Good move!", f"{uci[:2]} → {uci[2:4]}")
-            time.sleep(1.0)
             return matched
 
     @staticmethod
-    def _fork_label(node: chess.pgn.GameNode, board_fen: str) -> str:
-        """Short menu label for a fork: 'Mv5: e4/d4'."""
+    def _fork_label(
+        node: chess.pgn.GameNode, board_fen: str, *, is_human: bool = True
+    ) -> str:
+        """Short menu label for a fork: 'You 5: e4/d4' or 'Opp 5: e5/c5'."""
         try:
             brd = chess.Board(board_fen)
             fullmove = brd.fullmove_number
@@ -519,9 +514,10 @@ class StudyController:
                     sans.append(brd.san(var.move))
                 except Exception:
                     sans.append(chess.Move.uci(var.move)[2:4])
-            return f"Mv{fullmove}: {'/'.join(sans)}"
+            prefix = "You" if is_human else "Opp"
+            return f"{prefix} {fullmove}: {'/'.join(sans)}"
         except Exception:
-            return "Fork"
+            return "You Fork" if is_human else "Opp Fork"
 
     def _play_chapter(
         self,
@@ -576,9 +572,9 @@ class StudyController:
         )
         print(f"[STUDY] chapter={chapter_name!r} mode={mode_label}", flush=True)
 
-        # fork_history tracks human decision points so the user can rewind and
-        # try a different variation after reaching the end of a chapter.
-        fork_history: List[Tuple[chess.pgn.GameNode, str]] = []
+        # fork_history tracks decision points so the user can rewind after reaching
+        # the end of a variation. Each entry is (node, fen, is_human_turn).
+        fork_history: List[Tuple[chess.pgn.GameNode, str, bool]] = []
         node: chess.pgn.GameNode = game
 
         while True:  # outer loop: supports rewinding to a fork
@@ -588,13 +584,12 @@ class StudyController:
                 move = main_var.move
                 uci = chess.Move.uci(move)
                 cap = board.is_capture(move)
-                side_label = "White" if current_turn == chess.WHITE else "Black"
                 is_human_turn = play_as is not None and current_turn == play_as
 
                 if is_human_turn:
                     # Record fork before human chooses so we can rewind here later
                     if len(node.variations) > 1:
-                        fork_history.append((node, board.fen()))
+                        fork_history.append((node, board.fen(), True))
                     # Human plays — let them choose a variation
                     chosen = self._collect_move(link, display, board, node)
                     if chosen is None:
@@ -603,11 +598,13 @@ class StudyController:
                     send_check_signal(link, board)
                     node = chosen
                 else:
-                    # Watch or opponent's turn — auto-play main line
-                    # Use hint_ instead of engine move format so the Pico stays in
-                    # the normal message loop (engine format triggers engine_ack_pending
-                    # which auto-calls _collect_and_submit_move on OK, causing a deadlock
-                    # when we then send WaitForOkConfirm for annotations).
+                    # Watch or opponent's turn — record fork if opponent has alternatives
+                    if len(node.variations) > 1:
+                        fork_history.append((node, board.fen(), False))
+                    # Auto-play main line.
+                    # Use study_move_ so the Pico stays in the normal message loop
+                    # (engine format triggers engine_ack_pending which causes a
+                    # deadlock when WaitForOkConfirm is sent for annotations).
                     link.send_to_board(f"study_move_{uci}{'_cap' if cap else ''}")
                     board.push(move)
                     show_received_move(display, board, uci, force=True)
@@ -633,14 +630,17 @@ class StudyController:
                     if not self._show_annotation(link, display, node.comment):
                         return
 
-            # Chapter complete
+            # Chapter complete (or variation end)
             if not fork_history:
                 display.show_header_panel(label, "Chapter done!", footer="OK=Chapters")
                 wait_for_ok(link, display)
                 return
 
             # Build fork menu (most recent fork first)
-            fork_labels = [self._fork_label(n, f) for n, f in reversed(fork_history)]
+            fork_labels = [
+                self._fork_label(n, f, is_human=h)
+                for n, f, h in reversed(fork_history)
+            ]
             choice = _paged_menu(
                 link,
                 display,
@@ -650,13 +650,55 @@ class StudyController:
                 back_label="Chapters",
             )
             if choice is None:
-                return  # OK=Chapters
+                return  # Back=Chapters
 
-            # Locate the chosen fork and discard everything explored after it
+            # Locate the chosen fork
             rev_idx = fork_labels.index(choice)
             orig_idx = len(fork_history) - 1 - rev_idx
-            node, fork_fen = fork_history[orig_idx]
+            node, fork_fen, is_human = fork_history[orig_idx]
+
+            # For opponent forks: ask which variation to explore before board setup
+            # so backing out is free (no board reset needed).
+            opp_chosen_var: Optional[chess.pgn.GameNode] = None
+            if not is_human and len(node.variations) > 1:
+                brd_tmp = chess.Board(fork_fen)
+                var_options = []
+                for var in node.variations[:4]:
+                    try:
+                        var_options.append(brd_tmp.san(var.move))
+                    except Exception:
+                        var_options.append(chess.Move.uci(var.move)[2:4])
+                var_choice = _paged_menu(
+                    link, display, var_options, header="Opp variation"
+                )
+                if var_choice is None:
+                    # User backed out — leave fork in history and show menu again
+                    continue
+                opp_chosen_var = node.variations[var_options.index(var_choice)]
+
+            # Now discard everything explored after the chosen fork and setup board
             fork_history = fork_history[:orig_idx]
             board = chess.Board(fork_fen)
             if guide_board_setup(link, display, fork_fen, label=label) is None:
                 return  # user backed out during setup
+
+            # For opponent forks: play the chosen variation before resuming
+            if opp_chosen_var is not None:
+                opp_uci = chess.Move.uci(opp_chosen_var.move)
+                opp_cap = board.is_capture(opp_chosen_var.move)
+                link.send_to_board(
+                    f"study_move_{opp_uci}{'_cap' if opp_cap else ''}"
+                )
+                board.push(opp_chosen_var.move)
+                show_received_move(display, board, opp_uci, force=True)
+                if not wait_for_ok(
+                    link,
+                    display,
+                    allow_exit_menu=True,
+                    rearm_command="WaitForOkConfirm",
+                ):
+                    return
+                node = opp_chosen_var
+                if node.comment:
+                    if not self._show_annotation(link, display, node.comment):
+                        return
