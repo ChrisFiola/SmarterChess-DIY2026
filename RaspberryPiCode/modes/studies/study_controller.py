@@ -518,8 +518,21 @@ class StudyController:
         fen = board.fen()
         label = chapter_name[:15]
 
-        # Skip setup if the chapter starts from the standard starting position
-        if board.board_fen() == chess.Board().board_fen():
+        # Chapters with no moves and no displayable comment are Lichess section
+        # dividers or text-only chapters whose prose is not exported in the PGN.
+        # Skip board setup entirely and show a brief message.
+        has_moves = bool(game.variations)
+        cleaned_root_comment = _clean_comment(game.comment) if game.comment else ""
+        if not has_moves and not cleaned_root_comment:
+            display.show_header_panel(label, "No exercises", footer="OK=Chapters")
+            wait_for_ok(link, display)
+            return
+
+        # Skip setup for the standard starting position OR an empty board (used by
+        # Lichess as the FEN for text-only / section-divider chapters).
+        _EMPTY_BOARD = "8/8/8/8/8/8/8/8"
+        no_setup_needed = board.board_fen() in (chess.Board().board_fen(), _EMPTY_BOARD)
+        if no_setup_needed:
             display.show_header_panel(label, "Standard start", "Board ready")
             link.send_to_board("hint_disable")
             link.send_to_board("puzzle_setup_begin")
