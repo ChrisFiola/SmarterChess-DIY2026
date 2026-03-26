@@ -135,6 +135,50 @@ class GameController:
         finally:
             self.deps.display.set_header_badge("")
 
+    def run_from_position(
+        self,
+        board: chess.Board,
+        *,
+        play_as: chess.Color,
+        move_time_ms: int,
+    ) -> None:
+        """Run a vs-computer game starting from an existing board position.
+
+        Used when continuing a study chapter against the engine.
+        The physical board is already set; no setup sequence is needed.
+        """
+        self.deps.opponent.set_time_ms(move_time_ms)
+        self.board = board.copy()
+        self.human_is_white = play_as == chess.WHITE
+        self.deps.link.send_to_board("GameStart")
+        self.deps.display.set_header_badge("")
+
+        try:
+            if self._is_human_turn():
+                self._send_turn_notification()
+                self._prompt_human()
+            else:
+                self.deps.display.show_header_panel(
+                    "vs Computer", "Computer plays..."
+                )
+                time.sleep(0.25)
+                self._play_one_engine_move()
+
+            while True:
+                self._process_pending_messages()
+
+                if not self.board.is_game_over() and not self._is_human_turn():
+                    self._play_one_engine_move()
+                    continue
+
+                payload = self.deps.link.read_from_board()
+                if payload is None:
+                    continue
+                evt = parse_payload(payload)
+                self._handle_event(evt.type, evt.payload)
+        finally:
+            self.deps.display.set_header_badge("")
+
     def _handle_event(
         self, typ: EventType, payload: str, nonblocking: bool = False
     ) -> None:

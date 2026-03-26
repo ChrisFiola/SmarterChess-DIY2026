@@ -22,6 +22,7 @@ import chess.pgn
 
 from core.boardlink import BoardLink
 from core.game_flow import (
+    GameConfig,
     ReturnToMenu,
     _paged_menu,
     confirm_exit_game,
@@ -179,10 +180,20 @@ def _wrap_text(text: str, max_chars: int = 20) -> List[str]:
 class StudyController:
     """Run a Lichess study: chapter selection, board setup, and game tree play."""
 
-    def __init__(self, client: LichessClient, study_id: str, study_name: str):
+    def __init__(
+        self,
+        client: LichessClient,
+        study_id: str,
+        study_name: str,
+        *,
+        ctx=None,
+        cfg: Optional[GameConfig] = None,
+    ):
         self.client = client
         self.study_id = study_id
         self.study_name = study_name
+        self.ctx = ctx  # EngineContext — enables "continue vs computer" at chapter end
+        self.cfg = cfg
 
     # ------------------------------------------------------------------ public
 
@@ -650,8 +661,33 @@ class StudyController:
 
             # Chapter complete (or variation end)
             if not fork_history:
-                display.show_header_panel(label, "Chapter done!", footer="OK=Chapters")
-                wait_for_ok(link, display)
+                can_vs_cpu = (
+                    self.ctx is not None
+                    and play_as is not None
+                    and not board.is_game_over()
+                )
+                if can_vs_cpu:
+                    display.show_header_panel(
+                        label,
+                        "Chapter done!",
+                        footer="1=vs CPU  OK=Chapters",
+                    )
+                    link.send_to_board("WaitForOkOrSkipSetup")
+                    while True:
+                        msg = link.read_from_board()
+                        if msg is None:
+                            continue
+                        if msg == "shutdown":
+                            shutdown_raspberry_pi(link, display)
+                            return
+                        if msg in NEW_GAME_MSGS or msg in OK_MSGS:
+                            return  # OK=Chapters
+                        if (msg or "").strip() == "1":
+                            self._continue_vs_computer(link, display, board, play_as)
+                            return
+                else:
+                    display.show_header_panel(label, "Chapter done!", footer="OK=Chapters")
+                    wait_for_ok(link, display)
                 return
 
             # Build fork menu (most recent fork first)
@@ -724,3 +760,38 @@ class StudyController:
                 if node.comment:
                     if not self._show_annotation(link, display, node.comment):
                         return
+
+    def _continue_vs_computer(
+        self,
+        link: BoardLink,
+        display: Display,
+        board: chess.Board,
+        play_as: chess.Color,
+    ) -> None:
+        """Continue the current study position against the engine at max difficulty."""
+        from core.game_flow import GameConfig
+        from modes.vs_computer.game_controller import GameController, GameDeps
+        from modes.vs_computer.stockfish_opponent import StockfishOpponent
+
+        assert self.ctx is not None
+        self.ctx.ensure()
+
+        cfg = self.cfg or GameConfig()
+        cfg.skill_level = 8
+        cfg.move_time_ms = 3000
+        cfg.human_is_white = play_as == chess.WHITE
+
+        opponent = StockfishOpponent(
+            self.ctx,
+            move_time_ms=cfg.move_time_ms,
+            skill_level=cfg.skill_level,
+        )
+        controller = GameController(
+            GameDeps(link=link, display=display, opponent=opponent),
+            cfg=cfg,
+        )
+        controller.run_from_position(
+            board,
+            play_as=play_as,
+            move_time_ms=cfg.move_time_ms,
+        )

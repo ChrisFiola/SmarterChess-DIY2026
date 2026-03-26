@@ -2066,7 +2066,12 @@ def _run_update(link: BoardLink, display: Display) -> None:
     _restart_smartchess_service(display, "Update done!\nRestarting...")
 
 
-def _run_study_mode(link: BoardLink, display: Display) -> None:
+def _run_study_mode(
+    link: BoardLink,
+    display: Display,
+    ctx: Optional[EngineContext] = None,
+    cfg: Optional[GameConfig] = None,
+) -> None:
     """Study mode: select a Lichess study and play through its chapters."""
     from modes.online.lichess_client import LichessClient
     from modes.studies.study_controller import (
@@ -2134,7 +2139,7 @@ def _run_study_mode(link: BoardLink, display: Display) -> None:
                 continue
 
             study_id, study_name = study
-            ctrl = StudyController(client, study_id, study_name)
+            ctrl = StudyController(client, study_id, study_name, ctx=ctx, cfg=cfg)
             ctrl.run(link, display)
             # After run() returns (user pressed Back from chapter list), loop to study selection
 
@@ -2245,7 +2250,7 @@ def run_selected_mode(
     elif state.mode in ("studies", "study"):
         display.show_header_panel("Studies", "Loading...")
         link.send_to_board("SetupComplete")
-        _run_study_mode(link, display)
+        _run_study_mode(link, display, ctx=ctx, cfg=cfg)
         return
 
     elif state.mode == "online":
