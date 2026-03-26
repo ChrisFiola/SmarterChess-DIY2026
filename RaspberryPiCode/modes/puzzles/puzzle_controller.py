@@ -1010,6 +1010,11 @@ class PuzzleController:
                     )
                 except Exception:
                     pass
+                time.sleep(0.4)
+                try:
+                    link.clear_input()
+                except Exception:
+                    pass
                 can_vs_cpu = (
                     self.ctx is not None and not board.is_game_over()
                 )
@@ -1167,4 +1172,6 @@ class PuzzleController:
                     awaiting_ok_ack = True
                     continue
 
-            _rearm()
+            if st.idx < len(st.solution):
+                _rearm()
+            # else: puzzle complete — let the top of the loop handle it
