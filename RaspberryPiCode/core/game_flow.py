@@ -1528,10 +1528,6 @@ def _run_local_game(
             post_game_menu(link, display, state.board)
             # unreachable — post_game_menu always raises ReturnToMenu
         else:
-            last_uci = chess.Move.uci(move)
-            show_received_move(display, state.board, last_uci, force=True)
-            if not wait_for_ok(link, display):
-                raise ReturnToMenu()
             side = "WHITE" if state.board.turn == chess.WHITE else "BLACK"
             send_turn_notification(link, state.board)
             display.prompt_move(side, force=True)
