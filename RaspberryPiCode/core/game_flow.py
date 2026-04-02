@@ -2087,8 +2087,24 @@ def _run_study_mode(
         wait_for_ok(link, display)
         raise ReturnToMenu()
 
+    # Fetch the authenticated user's own Lichess studies
+    account = client.get_account()
+    username = account.get("id") or account.get("username") or ""
+    if username:
+        display.show_header_panel("Studies", "Loading your", "studies...")
+        my_studies = run_in_bg(
+            lambda: client.get_my_studies(username),
+            link,
+            display,
+        )
+    else:
+        my_studies = []
+
     study_groups = load_study_subjects()
-    studies = load_studies()
+    if my_studies:
+        study_groups = [("My Studies", my_studies)] + study_groups
+
+    studies = [s for _, items in study_groups for s in items]
     if not studies:
         display.show_header_panel(
             "Studies",

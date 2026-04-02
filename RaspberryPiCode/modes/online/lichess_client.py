@@ -393,6 +393,35 @@ class LichessClient:
         except RequestException as e:
             return {"_error": str(e)}
 
+    def get_my_studies(self, username: str, max_count: int = 50) -> list:
+        """Fetch studies created by *username* as a list of (study_id, name) tuples.
+
+        Uses the NDJSON endpoint GET /api/study/by/{username}.
+        Returns an empty list on error.
+        """
+        try:
+            r = requests.get(
+                f"{LICHESS_BASE}/api/study/by/{username}",
+                headers=self.headers,
+                stream=True,
+                timeout=20,
+            )
+            r.raise_for_status()
+            studies = []
+            for obj in _iter_ndjson(r):
+                if not obj:
+                    continue
+                sid = obj.get("id", "")
+                name = obj.get("name", sid)
+                if sid:
+                    studies.append((sid, name))
+                    if len(studies) >= max_count:
+                        break
+            return studies
+        except RequestException as e:
+            print(f"[STUDY] Error fetching my studies: {e}", flush=True)
+            return []
+
     def get_study_pgn(self, study_id: str, timeout_s: float = 30) -> str:
         """Fetch all chapters of a Lichess study as combined PGN text.
 
