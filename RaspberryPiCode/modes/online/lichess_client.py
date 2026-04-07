@@ -422,6 +422,37 @@ class LichessClient:
             print(f"[STUDY] Error fetching my studies: {e}", flush=True)
             return []
 
+    def get_study_chapter_names(self, study_id: str, timeout_s: float = 15) -> list:
+        """Fetch chapter names for a study in order, via GET /api/study/{studyId}/chapters.
+
+        Returns a list of chapter name strings (in chapter order), or an empty
+        list on error so callers can fall back to PGN Event headers.
+        """
+        try:
+            r = requests.get(
+                f"{LICHESS_BASE}/api/study/{study_id}/chapters",
+                headers=self.headers,
+                stream=True,
+                timeout=timeout_s,
+            )
+            if not r.ok:
+                print(
+                    f"[STUDY] HTTP {r.status_code} fetching chapters for {study_id!r}",
+                    flush=True,
+                )
+                return []
+            names = []
+            for obj in _iter_ndjson(r):
+                if not obj:
+                    continue
+                name = obj.get("name", "")
+                if name:
+                    names.append(name)
+            return names
+        except RequestException as e:
+            print(f"[STUDY] Network error fetching chapters for {study_id!r}: {e}", flush=True)
+            return []
+
     def get_study_pgn(self, study_id: str, timeout_s: float = 30) -> str:
         """Fetch all chapters of a Lichess study as combined PGN text.
 

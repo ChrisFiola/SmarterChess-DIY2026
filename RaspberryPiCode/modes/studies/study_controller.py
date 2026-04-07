@@ -200,8 +200,13 @@ class StudyController:
     def run(self, link: BoardLink, display: Display) -> None:
         """Fetch study, show chapter menu, and play selected chapters."""
         display.show_header_panel("Studies", "Loading", self.study_name[:20])
-        pgn_text = run_in_bg(
-            lambda: self.client.get_study_pgn(self.study_id), link, display
+        pgn_text, api_names = run_in_bg(
+            lambda: (
+                self.client.get_study_pgn(self.study_id),
+                self.client.get_study_chapter_names(self.study_id),
+            ),
+            link,
+            display,
         )
         if not pgn_text:
             display.show_header_panel(
@@ -213,6 +218,13 @@ class StudyController:
             return
 
         chapters = _parse_chapters(pgn_text)
+        # Override PGN Event-derived names with the Lichess API chapter names
+        # (imported chapters often have Event: "import" rather than their real name).
+        if api_names:
+            chapters = [
+                (api_names[i] if i < len(api_names) else name, game, orient)
+                for i, (name, game, orient) in enumerate(chapters)
+            ]
         if not chapters:
             display.show_header_panel("Studies", "No chapters found", footer="OK=Back")
             wait_for_ok(link, display)
