@@ -427,12 +427,12 @@ class LichessClient:
 
         Returns a list of chapter name strings (in chapter order), or an empty
         list on error so callers can fall back to PGN Event headers.
+        The endpoint returns a JSON array (not NDJSON), so we use r.json().
         """
         try:
             r = requests.get(
                 f"{LICHESS_BASE}/api/study/{study_id}/chapters",
                 headers=self.headers,
-                stream=True,
                 timeout=timeout_s,
             )
             if not r.ok:
@@ -441,16 +441,12 @@ class LichessClient:
                     flush=True,
                 )
                 return []
-            names = []
-            for obj in _iter_ndjson(r):
-                if not obj:
-                    continue
-                name = obj.get("name", "")
-                if name:
-                    names.append(name)
-            return names
-        except RequestException as e:
-            print(f"[STUDY] Network error fetching chapters for {study_id!r}: {e}", flush=True)
+            data = r.json()
+            if isinstance(data, list):
+                return [obj.get("name", "") for obj in data if obj.get("name")]
+            return []
+        except (RequestException, ValueError) as e:
+            print(f"[STUDY] Error fetching chapters for {study_id!r}: {e}", flush=True)
             return []
 
     def get_study_pgn(self, study_id: str, timeout_s: float = 30) -> str:

@@ -15,6 +15,7 @@ import io
 import os
 import re
 import time
+from collections import Counter
 from typing import List, Optional, Tuple
 
 import chess
@@ -233,10 +234,20 @@ class StudyController:
         # Build truncated display names (menu prefix "N) " takes ~3 chars,
         # page indicator " 1/4" takes ~4 — leave ~18 chars for the name itself)
         MAX_NAME = 18
+        raw_names = [name.strip() for name, _, _ in chapters]
+        # Deduplicate names so display_names.index() finds the right chapter.
+        # Chapters imported to Lichess without a title are all called "import".
+        name_counts = Counter(raw_names)
+        name_seen: dict = {}
         display_names = []
-        for name, _, _ in chapters:
-            s = name.strip()
-            display_names.append(s if len(s) <= MAX_NAME else s[: MAX_NAME - 1] + "…")
+        for s in raw_names:
+            if name_counts[s] > 1:
+                n = name_seen.get(s, 0) + 1
+                name_seen[s] = n
+                label = f"{s} ({n})"
+            else:
+                label = s
+            display_names.append(label if len(label) <= MAX_NAME else label[: MAX_NAME - 1] + "…")
 
         # Chapter selection loop — pressing Back returns to study list
         while True:
