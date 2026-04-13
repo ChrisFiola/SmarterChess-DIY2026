@@ -7,56 +7,59 @@ Supported size tokens: auto, header, header:badge, menu, menu:page,
                        annotation, annotation:page, setup, qr, clock, online,
                        menuheader, menuheader:badge, and integer font-size.
 """
+
 from machine import Pin, SPI
 import framebuf
 import time
 
 # ── Pin assignments (WIRING_DIAGRAM.md) ─────────────────────────────────────
-_SCK   = 14
-_MOSI  = 15
-_MISO  = 12
-_DC    = 17
-_RST   = 18
-_CS    = 13
-_BL    = 19
-_T_CS  = 20
+_SCK = 14
+_MOSI = 15
+_MISO = 12
+_DC = 17
+_RST = 18
+_CS = 13
+_BL = 19
+_T_CS = 20
 _T_IRQ = 21
 
 # ── Display dimensions (portrait) ────────────────────────────────────────────
 W = 240
 H = 320
 
+
 # ── RGB565 helpers ────────────────────────────────────────────────────────────
 def _rgb(r, g, b):
     return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
 
-BLACK     = 0x0000
-WHITE     = 0xFFFF
-GRAY      = _rgb(128, 128, 128)
+
+BLACK = 0x0000
+WHITE = 0xFFFF
+GRAY = _rgb(128, 128, 128)
 DARK_GRAY = _rgb(40, 40, 40)
 DIM_WHITE = _rgb(200, 200, 200)
 
 # ── ILI9341 init sequence ─────────────────────────────────────────────────────
 _INIT = (
-    (0xEF, b'\x03\x80\x02'),
-    (0xCF, b'\x00\xC1\x30'),
-    (0xED, b'\x64\x03\x12\x81'),
-    (0xE8, b'\x85\x00\x78'),
-    (0xCB, b'\x39\x2C\x00\x34\x02'),
-    (0xF7, b'\x20'),
-    (0xEA, b'\x00\x00'),
-    (0xC0, b'\x23'),            # Power control
-    (0xC1, b'\x10'),            # Power control
-    (0xC5, b'\x3E\x28'),        # VCM control
-    (0xC7, b'\x86'),            # VCM control 2
-    (0x36, b'\x48'),            # MADCTL: MX + BGR → portrait, standard colours
-    (0x3A, b'\x55'),            # 16-bit colour
-    (0xB1, b'\x00\x18'),        # Frame rate
-    (0xB6, b'\x08\x82\x27'),    # Display function control
-    (0xF2, b'\x00'),            # Gamma disable
-    (0x26, b'\x01'),            # Gamma curve 1
-    (0xE0, b'\x0F\x31\x2B\x0C\x0E\x08\x4E\xF1\x37\x07\x10\x03\x0E\x09\x00'),
-    (0xE1, b'\x00\x0E\x14\x03\x11\x07\x31\xC1\x48\x08\x0F\x0C\x31\x36\x0F'),
+    (0xEF, b"\x03\x80\x02"),
+    (0xCF, b"\x00\xc1\x30"),
+    (0xED, b"\x64\x03\x12\x81"),
+    (0xE8, b"\x85\x00\x78"),
+    (0xCB, b"\x39\x2c\x00\x34\x02"),
+    (0xF7, b"\x20"),
+    (0xEA, b"\x00\x00"),
+    (0xC0, b"\x23"),  # Power control
+    (0xC1, b"\x10"),  # Power control
+    (0xC5, b"\x3e\x28"),  # VCM control
+    (0xC7, b"\x86"),  # VCM control 2
+    (0x36, b"\xe8"),  # MADCTL: MX + BGR → portrait, standard colours
+    (0x3A, b"\x55"),  # 16-bit colour
+    (0xB1, b"\x00\x18"),  # Frame rate
+    (0xB6, b"\x08\x82\x27"),  # Display function control
+    (0xF2, b"\x00"),  # Gamma disable
+    (0x26, b"\x01"),  # Gamma curve 1
+    (0xE0, b"\x0f\x31\x2b\x0c\x0e\x08\x4e\xf1\x37\x07\x10\x03\x0e\x09\x00"),
+    (0xE1, b"\x00\x0e\x14\x03\x11\x07\x31\xc1\x48\x08\x0f\x0c\x31\x36\x0f"),
 )
 
 
@@ -66,14 +69,18 @@ _INIT = (
 class ILI9341:
 
     def __init__(self):
-        self._dc  = Pin(_DC,  Pin.OUT, value=1)
+        self._dc = Pin(_DC, Pin.OUT, value=1)
         self._rst = Pin(_RST, Pin.OUT, value=1)
-        self._cs  = Pin(_CS,  Pin.OUT, value=1)
-        self._bl  = Pin(_BL,  Pin.OUT, value=0)
+        self._cs = Pin(_CS, Pin.OUT, value=1)
+        self._bl = Pin(_BL, Pin.OUT, value=0)
         self._spi = SPI(
-            1, baudrate=40_000_000,
-            sck=Pin(_SCK), mosi=Pin(_MOSI), miso=Pin(_MISO),
-            polarity=0, phase=0,
+            1,
+            baudrate=40_000_000,
+            sck=Pin(_SCK),
+            mosi=Pin(_MOSI),
+            miso=Pin(_MISO),
+            polarity=0,
+            phase=0,
         )
         self._reset()
         self._init_display()
@@ -109,9 +116,9 @@ class ILI9341:
     def _init_display(self):
         for cmd, data in _INIT:
             self._write(cmd, data)
-        self._cmd(0x11)     # Sleep out
+        self._cmd(0x11)  # Sleep out
         time.sleep_ms(120)
-        self._cmd(0x29)     # Display on
+        self._cmd(0x29)  # Display on
 
     def _set_window(self, x0, y0, x1, y1):
         self._write(0x2A, bytes([x0 >> 8, x0 & 0xFF, x1 >> 8, x1 & 0xFF]))
@@ -124,7 +131,7 @@ class ILI9341:
         """Fill entire screen with one colour."""
         self._set_window(0, 0, W - 1, H - 1)
         hi, lo = color >> 8, color & 0xFF
-        chunk = bytes([hi, lo] * W)   # one row
+        chunk = bytes([hi, lo] * W)  # one row
         self._dc.value(1)
         self._cs.value(0)
         for _ in range(H):
@@ -170,7 +177,7 @@ class ILI9341:
                 for sy in range(scale):
                     for sx in range(scale):
                         idx = ((base_y + sy) * cw + (base_x + sx)) * 2
-                        buf[idx]     = hi
+                        buf[idx] = hi
                         buf[idx + 1] = lo
 
         self._set_window(x, y, x + cw - 1, y + ch_h - 1)
@@ -210,13 +217,14 @@ class XPT2046:
     Calibration defaults suit a typical 2.8" ILI9341 module.
     Adjust X_MIN/MAX, Y_MIN/MAX after running a calibration sketch.
     """
+
     X_MIN, X_MAX = 200, 3800
     Y_MIN, Y_MAX = 200, 3800
 
     def __init__(self, spi, cs_pin=_T_CS, irq_pin=_T_IRQ):
         self._spi = spi
-        self._cs  = Pin(cs_pin,  Pin.OUT, value=1)
-        self._irq = Pin(irq_pin, Pin.IN,  Pin.PULL_UP)
+        self._cs = Pin(cs_pin, Pin.OUT, value=1)
+        self._irq = Pin(irq_pin, Pin.IN, Pin.PULL_UP)
 
     def _read_chan(self, cmd):
         """Read one 12-bit ADC channel via SPI at 2 MHz."""
@@ -273,6 +281,7 @@ class XPT2046:
 # Layout helpers
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def _is_footer_hint(line):
     if not line:
         return False
@@ -297,19 +306,19 @@ def _split_footer(text):
     buf = []
     run = 0
     for c in text:
-        if c == ' ':
+        if c == " ":
             run += 1
             buf.append(c)
         else:
             if run >= 2 and buf:
-                seg = ''.join(buf).strip()
+                seg = "".join(buf).strip()
                 if seg:
                     parts.append(seg)
                 buf = [c]
             else:
                 buf.append(c)
             run = 0
-    seg = ''.join(buf).strip()
+    seg = "".join(buf).strip()
     if seg:
         parts.append(seg)
     return parts[:3] if parts else ([text] if text else [])
@@ -353,7 +362,7 @@ def _best_scale(lines, max_lines_hint=8):
 def _truncate(text, max_chars):
     if len(text) <= max_chars:
         return text
-    return text[:max_chars - 1] + "~"
+    return text[: max_chars - 1] + "~"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -369,17 +378,17 @@ class TFTDisplay:
     """
 
     # Layout constants
-    _HDR_Y       = 4       # header text top
-    _HDR_SCALE   = 2       # default header scale
-    _DIV1_H      = 2       # divider thickness
-    _FOOT_H      = 18      # footer text height (scale 1 = 8px + padding)
-    _FOOT_MARGIN = 4       # gap below divider to footer text
-    _FOOT_DIV_Y  = H - _FOOT_H - _FOOT_MARGIN - 4   # footer divider y ≈ 290
-    _FOOT_Y      = H - _FOOT_H - 2                   # footer text y ≈ 296
+    _HDR_Y = 4  # header text top
+    _HDR_SCALE = 2  # default header scale
+    _DIV1_H = 2  # divider thickness
+    _FOOT_H = 18  # footer text height (scale 1 = 8px + padding)
+    _FOOT_MARGIN = 4  # gap below divider to footer text
+    _FOOT_DIV_Y = H - _FOOT_H - _FOOT_MARGIN - 4  # footer divider y ≈ 290
+    _FOOT_Y = H - _FOOT_H - 2  # footer text y ≈ 296
 
     def __init__(self):
-        self._lcd  = ILI9341()
-        self._xpt  = XPT2046(self._lcd.spi)
+        self._lcd = ILI9341()
+        self._xpt = XPT2046(self._lcd.spi)
         self._clock_lines = None
         self._last_payload = None
         self.show_splash()
@@ -390,7 +399,7 @@ class TFTDisplay:
         lcd = self._lcd
         lcd.fill(BLACK)
         lcd.text_centered(H // 2 - 16, "SMARTCHESS", WHITE, BLACK, scale=2)
-        lcd.text_centered(H // 2 + 8,  "Starting...", GRAY,  BLACK, scale=1)
+        lcd.text_centered(H // 2 + 8, "Starting...", GRAY, BLACK, scale=1)
 
     def show_boot(self, msg="Starting..."):
         lcd = self._lcd
@@ -411,9 +420,9 @@ class TFTDisplay:
             return
         self._last_payload = payload
 
-        parts     = payload.split("|")
-        size_tok  = parts[-1].strip().lower() if parts else "auto"
-        lines     = parts[:-1]
+        parts = payload.split("|")
+        size_tok = parts[-1].strip().lower() if parts else "auto"
+        lines = parts[:-1]
 
         # ── Clock overlay (does not redraw full screen) ──────────────────────
         if size_tok == "clock":
@@ -421,7 +430,7 @@ class TFTDisplay:
                 self._clock_lines = lines[1:3]
             elif lines and lines[0] == "__clock_clear__":
                 self._clock_lines = None
-            return      # clock-only update; let next real message redraw
+            return  # clock-only update; let next real message redraw
 
         # ── QR ───────────────────────────────────────────────────────────────
         if size_tok == "qr":
@@ -489,10 +498,10 @@ class TFTDisplay:
         header = lines[0].strip() if lines else ""
 
         # Detect footer
-        has_footer  = len(lines) > 1 and _is_footer_hint(lines[-1])
-        footer_raw  = lines[-1] if has_footer else ""
-        body_lines  = lines[1:-1] if has_footer and len(lines) > 2 else lines[1:]
-        body_lines  = [ln for ln in body_lines if ln is not None]
+        has_footer = len(lines) > 1 and _is_footer_hint(lines[-1])
+        footer_raw = lines[-1] if has_footer else ""
+        body_lines = lines[1:-1] if has_footer and len(lines) > 2 else lines[1:]
+        body_lines = [ln for ln in body_lines if ln is not None]
 
         # ── Header ────────────────────────────────────────────────────────────
         hdr_scale = 3 if len(header) <= 9 else 2
@@ -527,7 +536,7 @@ class TFTDisplay:
         wrapped = []
         for ln in body_lines:
             if ln:
-                wrapped.extend(_word_wrap(ln, 15))   # try scale-2 width
+                wrapped.extend(_word_wrap(ln, 15))  # try scale-2 width
         scale = _best_scale(wrapped, max_lines_hint=max(1, avail_h // 20))
         ch = 8 * scale
         line_h = ch + 4
@@ -603,7 +612,7 @@ class TFTDisplay:
         lcd.fill(BLACK)
 
         clock_lines = lines[:2] if len(lines) >= 2 else (lines + [""])[:2]
-        body_lines  = [ln for ln in lines[2:] if ln] if len(lines) > 2 else []
+        body_lines = [ln for ln in lines[2:] if ln] if len(lines) > 2 else []
 
         y = 4
         for i, cl in enumerate(clock_lines):
@@ -611,12 +620,19 @@ class TFTDisplay:
                 continue
             parts = cl.strip().split(" ", 1)
             label = parts[0] if len(parts) == 2 else ""
-            tval  = parts[1] if len(parts) == 2 else cl
+            tval = parts[1] if len(parts) == 2 else cl
             if i == 0:
                 # Left-align
                 if label:
                     lcd.text(4, y + 2, _truncate(label, 4), GRAY, BLACK, scale=1)
-                    lcd.text(4 + len(_truncate(label, 4)) * 8 + 2, y, _truncate(tval, 6), WHITE, BLACK, scale=2)
+                    lcd.text(
+                        4 + len(_truncate(label, 4)) * 8 + 2,
+                        y,
+                        _truncate(tval, 6),
+                        WHITE,
+                        BLACK,
+                        scale=2,
+                    )
                 else:
                     lcd.text(4, y, _truncate(tval, 7), WHITE, BLACK, scale=2)
             else:
@@ -627,7 +643,9 @@ class TFTDisplay:
                 rx = W - full_w - 4
                 if label_t:
                     lcd.text(rx, y + 2, label_t, GRAY, BLACK, scale=1)
-                    lcd.text(rx + len(label_t) * 8 + 2, y, tval_t, WHITE, BLACK, scale=2)
+                    lcd.text(
+                        rx + len(label_t) * 8 + 2, y, tval_t, WHITE, BLACK, scale=2
+                    )
                 else:
                     lcd.text(rx, y, tval_t, WHITE, BLACK, scale=2)
 
