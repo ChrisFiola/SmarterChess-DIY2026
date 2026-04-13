@@ -220,6 +220,7 @@ class XPT2046:
 
     X_MIN, X_MAX = 200, 3800
     Y_MIN, Y_MAX = 200, 3800
+    SAMPLE_JITTER = 120
 
     def __init__(self, spi, cs_pin=_T_CS, irq_pin=_T_IRQ):
         self._spi = spi
@@ -244,13 +245,15 @@ class XPT2046:
         """
         Return (x, y) in screen-pixel coordinates, or None if not touched.
         Averages two reads per axis for stability.
+        T_IRQ is optional on this build, so we also accept stable raw reads
+        even when the IRQ pin is not asserted.
         """
-        if not self.touched():
-            return None
         x1 = self._read_chan(0xD0)
         y1 = self._read_chan(0x90)
         x2 = self._read_chan(0xD0)
         y2 = self._read_chan(0x90)
+        if abs(x1 - x2) > self.SAMPLE_JITTER or abs(y1 - y2) > self.SAMPLE_JITTER:
+            return None
         x_raw = (x1 + x2) >> 1
         y_raw = (y1 + y2) >> 1
         if x_raw < 100 or y_raw < 100:
@@ -391,6 +394,7 @@ class TFTDisplay:
         self._xpt = XPT2046(self._lcd.spi)
         self._clock_lines = None
         self._last_payload = None
+        self._touch_zones = {}
         self.show_splash()
 
     # ── Public: show_* helpers ────────────────────────────────────────────────
@@ -423,6 +427,7 @@ class TFTDisplay:
         parts = payload.split("|")
         size_tok = parts[-1].strip().lower() if parts else "auto"
         lines = parts[:-1]
+        self._touch_zones = {}
 
         # ── Clock overlay (does not redraw full screen) ──────────────────────
         if size_tok == "clock":
@@ -472,7 +477,11 @@ class TFTDisplay:
             self._render_online(list(self._clock_lines) + lines)
             return
 
-        self._render_header_panel(lines, badge)
+        self._render_header_panel(
+            lines,
+            badge,
+            touch_mode="menu" if size_tok.startswith("menuheader") else None,
+        )
 
     # ── Internal layout renderers ─────────────────────────────────────────────
 
@@ -480,7 +489,7 @@ class TFTDisplay:
         """Height consumed by the header text + small gap."""
         return 8 * scale + 6
 
-    def _render_header_panel(self, lines, badge=""):
+    def _render_header_panel(self, lines, badge="", touch_mode=None):
         """
         Standard header panel:
           [header]  (+ badge top-right)
@@ -524,6 +533,22 @@ class TFTDisplay:
         if has_footer:
             foot_parts = _split_footer(footer_raw)
             self._draw_footer(foot_parts)
+            if touch_mode == "menu":
+                footer_y0 = self._FOOT_DIV_Y
+                if len(foot_parts) >= 2:
+                    self._touch_zones["btn_ok"] = (0, footer_y0, (W // 2) - 1, H - 1)
+                    self._touch_zones["btn_hint"] = (
+                        W // 2,
+                        footer_y0,
+                        W - 1,
+                        H - 1,
+                    )
+                elif foot_parts:
+                    footer_key = foot_parts[0].strip().lower()
+                    if footer_key.startswith("ok"):
+                        self._touch_zones["btn_ok"] = (0, footer_y0, W - 1, H - 1)
+                    elif footer_key.startswith("hint"):
+                        self._touch_zones["btn_hint"] = (0, footer_y0, W - 1, H - 1)
             avail_h = self._FOOT_DIV_Y - body_top - 4
         else:
             avail_h = H - body_top - 4
@@ -546,6 +571,16 @@ class TFTDisplay:
         for ln in wrapped:
             if body_y + ch > (self._FOOT_DIV_Y if has_footer else H) - 2:
                 break
+            if touch_mode == "menu":
+                zone_y0 = max(body_top, body_y - 2)
+                zone_y1 = min(
+                    (self._FOOT_DIV_Y if has_footer else H) - 1,
+                    body_y + ch + 2,
+                )
+                zone_name = str(
+                    1 + sum(1 for name in self._touch_zones if name.isdigit())
+                )
+                self._touch_zones[zone_name] = (0, zone_y0, W - 1, zone_y1)
             lcd.text_centered(body_y, _truncate(ln, 30 // scale), WHITE, BLACK, scale)
             body_y += line_h
 
@@ -732,3 +767,8 @@ class TFTDisplay:
     @property
     def touch(self):
         return self._xpt
+
+    def menu_touch_action(self):
+        if not self._touch_zones:
+            return None
+        return self._xpt.get_zone(self._touch_zones)

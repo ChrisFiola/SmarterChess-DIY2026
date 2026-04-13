@@ -1922,6 +1922,8 @@ def _run_update(link: BoardLink, display: Display) -> None:
     pico_files = [
         pico_dir / "main.py",
         pico_dir / "pico_hw.py",
+        pico_dir / "reed_matrix.py",
+        pico_dir / "tft_ili9341.py",
     ]
 
     def _pico_signature() -> tuple[tuple[str, Optional[str]], ...]:
@@ -1988,6 +1990,12 @@ def _run_update(link: BoardLink, display: Display) -> None:
         _restart_smartchess_service(display, "Pi updated\nRestarting...")
         return
 
+    changed_pico_names = {
+        name
+        for (name, before_hash), (_, after_hash) in zip(before_pico_hash, after_pico_hash)
+        if before_hash != after_hash and after_hash is not None
+    }
+
     def _sync_update_mode() -> None:
         link.send_to_board("ChooseMode")
         link.send_to_board("UpdateMode")
@@ -2020,7 +2028,9 @@ def _run_update(link: BoardLink, display: Display) -> None:
     # Pre-encode all files and count total chunks for progress display
     upload_plan: list[tuple[Path, str]] = []
     total_chunks = 0
-    for pico_file in [path for path in pico_files if path.exists()]:
+    for pico_file in [
+        path for path in pico_files if path.exists() and path.name in changed_pico_names
+    ]:
         encoded = base64.b64encode(pico_file.read_bytes()).decode()
         n_chunks = (len(encoded) + chunk_size - 1) // chunk_size
         total_chunks += n_chunks

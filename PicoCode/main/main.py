@@ -4,7 +4,7 @@ import gc
 import ubinascii
 import os as _uos
 from pico_hw import configure as _configure_hw, ControlPanel, ChessBoard
-from tft_ili9341 import TFTDisplay, W, H
+from tft_ili9341 import TFTDisplay
 
 
 # trigger faster
@@ -836,22 +836,26 @@ def _run_startup_sequence():
         if cp.shutdown_held():
             _shutdown_pico()
         lit = board.loading_step(lit)
-        time.sleep_ms(Config.Timing.LOADING_TICK_MS)
-        msg = link.read()
-        if not msg:
-            continue
-        if msg.startswith("heyArduinoChooseMode") or msg.startswith(
-            "heyArduinoMenuPaged"
-        ):
-            while lit < (board.w * board.h):
-                if cp.shutdown_held():
-                    _shutdown_pico()
-                lit = board.loading_step(lit)
-                time.sleep_ms(Config.Timing.LOADING_FILL_MS)
-            _enter_setup_mode()
-            if msg.startswith("heyArduinoMenuPaged"):
-                _handle_menu_paged(msg)
-            return
+        deadline = time.ticks_add(time.ticks_ms(), Config.Timing.LOADING_TICK_MS)
+        while time.ticks_diff(deadline, time.ticks_ms()) > 0:
+            if cp.shutdown_held():
+                _shutdown_pico()
+            msg = link.read()
+            if not msg:
+                time.sleep_ms(Config.Timing.SLOW_POLL_MS)
+                continue
+            if msg.startswith("heyArduinoChooseMode") or msg.startswith(
+                "heyArduinoMenuPaged"
+            ):
+                while lit < (board.w * board.h):
+                    if cp.shutdown_held():
+                        _shutdown_pico()
+                    lit = board.loading_step(lit)
+                    time.sleep_ms(Config.Timing.LOADING_FILL_MS)
+                _enter_setup_mode()
+                if msg.startswith("heyArduinoMenuPaged"):
+                    _handle_menu_paged(msg)
+                return
 
 
 def _play_exit_to_menu_animation():
@@ -1331,39 +1335,25 @@ def _handle_wait_for_ok_or_skip_setup(_msg=None):
 
 
 def _wait_for_touch_release():
-    while tft.touch.touched():
+    while tft.touch.read() is not None:
         if cp.shutdown_held():
             _shutdown_pico()
         time.sleep_ms(Config.Timing.FAST_POLL_MS)
 
 
 def _menu_touch_button(allow_select, has_next, has_back):
-    pt = tft.touch.read()
-    if pt is None:
+    action = tft.menu_touch_action()
+    if action is None:
         return None
-
-    x, y = pt
-
-    # Footer taps mirror the physical OK/Hint actions.
-    if y >= 284:
-        if has_back and x < (W // 2):
-            _wait_for_touch_release()
-            return Config.Buttons.OK_INDEX + 1
-        if has_next and x >= (W // 2):
-            _wait_for_touch_release()
-            return Config.Buttons.HINT_INDEX + 1
-        return None
-
-    if not allow_select:
-        return None
-
-    # Body taps map to the 3 visible menu rows.
-    if 48 <= y < 284:
-        row_h = (284 - 48) // 3
-        idx = min(2, max(0, (y - 48) // row_h))
+    if action == "btn_ok" and has_back:
         _wait_for_touch_release()
-        return idx + 1
-
+        return Config.Buttons.OK_INDEX + 1
+    if action == "btn_hint" and has_next:
+        _wait_for_touch_release()
+        return Config.Buttons.HINT_INDEX + 1
+    if allow_select and action in ("1", "2", "3"):
+        _wait_for_touch_release()
+        return int(action)
     return None
 
 

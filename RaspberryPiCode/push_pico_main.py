@@ -14,6 +14,8 @@ DEFAULT_PICO_DIR = Path(__file__).resolve().parents[1] / "PicoCode" / "main"
 DEFAULT_SOURCES = [
     DEFAULT_PICO_DIR / "main.py",
     DEFAULT_PICO_DIR / "pico_hw.py",
+    DEFAULT_PICO_DIR / "reed_matrix.py",
+    DEFAULT_PICO_DIR / "tft_ili9341.py",
 ]
 
 
