@@ -31,14 +31,15 @@ from screen.display import Display
 
 def main():
     display = Display()
-    display.restart_server()
+    # BoardLink must be created before any display call so the Pico TFT
+    # can receive DISP: messages over UART from the very first send.
+    link = BoardLink()
+    display.set_boardlink(link)
     display.show_header_panel("SMARTCHESS")
-    display.wait_ready()
 
     ensure_wifi(display)
 
     ctx = EngineContext()
-    link = BoardLink()
     cfg = GameConfig()
     state = GameState(board=chess.Board(), mode="stockfish")
 

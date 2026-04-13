@@ -32,6 +32,8 @@ class Display:
         self._pipe = None
         self._online_clock = None
         self._header_badge = ""
+        # BoardLink injected after serial port is open (set via set_boardlink)
+        self._boardlink = None
 
     def _format_clock_ms(self, ms: int) -> str:
         ms = max(0, int(ms or 0))
@@ -133,79 +135,29 @@ class Display:
             return "status"
         return "normal"
 
-    def _ensure_pipe(self) -> None:
-        if self._pipe is None:
-            if not os.path.exists(self.pipe_path):
-                try:
-                    os.mkfifo(self.pipe_path)
-                except FileExistsError:
-                    pass
-            self._pipe = open(self.pipe_path, "w", buffering=1)
+    def set_boardlink(self, boardlink) -> None:
+        """Inject the BoardLink instance so display messages can be sent via UART."""
+        self._boardlink = boardlink
 
     def _write_payload(self, payload: str) -> None:
+        """Route a pipe-format payload to the Pico over UART as a DISP: message."""
+        if not self._boardlink:
+            return
         try:
-            self._ensure_pipe()
-            self._pipe.write(payload)
+            # payload ends with '\n'; strip it — boardlink.send_to_board adds its own
+            self._boardlink.send_to_board("DISP:" + payload.rstrip("\n"))
             self._last_payload = payload
-        except (BrokenPipeError, OSError, ValueError):
-            try:
-                if self._pipe:
-                    self._pipe.close()
-            except Exception:
-                pass
-            self._pipe = None
-            try:
-                self._ensure_pipe()
-                self._pipe.write(payload)
-                self._last_payload = payload
-            except Exception:
-                self._pipe = None
-                return
+        except Exception:
+            pass
 
     def restart_server(self) -> None:
-        # Close our writer end first
-        try:
-            if self._pipe:
-                self._pipe.close()
-        except Exception:
-            pass
-        self._pipe = None
+        # Display is now driven by the Pico W (ILI9341 via SPI1).
+        # The Pi no longer owns the display hardware; nothing to start.
         self._last_payload = None
 
-        # Remove stale ready flag so wait_ready() is meaningful
-        try:
-            if os.path.exists(self.ready_flag):
-                os.remove(self.ready_flag)
-        except Exception:
-            pass
-
-        # Kill any existing server (block until done)
-        subprocess.run(
-            "pkill -f display_server.py",
-            shell=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-
-        # Ensure FIFO exists
-        if not os.path.exists(self.pipe_path):
-            try:
-                os.mkfifo(self.pipe_path)
-            except FileExistsError:
-                pass
-
-        # Start server with same interpreter as piMain
-        # stdout/stderr intentionally inherited so errors appear in journalctl
-        subprocess.Popen(
-            ["python3", DISPLAY_SERVER_SCRIPT],
-        )
-
     def wait_ready(self, timeout_s: float = 10.0) -> None:
-        start = time.time()
-        while not os.path.exists(self.ready_flag):
-            if time.time() - start > timeout_s:
-                break
-            time.sleep(0.05)
+        # Pico initialises the TFT at boot; no ready-flag handshake needed.
+        pass
 
     def send(self, message: str, size: str = "auto", force: bool = False) -> None:
         self._last_message = message

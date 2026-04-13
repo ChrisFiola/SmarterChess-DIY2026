@@ -4,6 +4,7 @@ import gc
 import ubinascii
 import os as _uos
 from pico_hw import configure as _configure_hw, ControlPanel, ChessBoard
+from tft_ili9341 import TFTDisplay
 
 
 # trigger faster
@@ -180,6 +181,33 @@ class UARTLink:
         self.uart.write((s + "\n").encode())
 
 
+class FilteredUARTLink(UARTLink):
+    """
+    Wraps UARTLink so that DISP: messages from the Pi are silently rendered
+    on the TFT and never surfaced to the rest of the game logic.
+    All existing callers of link.read() remain unchanged.
+    """
+    def __init__(self):
+        super().__init__()
+        self._tft = None
+
+    def set_tft(self, tft):
+        self._tft = tft
+
+    def read(self):
+        msg = super().read()
+        if msg is None:
+            return None
+        if msg.startswith("heyArduinoDISP:"):
+            if self._tft is not None:
+                try:
+                    self._tft.render(msg[len("heyArduinoDISP:"):])
+                except Exception:
+                    pass
+            return None  # consumed; non-blocking contract preserved
+        return msg
+
+
 class Screen:
     def __init__(self, link, st_):
         self.link = link
@@ -237,7 +265,9 @@ class Screen:
 
 
 time.sleep_ms(500)
-link = UARTLink()
+link = FilteredUARTLink()
+tft = TFTDisplay()          # shows "SMARTCHESS / Starting..." immediately at boot
+link.set_tft(tft)
 screen = Screen(link, st)
 _configure_hw(
     Config,
