@@ -362,6 +362,15 @@ def _wait_for_trail_clear():
         msg = link.read()
         if msg and _handle_overlay_or_gameover(msg) == "gameover":
             return "gameover"
+        touch = _consume_touch_action()
+        if touch == "btn_ok":
+            was_hint = st.persistent_trail_type == "hint"
+            _clear_persistent_trail()
+            cp.only_input()
+            cp.reset_edges()
+            if was_hint:
+                link.send("btn_ok")
+            return 0
         b = cp.detect_press_raw()
         if b is not None:
             was_hint = st.persistent_trail_type == "hint"
@@ -836,6 +845,10 @@ def _show_game_over_and_ack(result_str):
                 last = now
             if cp.shutdown_held():
                 _shutdown_pico()
+            if _consume_touch_action() == "btn_ok":
+                cp.only_ok(False)
+                link.send("n")
+                break
             b = cp.detect_press_raw()
             if b == (Config.Buttons.OK_INDEX + 1):
                 cp.only_ok(False)
@@ -1415,7 +1428,7 @@ def _handle_game_touch_action(*, allow_confirm=False):
 
 
 def _menu_touch_button(allow_select, has_next, has_back):
-    action = tft.menu_touch_action()
+    action = tft.touch_action()
     if action is None:
         return None
     if action == "btn_ok" and has_back:
@@ -1593,6 +1606,11 @@ def _handle_puzzle_wrong(msg):
             _shutdown_pico()
         if _handle_hint_irq() == "new":
             link.send("n")
+            break
+        if _consume_touch_action() == "btn_ok":
+            cp.disarm_confirm_ok()
+            cp.reset_edges()
+            link.send("btn_ok")
             break
         b = cp.detect_press_raw()
         if b == (Config.Buttons.OK_INDEX + 1):
@@ -1872,6 +1890,12 @@ def _main_loop():
             and not st.engine_ack_pending
             and not st.persistent_trail_active
         ):
+            if _consume_touch_action() == "btn_ok":
+                link.send("btn_ok")
+                st.ok_back_enabled = False
+                _reset_to_idle()
+                time.sleep_ms(50)
+                continue
             b0 = cp.detect_press_raw()
             if b0 == (Config.Buttons.OK_INDEX + 1):
                 link.send("btn_ok")
@@ -1932,6 +1956,9 @@ def _main_loop():
                 time.sleep_ms(Config.Timing.ENGINE_ACK_POST_MS)
                 cp.reset_edges()
                 while True:
+                    if _consume_touch_action() == "btn_ok":
+                        cp.only_ok(False)
+                        break
                     b = cp.detect_press_raw()
                     if b == (Config.Buttons.OK_INDEX + 1):
                         cp.only_ok(False)
@@ -1944,8 +1971,9 @@ def _main_loop():
                 continue
             if nxt and nxt.startswith("heyArduinoturn_"):
                 st.buffered_turn_msg = nxt
+            ok_touched = _consume_touch_action() == "btn_ok"
             b = cp.detect_press_raw()
-            if b == (Config.Buttons.OK_INDEX + 1):
+            if ok_touched or b == (Config.Buttons.OK_INDEX + 1):
                 link.send("btn_ok")
                 st.engine_ack_pending = False
                 cp.set_ok_led(False)
