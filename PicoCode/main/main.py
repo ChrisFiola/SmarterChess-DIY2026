@@ -4,7 +4,7 @@ import gc
 import ubinascii
 import os as _uos
 from pico_hw import configure as _configure_hw, ControlPanel, ChessBoard
-from tft_ili9341 import TFTDisplay
+from tft_ili9341 import TFTDisplay, W, H
 
 
 # trigger faster
@@ -1330,6 +1330,43 @@ def _handle_wait_for_ok_or_skip_setup(_msg=None):
             return
 
 
+def _wait_for_touch_release():
+    while tft.touch.touched():
+        if cp.shutdown_held():
+            _shutdown_pico()
+        time.sleep_ms(Config.Timing.FAST_POLL_MS)
+
+
+def _menu_touch_button(allow_select, has_next, has_back):
+    pt = tft.touch.read()
+    if pt is None:
+        return None
+
+    x, y = pt
+
+    # Footer taps mirror the physical OK/Hint actions.
+    if y >= 284:
+        if has_back and x < (W // 2):
+            _wait_for_touch_release()
+            return Config.Buttons.OK_INDEX + 1
+        if has_next and x >= (W // 2):
+            _wait_for_touch_release()
+            return Config.Buttons.HINT_INDEX + 1
+        return None
+
+    if not allow_select:
+        return None
+
+    # Body taps map to the 3 visible menu rows.
+    if 48 <= y < 284:
+        row_h = (284 - 48) // 3
+        idx = min(2, max(0, (y - 48) // row_h))
+        _wait_for_touch_release()
+        return idx + 1
+
+    return None
+
+
 def _handle_menu_paged(_msg, *, ok_color=None):
     allow_select = False
     has_next = False
@@ -1356,7 +1393,33 @@ def _handle_menu_paged(_msg, *, ok_color=None):
     while True:
         if cp.shutdown_held():
             _shutdown_pico()
-        b = cp.detect_press_allowed()
+        # Keep draining UART while the menu is open so queued DISP frames
+        # render immediately instead of waiting for the first button press.
+        msg = link.read()
+        if msg:
+            if msg.startswith("heyArduinoMenuPaged"):
+                _msg = msg
+                try:
+                    parts = _msg.split("_")
+                    if len(parts) >= 3:
+                        allow_select = True
+                        has_next = parts[-2] == "1"
+                        has_back = parts[-1] == "1"
+                except Exception:
+                    pass
+                cp.profile.menu_paged(
+                    has_next=has_next,
+                    has_back=has_back,
+                    allow_select=allow_select,
+                    border_on=st.in_game,
+                    ok_color=ok_color,
+                )
+                cp.reset_edges()
+                link.send("menu_ready")
+                continue
+        b = _menu_touch_button(allow_select, has_next, has_back)
+        if not b:
+            b = cp.detect_press_allowed()
         if not b:
             time.sleep_ms(Config.Timing.FAST_POLL_MS)
             continue
