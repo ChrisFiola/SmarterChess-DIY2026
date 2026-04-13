@@ -329,6 +329,12 @@ def _clear_persistent_trail():
 def _tick_input_loop():
     if cp.shutdown_held():
         _shutdown_pico()
+    touch = _handle_game_touch_action()
+    if touch == "new":
+        return ("new_game",)
+    if touch:
+        time.sleep_ms(Config.Timing.FAST_POLL_MS)
+        return None
     irq = _handle_hint_irq()
     if irq == "new":
         return ("new_game",)
@@ -617,6 +623,18 @@ def _confirm_move(move):
             cp.disarm_confirm_ok()
             cp.only_ok(False)
             return None
+        touch = _handle_game_touch_action(allow_confirm=True)
+        if touch == "new":
+            cp.disarm_confirm_ok()
+            cp.only_ok(False)
+            screen.clear("confirm")
+            return None
+        if touch == "confirm":
+            cp.disarm_confirm_ok()
+            cp.set_ok_led(False)
+            screen.clear("confirm")
+            cp.reset_edges()
+            return "ok"
         msg = link.read()
         if msg:
             outcome = _handle_overlay_or_gameover(msg)
@@ -1235,6 +1253,16 @@ def _handle_wait_for_ok_confirm(_msg=None):
     while True:
         if cp.shutdown_held():
             _shutdown_pico()
+        action = _consume_touch_action()
+        if action == "btn_ok":
+            cp.disarm_confirm_ok()
+            cp.set_ok_led(False)
+            cp.reset_edges()
+            if st.persistent_trail_active:
+                _clear_persistent_trail()
+                board.markings()
+            link.send("btn_ok")
+            return
         b = cp.detect_press_raw()
         if b == (Config.Buttons.OK_INDEX + 1):
             while cp.BTN_OK.value() == 0:
@@ -1260,6 +1288,16 @@ def _handle_puzzle_setup_ok_confirm(_msg=None):
     while True:
         if cp.shutdown_held():
             _shutdown_pico()
+        action = _consume_touch_action()
+        if action == "btn_ok":
+            cp.disarm_confirm_ok()
+            cp.set_ok_led(False)
+            cp.reset_edges()
+            if st.persistent_trail_active:
+                _clear_persistent_trail()
+                board.markings()
+            link.send("btn_ok")
+            return
         b = cp.detect_press_raw()
         if b == (Config.Buttons.OK_INDEX + 1):
             while cp.BTN_OK.value() == 0:
@@ -1284,6 +1322,18 @@ def _handle_wait_for_annotation_page(_msg=None):
     while True:
         if cp.shutdown_held():
             _shutdown_pico()
+        action = _consume_touch_action()
+        if action == "btn_hint":
+            cp.hint_irq_flag = False
+            cp.reset_edges()
+            link.send("btn_hint")
+            return
+        if action == "btn_ok":
+            cp.disarm_confirm_ok()
+            cp.set_ok_led(False)
+            cp.reset_edges()
+            link.send("btn_ok")
+            return
         if cp.BTN_HINT.value() == 0:
             while cp.BTN_HINT.value() == 0:
                 time.sleep_ms(Config.Timing.POLL_MS)
@@ -1339,6 +1389,29 @@ def _wait_for_touch_release():
         if cp.shutdown_held():
             _shutdown_pico()
         time.sleep_ms(Config.Timing.FAST_POLL_MS)
+
+
+def _consume_touch_action():
+    action = tft.touch_action()
+    if action is None:
+        return None
+    _wait_for_touch_release()
+    return action
+
+
+def _handle_game_touch_action(*, allow_confirm=False):
+    action = _consume_touch_action()
+    if action is None:
+        return None
+    if action == "game_menu":
+        return _trigger_new_game_request()
+    if action == "game_hint":
+        if st.game_state == Game.RUNNING and st.hint_enabled:
+            link.send("btn_hint")
+        return "hint"
+    if allow_confirm and action == "game_confirm":
+        return "confirm"
+    return None
 
 
 def _menu_touch_button(allow_select, has_next, has_back):
@@ -1832,6 +1905,12 @@ def _main_loop():
             st.engine_ack_pending = False
             st.pending_gameover_result = None
             st.buffered_turn_msg = None
+            continue
+        touch = _handle_game_touch_action()
+        if touch == "new":
+            continue
+        if touch:
+            time.sleep_ms(Config.Timing.FAST_POLL_MS)
             continue
         if (
             st.game_state == Game.RUNNING

@@ -384,6 +384,12 @@ class TFTDisplay:
     _HDR_Y = 4  # header text top
     _HDR_SCALE = 2  # default header scale
     _DIV1_H = 2  # divider thickness
+    _STD_HEADER_H = 50
+    _STD_MAIN_BOTTOM = 220
+    _STD_CONFIRM_TOP = 220
+    _STD_CONFIRM_BOTTOM = 270
+    _STD_NAV_TOP = 270
+    _STD_NAV_Y = 288
     _FOOT_H = 18  # footer text height (scale 1 = 8px + padding)
     _FOOT_MARGIN = 4  # gap below divider to footer text
     _FOOT_DIV_Y = H - _FOOT_H - _FOOT_MARGIN - 4  # footer divider y ≈ 290
@@ -489,15 +495,51 @@ class TFTDisplay:
         """Height consumed by the header text + small gap."""
         return 8 * scale + 6
 
+    def _is_gameplay_panel(self, header, body_lines, footer_raw):
+        low_header = (header or "").strip().lower()
+        low_footer = (footer_raw or "").strip().lower()
+        low_body = " ".join((ln or "").strip().lower() for ln in body_lines if ln)
+        return (
+            low_header.startswith("you are ")
+            or low_header == "play move"
+            or "play move" in low_body
+            or "ok=confirm" in low_footer
+            or "hold ok=delete" in low_footer
+            or "hint=see move" in low_footer
+        )
+
+    def _nav_label(self, text, *, left=False, right=False):
+        raw = (text or "").strip()
+        if not raw:
+            return ""
+        if "=" in raw:
+            _, rhs = raw.split("=", 1)
+            raw = rhs.strip() or raw
+        raw = _truncate(raw, 10)
+        if left:
+            return "< " + raw
+        if right:
+            return raw + " >"
+        return raw
+
+    def _draw_std_divider(self, y):
+        self._lcd.hline(0, y, W, GRAY)
+
+    def _draw_std_nav(self, left="", center="", right=""):
+        lcd = self._lcd
+        self._draw_std_divider(self._STD_NAV_TOP)
+        lcd.fill_rect((W // 2) - 1, self._STD_NAV_TOP, 2, H - self._STD_NAV_TOP, DARK_GRAY)
+        if left:
+            lcd.text(14, self._STD_NAV_Y, _truncate(left, 10), GRAY, BLACK, scale=1)
+        if center:
+            lcd.text_centered(
+                self._STD_NAV_Y, _truncate(center, 14), GRAY, BLACK, scale=1
+            )
+        if right:
+            txt = _truncate(right, 10)
+            lcd.text(W - len(txt) * 8 - 14, self._STD_NAV_Y, txt, GRAY, BLACK, scale=1)
+
     def _render_header_panel(self, lines, badge="", touch_mode=None):
-        """
-        Standard header panel:
-          [header]  (+ badge top-right)
-          ─────────────────────────────
-          [body lines, auto-sized]
-          ─────────────────────────────
-          [footer text]
-        """
         lcd = self._lcd
         lcd.fill(BLACK)
 
@@ -505,63 +547,32 @@ class TFTDisplay:
             return
 
         header = lines[0].strip() if lines else ""
-
-        # Detect footer
         has_footer = len(lines) > 1 and _is_footer_hint(lines[-1])
         footer_raw = lines[-1] if has_footer else ""
+        foot_parts = _split_footer(footer_raw)
         body_lines = lines[1:-1] if has_footer and len(lines) > 2 else lines[1:]
         body_lines = [ln for ln in body_lines if ln is not None]
+        is_gameplay = self._is_gameplay_panel(header, body_lines, footer_raw)
 
-        # ── Header ────────────────────────────────────────────────────────────
         hdr_scale = 3 if len(header) <= 9 else 2
         hdr_h = 8 * hdr_scale
-        y = self._HDR_Y
-
-        lcd.text_centered(y, header, WHITE, BLACK, hdr_scale)
+        hdr_y = max(4, (self._STD_HEADER_H - hdr_h) // 2)
+        lcd.text_centered(hdr_y, header, WHITE, BLACK, hdr_scale)
         if badge:
             b = _truncate(badge, 6)
-            lcd.text_right(y + (hdr_h - 8) // 2, b, GRAY, BLACK, scale=1)
-        y += hdr_h + 4
+            lcd.text_right(hdr_y + (hdr_h - 8) // 2, b, GRAY, BLACK, scale=1)
+        self._draw_std_divider(self._STD_HEADER_H)
 
-        # Divider
-        lcd.hline(6, y, W - 12, GRAY)
-        y += self._DIV1_H + 4
-
-        body_top = y
-
-        # ── Footer ────────────────────────────────────────────────────────────
-        if has_footer:
-            foot_parts = _split_footer(footer_raw)
-            self._draw_footer(foot_parts)
-            if touch_mode == "menu":
-                footer_y0 = self._FOOT_DIV_Y
-                if len(foot_parts) >= 2:
-                    self._touch_zones["btn_ok"] = (0, footer_y0, (W // 2) - 1, H - 1)
-                    self._touch_zones["btn_hint"] = (
-                        W // 2,
-                        footer_y0,
-                        W - 1,
-                        H - 1,
-                    )
-                elif foot_parts:
-                    footer_key = foot_parts[0].strip().lower()
-                    if footer_key.startswith("ok"):
-                        self._touch_zones["btn_ok"] = (0, footer_y0, W - 1, H - 1)
-                    elif footer_key.startswith("hint"):
-                        self._touch_zones["btn_hint"] = (0, footer_y0, W - 1, H - 1)
-            avail_h = self._FOOT_DIV_Y - body_top - 4
-        else:
-            avail_h = H - body_top - 4
-
-        # ── Body ──────────────────────────────────────────────────────────────
-        if not body_lines:
-            return
-
-        # Wrap + pick scale
+        body_top = self._STD_HEADER_H + 10
+        body_bottom = self._STD_NAV_TOP if touch_mode == "menu" else self._STD_MAIN_BOTTOM
         wrapped = []
         for ln in body_lines:
             if ln:
-                wrapped.extend(_word_wrap(ln, 15))  # try scale-2 width
+                wrapped.extend(_word_wrap(ln, 15))
+        if not wrapped:
+            wrapped = [""]
+
+        avail_h = body_bottom - body_top - 6
         scale = _best_scale(wrapped, max_lines_hint=max(1, avail_h // 20))
         ch = 8 * scale
         line_h = ch + 4
@@ -569,20 +580,95 @@ class TFTDisplay:
         body_y = body_top + max(0, (avail_h - total_h) // 2)
 
         for ln in wrapped:
-            if body_y + ch > (self._FOOT_DIV_Y if has_footer else H) - 2:
+            if body_y + ch > body_bottom - 2:
                 break
             if touch_mode == "menu":
                 zone_y0 = max(body_top, body_y - 2)
-                zone_y1 = min(
-                    (self._FOOT_DIV_Y if has_footer else H) - 1,
-                    body_y + ch + 2,
-                )
+                zone_y1 = min(body_bottom - 1, body_y + ch + 4)
                 zone_name = str(
                     1 + sum(1 for name in self._touch_zones if name.isdigit())
                 )
                 self._touch_zones[zone_name] = (0, zone_y0, W - 1, zone_y1)
             lcd.text_centered(body_y, _truncate(ln, 30 // scale), WHITE, BLACK, scale)
             body_y += line_h
+
+        if (has_footer or is_gameplay) and touch_mode != "menu":
+            self._draw_std_divider(self._STD_CONFIRM_TOP)
+
+        if is_gameplay and "confirm" in footer_raw.lower():
+            lcd.text_centered(238, "TAP = OK / CONFIRM", DIM_WHITE, BLACK, scale=1)
+            self._touch_zones["game_confirm"] = (
+                0,
+                self._STD_CONFIRM_TOP,
+                W - 1,
+                self._STD_CONFIRM_BOTTOM - 1,
+            )
+        elif touch_mode != "menu" and has_footer:
+            confirm_label = self._nav_label(foot_parts[0]) if foot_parts else "OK"
+            lcd.text_centered(
+                238, _truncate(confirm_label, 22), DIM_WHITE, BLACK, scale=1
+            )
+            self._touch_zones["btn_ok"] = (
+                0,
+                self._STD_CONFIRM_TOP,
+                W - 1,
+                self._STD_CONFIRM_BOTTOM - 1,
+            )
+
+        nav_left = ""
+        nav_right = ""
+        if touch_mode == "menu":
+            if foot_parts and foot_parts[0].strip().lower().startswith("ok"):
+                nav_left = self._nav_label(foot_parts[0], left=True)
+                self._touch_zones["btn_ok"] = (
+                    0,
+                    self._STD_NAV_TOP,
+                    (W // 2) - 1,
+                    H - 1,
+                )
+            if len(foot_parts) >= 2 and foot_parts[-1].strip().lower().startswith("hint"):
+                nav_right = self._nav_label(foot_parts[-1], right=True)
+                self._touch_zones["btn_hint"] = (
+                    W // 2,
+                    self._STD_NAV_TOP,
+                    W - 1,
+                    H - 1,
+                )
+        elif is_gameplay:
+            nav_left = "< Menu"
+            nav_right = "Hint >"
+            self._touch_zones["game_menu"] = (
+                0,
+                self._STD_NAV_TOP,
+                (W // 2) - 1,
+                H - 1,
+            )
+            self._touch_zones["game_hint"] = (
+                W // 2,
+                self._STD_NAV_TOP,
+                W - 1,
+                H - 1,
+            )
+        elif len(foot_parts) >= 2:
+            if foot_parts[0].strip().lower().startswith("ok"):
+                nav_left = self._nav_label(foot_parts[0], left=True)
+                self._touch_zones["btn_ok"] = (
+                    0,
+                    self._STD_NAV_TOP,
+                    (W // 2) - 1,
+                    H - 1,
+                )
+            if foot_parts[-1].strip().lower().startswith("hint"):
+                nav_right = self._nav_label(foot_parts[-1], right=True)
+                self._touch_zones["btn_hint"] = (
+                    W // 2,
+                    self._STD_NAV_TOP,
+                    W - 1,
+                    H - 1,
+                )
+
+        if nav_left or nav_right:
+            self._draw_std_nav(nav_left, "", nav_right)
 
     def _render_menu(self, lines, page="", left_align=False):
         """
@@ -768,7 +854,10 @@ class TFTDisplay:
     def touch(self):
         return self._xpt
 
-    def menu_touch_action(self):
+    def touch_action(self):
         if not self._touch_zones:
             return None
         return self._xpt.get_zone(self._touch_zones)
+
+    def menu_touch_action(self):
+        return self.touch_action()
