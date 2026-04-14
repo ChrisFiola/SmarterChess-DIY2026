@@ -289,10 +289,11 @@ class XPT2046:
     SAMPLE_JITTER = 120
 
     # Orientation correction for MADCTL=0xe8 (MX+MY+MV+BGR)
-    # XPT2046 0xD0 channel = vertical axis (increases top→bottom after swap)
-    # XPT2046 0x90 channel = horizontal axis (increases left→right after swap)
-    SWAP_XY = True
-    FLIP_X  = False
+    # XPT2046 0xD0 channel = physical X (horizontal): high on left, low on right
+    # XPT2046 0x90 channel = physical Y (vertical):   low at top,  high at bottom
+    # FLIP_X corrects 0xD0 inversion so physical-left → screen-left
+    SWAP_XY = False
+    FLIP_X  = True
     FLIP_Y  = False
 
     def __init__(self, spi, cs_pin=_T_CS, irq_pin=_T_IRQ):
