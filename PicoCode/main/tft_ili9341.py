@@ -941,11 +941,26 @@ class TFTDisplay:
     # ═══════════════════════════════════════════════════════════════════════
 
     def _draw_nav_bar(self, left="", right="", y0=None):
-        """Draw the bottom nav bar with left and right labels."""
+        """Draw the bottom nav bar with left and right labels.
+        Arrows are added automatically — callers should pass plain labels
+        (e.g. "Back", not "< Back"). Any leading/trailing arrows already
+        present in the label are stripped first to prevent doubling."""
         if y0 is None:
             y0 = self.NAV_TOP
         lcd = self._lcd
         bar_h = H - y0
+
+        # Normalise: strip arrows callers may have baked in
+        if left:
+            l = left.strip()
+            if l.startswith("<"):
+                l = l[1:].lstrip()
+            left = l
+        if right:
+            r = right.strip()
+            if r.endswith(">"):
+                r = r[:-1].rstrip()
+            right = r
 
         lcd.fill_rect(0, y0, W, bar_h, DARK_GRAY)
         lcd.hline(0, y0, W, GRAY)
