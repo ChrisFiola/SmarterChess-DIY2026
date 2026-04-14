@@ -46,16 +46,18 @@ def _rgb(r, g, b):
     return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
 
 
-BLACK     = 0x0000
-WHITE     = 0xFFFF
-GRAY      = _rgb(128, 128, 128)
-DARK_GRAY = _rgb(30, 30, 30)
-DIM_WHITE = _rgb(180, 180, 180)
-ACCENT    = _rgb(0, 160, 200)     # cyan-blue header accent
-ACCENT_DIM= _rgb(0, 60, 80)      # dimmed accent for nav background
-CONFIRM_BG= _rgb(0, 50, 30)      # dark green confirm zone background
-CONFIRM_FG= _rgb(0, 220, 100)    # bright green confirm text
-ITEM_SEP  = _rgb(45, 45, 45)     # item separator line
+BLACK      = 0x0000
+WHITE      = 0xFFFF
+DARK_GRAY  = _rgb(22, 22, 22)    # header / nav background
+MED_GRAY   = _rgb(55, 55, 55)    # separator lines
+DIM_WHITE  = _rgb(190, 190, 190) # secondary / body text
+ACCENT     = _rgb(230, 230, 230) # item accent stripe (near-white)
+ITEM_SEP   = _rgb(38, 38, 38)    # item row separators
+CONFIRM_BG = _rgb(0, 38, 18)     # dark green confirm zone background
+CONFIRM_FG = _rgb(40, 210, 90)   # green confirm text
+# Aliases kept for all rendering code that references them by old name
+ACCENT_DIM = DARK_GRAY
+GRAY       = MED_GRAY
 
 # ── ILI9341 init sequence ─────────────────────────────────────────────────────
 _INIT = (
@@ -174,11 +176,16 @@ class ILI9341:
         self.fill_rect(x, y, 1, length, color)
 
     def char(self, x, y, ch, fg, bg, scale=1):
-        """Render one 8×8 character scaled by *scale*."""
-        mono = bytearray(8)
-        fb = framebuf.FrameBuffer(mono, 8, 8, framebuf.MONO_HLSB)
-        fb.fill(0)
-        fb.text(ch, 0, 0, 1)
+        """Render one 8×8 character scaled by *scale*.
+        chr(1-6) are rendered as chess piece bitmap glyphs."""
+        glyph_idx = ord(ch) if len(ch) == 1 and 1 <= ord(ch) <= 6 else 0
+        if glyph_idx:
+            mono = bytearray(_PIECE_GLYPHS[glyph_idx])
+        else:
+            mono = bytearray(8)
+            fb = framebuf.FrameBuffer(mono, 8, 8, framebuf.MONO_HLSB)
+            fb.fill(0)
+            fb.text(ch, 0, 0, 1)
 
         cw   = 8 * scale
         ch_h = 8 * scale
@@ -237,12 +244,24 @@ class ILI9341:
 class XPT2046:
     """
     Touch controller on shared SPI1.
-    Calibration defaults suit a typical 2.8" ILI9341 module.
-    Adjust X_MIN/MAX, Y_MIN/MAX after running the calibration helper.
+    Calibration defaults suit a typical 2.8" ILI9341 module with MADCTL=0xe8.
+
+    Orientation flags (set to match your physical module):
+      SWAP_XY : swap raw X/Y before mapping  (True for MADCTL=0xe8 portrait)
+      FLIP_X  : invert X after mapping
+      FLIP_Y  : invert Y after mapping       (True for MADCTL=0xe8 portrait)
+
+    Adjust X_MIN/MAX, Y_MIN/MAX via a calibration sketch if touch positions
+    are offset.  The raw ranges are 0–4095 (12-bit ADC).
     """
     X_MIN, X_MAX = 200, 3800
     Y_MIN, Y_MAX = 200, 3800
     SAMPLE_JITTER = 120
+
+    # Orientation correction for MADCTL=0xe8 (MX+MY+MV+BGR)
+    SWAP_XY = True
+    FLIP_X  = False
+    FLIP_Y  = True
 
     def __init__(self, spi, cs_pin=_T_CS, irq_pin=_T_IRQ):
         self._spi = spi
@@ -274,8 +293,17 @@ class XPT2046:
         y_raw = (y1 + y2) >> 1
         if x_raw < 100 or y_raw < 100:
             return None
+
+        # Apply orientation correction before mapping to screen pixels
+        if self.SWAP_XY:
+            x_raw, y_raw = y_raw, x_raw
+
         x = int((x_raw - self.X_MIN) * W / (self.X_MAX - self.X_MIN))
         y = int((y_raw - self.Y_MIN) * H / (self.Y_MAX - self.Y_MIN))
+        if self.FLIP_X:
+            x = W - 1 - x
+        if self.FLIP_Y:
+            y = H - 1 - y
         return max(0, min(W - 1, x)), max(0, min(H - 1, y))
 
     def get_zone(self, zones):
@@ -290,15 +318,30 @@ class XPT2046:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# Chess piece bitmap glyphs (8×8, MONO_HLSB — bit 7 = leftmost pixel per row)
+# chr(1)=King  chr(2)=Queen  chr(3)=Rook  chr(4)=Bishop  chr(5)=Knight  chr(6)=Pawn
+# ═══════════════════════════════════════════════════════════════════════════════
+_PIECE_GLYPHS = (
+    None,                                                          # 0: unused
+    bytes([0x10, 0x7C, 0x10, 0x7E, 0x7E, 0x7E, 0x7E, 0xFF]),    # 1: King
+    bytes([0xA8, 0xFE, 0x7C, 0x7E, 0x7E, 0x7E, 0x7E, 0xFF]),    # 2: Queen
+    bytes([0xB6, 0xFF, 0x7E, 0x7E, 0x7E, 0x7E, 0x7E, 0xFF]),    # 3: Rook
+    bytes([0x10, 0x38, 0x28, 0x38, 0x7C, 0x7E, 0x7E, 0xFF]),    # 4: Bishop
+    bytes([0x78, 0xF8, 0x7E, 0x3C, 0x7E, 0x7E, 0x7E, 0xFF]),    # 5: Knight
+    bytes([0x10, 0x38, 0x38, 0x10, 0x38, 0x38, 0x7C, 0xFF]),    # 6: Pawn
+)
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Text helpers
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# Map Unicode chess/arrow symbols to ASCII so the 8x8 font can render them.
+# Map Unicode chess/arrow symbols to glyph sentinels (chr 1-6) or ASCII.
+# chr(1-6) are passed through _clean() and rendered as bitmap glyphs by char().
 _CHESS_MAP = {
-    "\u2654": "K", "\u2655": "Q", "\u2656": "R", "\u2657": "B",
-    "\u2658": "N", "\u2659": "P",
-    "\u265a": "k", "\u265b": "q", "\u265c": "r", "\u265d": "b",
-    "\u265e": "n", "\u265f": "p",
+    "\u2654": "\x01", "\u2655": "\x02", "\u2656": "\x03",  # ♔♕♖ white
+    "\u2657": "\x04", "\u2658": "\x05", "\u2659": "\x06",  # ♗♘♙ white
+    "\u265a": "\x01", "\u265b": "\x02", "\u265c": "\x03",  # ♚♛♜ black (same glyphs)
+    "\u265d": "\x04", "\u265e": "\x05", "\u265f": "\x06",  # ♝♞♟ black
     "\u2192": "->", "\u2190": "<-", "\u2194": "<->",
     "\u00d7": "x",  # multiplication sign → x (captures)
     "\u2013": "-",  # en dash
@@ -307,12 +350,16 @@ _CHESS_MAP = {
 
 
 def _clean(text):
-    """Replace non-ASCII chess/arrow symbols; strip other non-printable chars."""
+    """Replace non-ASCII chess/arrow symbols; strip other non-printable chars.
+    chr(1-6) piece sentinels are kept as-is for bitmap glyph rendering."""
     if not text:
         return ""
     out = []
     for ch in text:
-        if 32 <= ord(ch) <= 126:
+        o = ord(ch)
+        if 1 <= o <= 6:          # piece glyph sentinels — pass through
+            out.append(ch)
+        elif 32 <= o <= 126:
             out.append(ch)
         else:
             out.append(_CHESS_MAP.get(ch, ""))
@@ -519,7 +566,7 @@ class TFTDisplay:
         Each item is a large tappable row — touch zones registered as "item_N".
         """
         lcd = self._lcd
-        lcd.fill(BLACK)
+        lcd.fill_rect(0, 0, W, self.NAV_TOP, BLACK)
 
         has_footer = len(lines) > 1 and _is_footer_hint(lines[-1])
         footer_raw = lines[-1] if has_footer else ""
@@ -563,9 +610,9 @@ class TFTDisplay:
         Header bar at top, content in middle, action zone + nav bar at bottom.
         """
         lcd = self._lcd
-        lcd.fill(BLACK)
 
         if not lines:
+            lcd.fill(BLACK)
             return
 
         header    = _clean(lines[0]).strip() if lines else ""
@@ -586,9 +633,10 @@ class TFTDisplay:
             lcd.text_right(hdr_y + (hdr_h - 8) // 2,
                            _truncate(badge, 5), GRAY, ACCENT_DIM, scale=1)
 
-        # ── Content (body) ────────────────────────────────────────────────────
+        # ── Content (body) — clear zone before drawing ─────────────────────────
         body_top    = self.BODY_TOP + 8
         body_bottom = self.BODY_BOT - 4
+        lcd.fill_rect(0, self.BODY_TOP, W, self.BODY_BOT - self.BODY_TOP, BLACK)
 
         if is_menu_header:
             # Items as tappable rows
@@ -625,9 +673,9 @@ class TFTDisplay:
           y=290..320 : nav bar  [< Prev/Back]  [Next/Skip >]
         """
         lcd = self._lcd
-        lcd.fill(BLACK)
 
         if not lines:
+            lcd.fill(BLACK)
             return
 
         has_footer = len(lines) > 1 and _is_footer_hint(lines[-1])
@@ -656,6 +704,7 @@ class TFTDisplay:
             else:
                 wrapped.extend(_word_wrap(ln, 27))
 
+        lcd.fill_rect(0, self.ANN_BODY_TOP, W, self.ANN_BODY_BOT - self.ANN_BODY_TOP, BLACK)
         avail_h  = self.ANN_BODY_BOT - self.ANN_BODY_TOP
         line_h   = 11   # 8px char + 3px gap
         max_vis  = avail_h // line_h   # ~23 lines visible at once
@@ -685,13 +734,14 @@ class TFTDisplay:
     def _render_online(self, lines):
         """Online clock + body content."""
         lcd = self._lcd
-        lcd.fill(BLACK)
 
         clocks = lines[:2] if len(lines) >= 2 else (list(lines) + [""])[:2]
         body   = [_clean(ln) for ln in lines[2:] if ln] if len(lines) > 2 else []
 
         # Header bar carries clock info
         lcd.fill_rect(0, self.HDR_TOP, W, self.HDR_BOT, ACCENT_DIM)
+        # Clear body + action zone (no action zone content in online layout)
+        lcd.fill_rect(0, self.BODY_TOP, W, self.ACT_BOT - self.BODY_TOP, BLACK)
         for i, cl in enumerate(clocks):
             if not cl:
                 continue
@@ -813,6 +863,7 @@ class TFTDisplay:
         """Draw the action zone (y=220..270) with contextual content."""
         lcd = self._lcd
         y_top = self.ACT_TOP
+        lcd.fill_rect(0, y_top, W, self.ACT_BOT - y_top, BLACK)
 
         if is_gameplay:
             # Active confirm zone: bright green background, prominent text
@@ -823,15 +874,8 @@ class TFTDisplay:
             self._touch_zones["game_confirm"] = (
                 40, y_top, W - 41, self.ACT_BOT - 1
             )
-        elif foot_parts:
-            # Show first footer part as the action label (e.g. "OK=Confirm")
-            label = foot_parts[0].split("=", 1)[-1].strip() if "=" in foot_parts[0] else foot_parts[0]
-            label = _truncate(label, 20)
-            lcd.hline(0, y_top, W, GRAY)
-            lcd.text_centered(y_top + 8, label, DIM_WHITE, BLACK, scale=2)
-            self._touch_zones["btn_ok"] = (20, y_top, W - 21, self.ACT_BOT - 1)
         else:
-            # Empty zone separator
+            # Thin separator — labels are in the nav bar, no duplication
             lcd.hline(0, y_top, W, DARK_GRAY)
 
     # ═══════════════════════════════════════════════════════════════════════

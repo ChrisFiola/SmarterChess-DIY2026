@@ -186,10 +186,14 @@ class FilteredUARTLink(UARTLink):
     Wraps UARTLink so that DISP: messages from the Pi are silently rendered
     on the TFT and never surfaced to the rest of the game logic.
     All existing callers of link.read() remain unchanged.
+
+    suppress_tft: when True, DISP messages are consumed but NOT rendered.
+    Set this during OTA update to avoid heap exhaustion from SPI allocations.
     """
     def __init__(self):
         super().__init__()
         self._tft = None
+        self.suppress_tft = False
 
     def set_tft(self, tft):
         self._tft = tft
@@ -199,7 +203,7 @@ class FilteredUARTLink(UARTLink):
         if msg is None:
             return None
         if msg.startswith("heyArduinoDISP:"):
-            if self._tft is not None:
+            if self._tft is not None and not self.suppress_tft:
                 try:
                     self._tft.render(msg[len("heyArduinoDISP:"):])
                 except Exception:
@@ -1437,9 +1441,14 @@ def _menu_touch_button(allow_select, has_next, has_back):
     if action == "btn_hint" and has_next:
         _wait_for_touch_release()
         return Config.Buttons.HINT_INDEX + 1
-    if allow_select and action in ("1", "2", "3"):
-        _wait_for_touch_release()
-        return int(action)
+    if allow_select and action.startswith("item_"):
+        try:
+            n = int(action.split("_", 1)[1])
+            if 1 <= n <= 3:
+                _wait_for_touch_release()
+                return n
+        except (ValueError, IndexError):
+            pass
     return None
 
 
@@ -1695,6 +1704,7 @@ def _handle_update_mode(_msg):
     cp.off(force=True)
     cp.disable_hint_irq()
     gc.collect()
+    link.suppress_tft = True   # prevent SPI renders exhausting heap during upload
     link.send("UpdateReady")
     temp_paths = {}
     current_name = None
@@ -1776,6 +1786,8 @@ def _handle_update_mode(_msg):
     except Exception as exc:
         _cleanup()
         _send_update_error(exc.__class__.__name__)
+    finally:
+        link.suppress_tft = False
 
 
 def _route_incoming_message(msg):
