@@ -16,6 +16,10 @@ DEFAULT_SOURCES = [
     DEFAULT_PICO_DIR / "pico_hw.py",
     DEFAULT_PICO_DIR / "reed_matrix.py",
     DEFAULT_PICO_DIR / "tft_ili9341.py",
+    DEFAULT_PICO_DIR / "freesans12.py",
+    DEFAULT_PICO_DIR / "freesansbold18.py",
+    DEFAULT_PICO_DIR / "freesansbold24.py",
+    DEFAULT_PICO_DIR / "chess_glyphs.py",
 ]
 
 

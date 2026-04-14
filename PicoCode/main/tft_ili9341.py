@@ -22,8 +22,10 @@ Layout (portrait 240x320):
 """
 
 from machine import Pin, SPI
-import framebuf
 import time
+import freesans12       as _F_SM   # 12pt regular — annotation body, nav bar labels
+import freesansbold18   as _F_MD   # 18pt bold    — menu items, body text
+import freesansbold24   as _F_LG   # 24pt bold    — header titles
 
 # ── Pin assignments (WIRING_DIAGRAM.md) ─────────────────────────────────────
 _SCK = 14
@@ -175,60 +177,88 @@ class ILI9341:
     def vline(self, x, y, length, color):
         self.fill_rect(x, y, 1, length, color)
 
-    def char(self, x, y, ch, fg, bg, scale=1):
-        """Render one 8×8 character scaled by *scale*.
-        chr(1-6) are rendered as chess piece bitmap glyphs."""
-        glyph_idx = ord(ch) if len(ch) == 1 and 1 <= ord(ch) <= 6 else 0
-        if glyph_idx:
-            mono = bytearray(_PIECE_GLYPHS[glyph_idx])
-        else:
-            mono = bytearray(8)
-            fb = framebuf.FrameBuffer(mono, 8, 8, framebuf.MONO_HLSB)
-            fb.fill(0)
-            fb.text(ch, 0, 0, 1)
+    # ── Proportional font rendering ───────────────────────────────────────────
 
-        cw   = 8 * scale
-        ch_h = 8 * scale
-        buf  = bytearray(cw * ch_h * 2)
-
+    def _blit_hmap(self, x, y, bits, glyph_h, glyph_w, fg, bg):
+        """Render one glyph from a font_to_py HMAP font module.
+        bits: memoryview of row-padded bitmap (ceil(w/8) bytes per row).
+        Renders directly to SPI — no full framebuffer needed."""
+        bpr = (glyph_w + 7) >> 3   # bytes per row
+        buf = bytearray(glyph_w * glyph_h * 2)
         fg_hi, fg_lo = fg >> 8, fg & 0xFF
         bg_hi, bg_lo = bg >> 8, bg & 0xFF
+        for row in range(glyph_h):
+            row_off = row * bpr
+            for col in range(glyph_w):
+                bit = (bits[row_off + (col >> 3)] >> (7 - (col & 7))) & 1
+                idx = (row * glyph_w + col) * 2
+                buf[idx], buf[idx + 1] = (fg_hi, fg_lo) if bit else (bg_hi, bg_lo)
+        self._set_window(x, y, x + glyph_w - 1, y + glyph_h - 1)
+        self._dc.value(1); self._cs.value(0)
+        self._spi.write(buf)
+        self._cs.value(1)
 
+    def _blit_piece(self, x, y, piece_idx, fg, bg, scale=2):
+        """Render a chess piece (chr 1-6) using the 8×8 bitmap scaled by *scale*."""
+        mono = _PIECE_GLYPHS[piece_idx]
+        cw = ch_h = 8 * scale
+        buf = bytearray(cw * ch_h * 2)
+        fg_hi, fg_lo = fg >> 8, fg & 0xFF
+        bg_hi, bg_lo = bg >> 8, bg & 0xFF
         for row in range(8):
             byte = mono[row]
             for col in range(8):
                 bit = (byte >> (7 - col)) & 1
                 hi, lo = (fg_hi, fg_lo) if bit else (bg_hi, bg_lo)
-                base_y = row * scale
-                base_x = col * scale
+                base_y, base_x = row * scale, col * scale
                 for sy in range(scale):
                     for sx in range(scale):
                         idx = ((base_y + sy) * cw + (base_x + sx)) * 2
-                        buf[idx]     = hi
-                        buf[idx + 1] = lo
-
+                        buf[idx], buf[idx + 1] = hi, lo
         self._set_window(x, y, x + cw - 1, y + ch_h - 1)
-        self._dc.value(1)
-        self._cs.value(0)
+        self._dc.value(1); self._cs.value(0)
         self._spi.write(buf)
         self._cs.value(1)
 
-    def text(self, x, y, s, fg, bg, scale=1, bg_fill=True):
-        """Draw string *s* at (x, y).  bg_fill=False skips background pixels."""
-        cw = 8 * scale
-        for c in s:
-            if x + cw > W:
+    def char(self, x, y, ch, fg, bg, font):
+        """Render one character using *font* (font_to_py module).
+        chr(1-6) are chess piece glyphs rendered at scale=2 (16×16).
+        Returns x advanced past the rendered character."""
+        o = ord(ch)
+        if 1 <= o <= 6:
+            self._blit_piece(x, y, o, fg, bg, scale=2)
+            return x + 17   # 16px + 1px spacing
+        bits, h, w = font.get_ch(ch)
+        self._blit_hmap(x, y, bits, h, w, fg, bg)
+        return x + w + 1
+
+    def text(self, x, y, s, fg, bg, font):
+        """Draw proportional string *s* at (x, y) using *font*. Returns x after last glyph."""
+        for ch in s:
+            if x >= W:
                 break
-            self.char(x, y, c, fg, bg, scale)
-            x += cw
+            x = self.char(x, y, ch, fg, bg, font)
+        return x
 
-    def text_centered(self, y, s, fg, bg, scale=1):
-        x = max(0, (W - len(s) * 8 * scale) // 2)
-        self.text(x, y, s, fg, bg, scale)
+    def text_width(self, s, font):
+        """Return pixel width of string *s* rendered in *font*."""
+        w = 0
+        for ch in s:
+            o = ord(ch)
+            if 1 <= o <= 6:
+                w += 17
+            else:
+                _, _, gw = font.get_ch(ch)
+                w += gw + 1
+        return w
 
-    def text_right(self, y, s, fg, bg, scale=1):
-        x = max(0, W - len(s) * 8 * scale - 4)
-        self.text(x, y, s, fg, bg, scale)
+    def text_centered(self, y, s, fg, bg, font):
+        x = max(0, (W - self.text_width(s, font)) // 2)
+        self.text(x, y, s, fg, bg, font)
+
+    def text_right(self, y, s, fg, bg, font):
+        x = max(0, W - self.text_width(s, font) - 4)
+        self.text(x, y, s, fg, bg, font)
 
     def rect(self, x, y, w, h, color):
         """Draw an unfilled rectangle."""
@@ -368,9 +398,28 @@ def _clean(text):
     return "".join(out)
 
 
-def _truncate(text, n):
+def _trunc_px(text, max_px, font):
+    """Truncate *text* so it fits within *max_px* pixels in *font*. Appends '~' if cut."""
     text = _clean(text)
-    return text if len(text) <= n else text[:n - 1] + "~"
+    if not text:
+        return ""
+    widths = []
+    total = 0
+    for ch in text:
+        o = ord(ch)
+        cw = 17 if 1 <= o <= 6 else (font.get_ch(ch)[2] + 1)
+        widths.append(cw)
+        total += cw
+    if total <= max_px:
+        return text
+    _, _, tw = font.get_ch("~")
+    tilde_px = tw + 1
+    w = 0
+    for i, cw in enumerate(widths):
+        if w + cw + tilde_px > max_px:
+            return text[:i] + "~"
+        w += cw
+    return text
 
 
 def _word_wrap(text, max_chars):
@@ -497,10 +546,11 @@ class TFTDisplay:
     def show_splash(self):
         lcd = self._lcd
         lcd.fill(BLACK)
-        # Header accent bar
         lcd.fill_rect(0, 0, W, self.HDR_BOT, ACCENT_DIM)
-        lcd.text_centered(14, "SMARTCHESS", WHITE, ACCENT_DIM, scale=3)
-        lcd.text_centered(self.HDR_BOT + 40, "Starting...", GRAY, BLACK, scale=2)
+        lcd.text_centered((self.HDR_BOT - _F_LG.height()) // 2,
+                          "SMARTCHESS", WHITE, ACCENT_DIM, _F_LG)
+        lcd.text_centered(self.HDR_BOT + 30,
+                          "Starting...", GRAY, BLACK, _F_MD)
 
     # ── Main render entry point ───────────────────────────────────────────────
 
@@ -577,9 +627,9 @@ class TFTDisplay:
         foot_parts = _split_footer(footer_raw) if has_footer else []
         nav_left, nav_right = _parse_nav_from_footer(foot_parts)
 
-        # Page indicator (top-right, small, inside first item)
+        # Page indicator (top-right, small)
         if page:
-            lcd.text_right(6, _truncate(page, 6), GRAY, BLACK, scale=1)
+            lcd.text_right(4, _trunc_px(page, 80, _F_SM), GRAY, BLACK, _F_SM)
 
         n = max(len(items), 1)
         item_zone_h = self.NAV_TOP  # 270px divided among items
@@ -589,19 +639,15 @@ class TFTDisplay:
             y0 = i * row_h
             y1 = y0 + row_h
 
-            # Separator line (not before first item)
             if i > 0:
                 lcd.hline(0, y0, W, ITEM_SEP)
-
-            # Left accent stripe
             lcd.fill_rect(0, y0 + 2, 4, row_h - 4, ACCENT)
 
-            # Item text: scale=2 (16px), vertically centered in row
-            text_y = y0 + (row_h - 16) // 2
-            t = _truncate(item, 14)
-            lcd.text_centered(text_y, t, WHITE, BLACK, scale=2)
+            # Item text: 18pt bold, vertically centred in row
+            text_y = y0 + (row_h - _F_MD.height()) // 2
+            t = _trunc_px(item, W - 16, _F_MD)
+            lcd.text_centered(text_y, t, WHITE, BLACK, _F_MD)
 
-            # Touch zone — full row width
             self._touch_zones["item_%d" % (i + 1)] = (0, y0 + 1, W - 1, y1 - 1)
 
         self._draw_nav_bar(nav_left, nav_right)
@@ -626,14 +672,15 @@ class TFTDisplay:
 
         # ── Header bar ────────────────────────────────────────────────────────
         lcd.fill_rect(0, self.HDR_TOP, W, self.HDR_BOT, ACCENT_DIM)
-        hdr_scale = 3 if len(header) <= 9 else 2
-        hdr_h = 8 * hdr_scale
-        hdr_y = max(4, (self.HDR_BOT - hdr_h) // 2)
-        lcd.text_centered(hdr_y, _truncate(header, 13 if hdr_scale == 2 else 10),
-                          WHITE, ACCENT_DIM, hdr_scale)
+        # Choose large or medium font based on header length
+        hdr_font = _F_LG if lcd.text_width(header, _F_LG) <= W - 24 else _F_MD
+        hdr_h    = hdr_font.height()
+        hdr_y    = max(4, (self.HDR_BOT - hdr_h) // 2)
+        lcd.text_centered(hdr_y, _trunc_px(header, W - 16, hdr_font),
+                          WHITE, ACCENT_DIM, hdr_font)
         if badge:
-            lcd.text_right(hdr_y + (hdr_h - 8) // 2,
-                           _truncate(badge, 5), GRAY, ACCENT_DIM, scale=1)
+            lcd.text_right(hdr_y + (hdr_h - _F_SM.height()) // 2,
+                           _trunc_px(badge, 60, _F_SM), GRAY, ACCENT_DIM, _F_SM)
 
         # ── Content (body) — clear zone before drawing ─────────────────────────
         body_top    = self.BODY_TOP + 8
@@ -693,30 +740,32 @@ class TFTDisplay:
         # Title bar
         lcd.fill_rect(0, 0, W, self.ANN_TITLE_H, ACCENT_DIM)
         if title:
-            lcd.text_centered(7, _truncate(title, 26), WHITE, ACCENT_DIM, scale=1)
+            title_y = (self.ANN_TITLE_H - _F_SM.height()) // 2
+            lcd.text_centered(title_y, _trunc_px(title, W - 16, _F_SM),
+                               WHITE, ACCENT_DIM, _F_SM)
         if page:
-            lcd.text_right(7, _truncate(page, 6), GRAY, ACCENT_DIM, scale=1)
+            page_y = (self.ANN_TITLE_H - _F_SM.height()) // 2
+            lcd.text_right(page_y, _trunc_px(page, 60, _F_SM), GRAY, ACCENT_DIM, _F_SM)
 
-        # Body text: word-wrap all body lines, render at scale=1
-        # 28 chars × 8px = 224px wide (fits with 8px margin each side)
+        # Body text: word-wrap and render with 12pt FreeSans
         wrapped = []
         for ln in body:
             if not ln.strip():
-                wrapped.append("")          # preserve blank lines as spacers
+                wrapped.append("")
             else:
-                wrapped.extend(_word_wrap(ln, 27))
+                wrapped.extend(_word_wrap(ln, 30))  # ~30 chars at 12pt
 
         lcd.fill_rect(0, self.ANN_BODY_TOP, W, self.ANN_BODY_BOT - self.ANN_BODY_TOP, BLACK)
-        avail_h  = self.ANN_BODY_BOT - self.ANN_BODY_TOP
-        line_h   = 11   # 8px char + 3px gap
-        max_vis  = avail_h // line_h   # ~23 lines visible at once
+        avail_h = self.ANN_BODY_BOT - self.ANN_BODY_TOP
+        line_h  = _F_SM.height() + 3   # 12 + 3 = 15px per line
+        max_vis = avail_h // line_h    # ~17 lines visible at once
 
         y = self.ANN_BODY_TOP + 4
         for ln in wrapped[:max_vis]:
             if not ln:
-                y += line_h // 2   # half-height blank
+                y += line_h // 2
                 continue
-            lcd.text(8, y, _truncate(ln, 27), DIM_WHITE, BLACK, scale=1)
+            lcd.text(8, y, _trunc_px(ln, W - 16, _F_SM), DIM_WHITE, BLACK, _F_SM)
             y += line_h
 
         # Nav bar
@@ -750,24 +799,28 @@ class TFTDisplay:
             parts = cl.strip().split(" ", 1)
             label = parts[0] if len(parts) == 2 else ""
             tval  = parts[1] if len(parts) == 2 else cl
-            yt = 6 if i == 0 else 26
+            # Row 0: top half of header; row 1: bottom half
+            yt = (self.HDR_BOT // 2 - _F_MD.height()) // 2 if i == 0 else \
+                 self.HDR_BOT // 2 + (self.HDR_BOT // 2 - _F_MD.height()) // 2
+            label_t = _trunc_px(label, 36, _F_SM) if label else ""
+            tval_t  = _trunc_px(tval, 80, _F_MD)
             if i == 0:
-                if label:
-                    lcd.text(6, yt + 2, _truncate(label, 4), GRAY, ACCENT_DIM, 1)
-                    lcd.text(6 + len(_truncate(label, 4)) * 8 + 4, yt,
-                             _truncate(tval, 5), WHITE, ACCENT_DIM, 2)
-                else:
-                    lcd.text(6, yt, _truncate(tval, 6), WHITE, ACCENT_DIM, 2)
-            else:
-                tval_t  = _truncate(tval, 5)
-                label_t = _truncate(label, 4)
-                tw = len(tval_t) * 16 + (len(label_t) * 8 + 4 if label_t else 0)
-                rx = W - tw - 6
+                x = 6
                 if label_t:
-                    lcd.text(rx, yt + 2, label_t, GRAY, ACCENT_DIM, 1)
-                    lcd.text(rx + len(label_t) * 8 + 4, yt, tval_t, WHITE, ACCENT_DIM, 2)
-                else:
-                    lcd.text(W - len(tval_t) * 16 - 6, yt, tval_t, WHITE, ACCENT_DIM, 2)
+                    lw = lcd.text_width(label_t, _F_SM)
+                    lcd.text(x, yt + (_F_MD.height() - _F_SM.height()) // 2,
+                             label_t, GRAY, ACCENT_DIM, _F_SM)
+                    x += lw + 4
+                lcd.text(x, yt, tval_t, WHITE, ACCENT_DIM, _F_MD)
+            else:
+                tw = lcd.text_width(tval_t, _F_MD)
+                lw = (lcd.text_width(label_t, _F_SM) + 4) if label_t else 0
+                rx = W - tw - lw - 6
+                if label_t:
+                    lcd.text(rx, yt + (_F_MD.height() - _F_SM.height()) // 2,
+                             label_t, GRAY, ACCENT_DIM, _F_SM)
+                    rx += lw
+                lcd.text(rx, yt, tval_t, WHITE, ACCENT_DIM, _F_MD)
 
         self._render_body_text(body, self.BODY_TOP + 8, self.BODY_BOT - 4)
         # Gameplay nav
@@ -779,31 +832,34 @@ class TFTDisplay:
         lcd = self._lcd
         lcd.fill(BLACK)
         lcd.fill_rect(0, 0, W, self.HDR_BOT, ACCENT_DIM)
-        lcd.text_centered(16, "Scan QR Code", WHITE, ACCENT_DIM, scale=2)
+        lcd.text_centered((self.HDR_BOT - _F_MD.height()) // 2,
+                          "Scan QR Code", WHITE, ACCENT_DIM, _F_MD)
         data     = _clean(lines[0]).strip() if lines else ""
         captions = lines[1:] if len(lines) > 1 else []
-        y = self.BODY_TOP + 8
-        for chunk in _word_wrap(data, 28)[:10]:
-            lcd.text(8, y, chunk, DIM_WHITE, BLACK, scale=1)
-            y += 11
+        lh = _F_SM.height() + 3
+        y  = self.BODY_TOP + 8
+        for chunk in _word_wrap(data, 30)[:10]:
+            lcd.text(8, y, chunk, DIM_WHITE, BLACK, _F_SM)
+            y += lh
         y += 4
         for cap in captions[:3]:
             if cap:
-                lcd.text(8, y, _truncate(_clean(cap), 28), GRAY, BLACK, scale=1)
-                y += 11
+                lcd.text(8, y, _trunc_px(_clean(cap), W - 16, _F_SM),
+                         GRAY, BLACK, _F_SM)
+                y += lh
 
     def _render_fixed(self, lines, size_hint):
-        scale = 3 if size_hint >= 26 else (2 if size_hint >= 16 else 1)
-        lcd = self._lcd
+        font = _F_LG if size_hint >= 26 else (_F_MD if size_hint >= 16 else _F_SM)
+        lcd  = self._lcd
         lcd.fill(BLACK)
-        ch   = 8 * scale
+        fh   = font.height()
         gap  = 4
         n    = len(lines)
-        total_h = n * (ch + gap) - gap
+        total_h = n * (fh + gap) - gap
         y = max(4, (H - total_h) // 2)
         for ln in lines:
-            lcd.text_centered(y, _truncate(ln or "", 30 // scale), WHITE, BLACK, scale)
-            y += ch + gap
+            lcd.text_centered(y, _trunc_px(ln or "", W - 16, font), WHITE, BLACK, font)
+            y += fh + gap
 
     # ═══════════════════════════════════════════════════════════════════════
     # Sub-renderers
@@ -818,12 +874,12 @@ class TFTDisplay:
         row_h  = zone_h // n
 
         for i, item in enumerate(items[:5]):
-            y0 = top + i * row_h
-            text_y = y0 + (row_h - 16) // 2
+            y0     = top + i * row_h
+            text_y = y0 + (row_h - _F_MD.height()) // 2
             if i > 0:
                 lcd.hline(0, y0, W, ITEM_SEP)
             lcd.fill_rect(0, y0 + 2, 4, row_h - 4, ACCENT)
-            lcd.text_centered(text_y, _truncate(item, 14), WHITE, BLACK, scale=2)
+            lcd.text_centered(text_y, _trunc_px(item, W - 16, _F_MD), WHITE, BLACK, _F_MD)
             self._touch_zones["item_%d" % (i + 1)] = (0, y0 + 1, W - 1, y0 + row_h - 1)
 
     def _render_body_text(self, body_lines, top, bottom):
@@ -841,24 +897,22 @@ class TFTDisplay:
             return
 
         avail_h = bottom - top
-        # Pick scale: prefer scale=2 (16px), fall back to scale=1 for many lines
-        scale = 2
-        ch    = 8 * scale
-        gap   = 5
-        line_h = ch + gap
+        # Pick font: 18pt bold for few lines, 12pt regular for many
+        font  = _F_MD
+        gap   = 4
+        line_h = font.height() + gap
         if len(wrapped) * line_h > avail_h:
-            scale  = 1
-            ch     = 8
+            font   = _F_SM
             gap    = 3
-            line_h = ch + gap
+            line_h = font.height() + gap
 
         total_h = len(wrapped) * line_h - gap
         y = top + max(0, (avail_h - total_h) // 2)
 
         for ln in wrapped:
-            if y + ch > bottom:
+            if y + font.height() > bottom:
                 break
-            lcd.text_centered(y, _truncate(ln, 30 // scale), WHITE, BLACK, scale)
+            lcd.text_centered(y, _trunc_px(ln, W - 16, font), WHITE, BLACK, font)
             y += line_h
 
     def _render_action_zone(self, foot_parts, is_gameplay, footer_raw=""):
@@ -871,8 +925,9 @@ class TFTDisplay:
             # Active confirm zone: bright green background, prominent text
             lcd.fill_rect(0, y_top, W, self.ACT_BOT - y_top, CONFIRM_BG)
             lcd.hline(0, y_top, W, CONFIRM_FG)
-            lcd.text_centered(y_top + 8,  "TAP TO CONFIRM", CONFIRM_FG, CONFIRM_BG, scale=1)
-            lcd.text_centered(y_top + 24, "YOUR MOVE", CONFIRM_FG, CONFIRM_BG, scale=2)
+            lcd.text_centered(y_top + 4,  "TAP TO CONFIRM", CONFIRM_FG, CONFIRM_BG, _F_SM)
+            lcd.text_centered(y_top + 4 + _F_SM.height() + 4,
+                              "YOUR MOVE",      CONFIRM_FG, CONFIRM_BG, _F_MD)
             self._touch_zones["game_confirm"] = (
                 40, y_top, W - 41, self.ACT_BOT - 1
             )
@@ -898,15 +953,15 @@ class TFTDisplay:
         if left and right:
             lcd.vline(mid_x, y0 + 1, bar_h - 2, GRAY)
 
-        text_y = y0 + (bar_h - 8) // 2   # vertically center scale=1 text (8px)
+        text_y = y0 + (bar_h - _F_SM.height()) // 2
 
         if left:
-            t = _truncate("< " + left, 12)
-            lcd.text(8, text_y, t, DIM_WHITE, DARK_GRAY, scale=1)
+            t = _trunc_px("< " + left, W // 2 - 12, _F_SM)
+            lcd.text(8, text_y, t, DIM_WHITE, DARK_GRAY, _F_SM)
 
         if right:
-            t = _truncate(right + " >", 12)
-            lcd.text(W - len(t) * 8 - 8, text_y, t, DIM_WHITE, DARK_GRAY, scale=1)
+            t = _trunc_px(right + " >", W // 2 - 12, _F_SM)
+            lcd.text_right(text_y, t, DIM_WHITE, DARK_GRAY, _F_SM)
 
     # ═══════════════════════════════════════════════════════════════════════
     # Gameplay helpers
