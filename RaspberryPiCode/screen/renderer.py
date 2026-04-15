@@ -550,9 +550,10 @@ class Renderer:
         spacing   = 5
         min_size, max_size = 12, 24
 
-        # Track for touch zones
+        # Track for touch zones (footer_y = H - footer_h - 4, same formula used below)
+        _ftr_y = H - footer_h - 4
         self._rendered_hdr_bot      = avail_top
-        self._rendered_nav_top      = max(footer_y - 8, divider_y + 40)
+        self._rendered_nav_top      = max(_ftr_y - 8, divider_y + 40)
         self._rendered_act_top      = max(avail_top + 20, self._rendered_nav_top - 60)
         self._rendered_item_rects   = []
 
