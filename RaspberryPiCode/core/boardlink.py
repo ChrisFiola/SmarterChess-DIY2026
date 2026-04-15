@@ -107,37 +107,39 @@ class BoardLink:
 
     def try_read_from_board(self) -> Optional[str]:
         """Non-blocking read. Returns the payload string, 'shutdown', or None."""
-        # Touch queue takes priority
+        # Prefer UART when a complete board message is already available.
+        if self.ser.in_waiting:
+            raw = self._readline()
+            result = self._parse_raw(raw)
+            if result is not None:
+                return result
+
+        # Touch events are still delivered when no board data is pending.
         touch = self._poll_touch()
         if touch is not None:
             print(f"[Touch→] {touch}")
             return touch
-        # UART
-        if not self.ser.in_waiting:
-            return None
-        raw = self._readline()
-        return self._parse_raw(raw)
+        return None
 
     def read_from_board(self) -> Optional[str]:
         """Blocking read with 2-second equivalent timeout.
 
         Polls UART in 50 ms slices and checks the touch queue each slice so
-        touch events are never blocked behind a silent serial port.
+        touch events are still delivered while avoiding stale touch hijacks.
         Returns the payload string, 'shutdown', or None on timeout.
         """
         _MAX_ITERS = 40   # 40 × 50 ms = 2 s total timeout
 
         for _ in range(_MAX_ITERS):
-            # Touch queue first
-            touch = self._poll_touch()
-            if touch is not None:
-                print(f"[Touch→] {touch}")
-                return touch
-
-            # UART (ser.timeout = 50 ms set in __init__)
+            # UART first so board input is not hijacked by stale touch events.
             raw = self._readline()
             result = self._parse_raw(raw)
             if result is not None:
                 return result
+
+            touch = self._poll_touch()
+            if touch is not None:
+                print(f"[Touch→] {touch}")
+                return touch
 
         return None
