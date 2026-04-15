@@ -1998,7 +1998,9 @@ def _run_update(link: BoardLink, display: Display) -> None:
 
     changed_pico_names = {
         name
-        for (name, before_hash), (_, after_hash) in zip(before_pico_hash, after_pico_hash)
+        for (name, before_hash), (_, after_hash) in zip(
+            before_pico_hash, after_pico_hash
+        )
         if before_hash != after_hash and after_hash is not None
     }
 
@@ -2182,6 +2184,7 @@ def _run_puzzle_game(
     display.show_header_panel("Puzzles", "Loading...")
     from modes.online.lichess_client import LichessClient
     from modes.puzzles.puzzle_controller import PuzzleController
+
     client = LichessClient()
 
     def menu(options: List[str]) -> Optional[str]:
@@ -2236,7 +2239,12 @@ def _run_puzzle_game(
                 if label is None:
                     continue
                 PuzzleController(
-                    client, mode="theme", theme=label, theme_label=label, ctx=ctx, cfg=cfg
+                    client,
+                    mode="theme",
+                    theme=label,
+                    theme_label=label,
+                    ctx=ctx,
+                    cfg=cfg,
                 ).run(link, display)
                 return
 
