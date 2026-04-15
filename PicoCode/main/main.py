@@ -190,6 +190,7 @@ class FilteredUARTLink(UARTLink):
     suppress_tft: when True, DISP messages are consumed but NOT rendered.
     Set this during OTA update to avoid heap exhaustion from SPI allocations.
     """
+
     def __init__(self):
         super().__init__()
         self._tft = None
@@ -205,7 +206,7 @@ class FilteredUARTLink(UARTLink):
         if msg.startswith("heyArduinoDISP:"):
             if self._tft is not None and not self.suppress_tft:
                 try:
-                    self._tft.render(msg[len("heyArduinoDISP:"):])
+                    self._tft.render(msg[len("heyArduinoDISP:") :])
                 except Exception:
                     pass
             return None  # consumed; non-blocking contract preserved
@@ -611,7 +612,7 @@ def _confirm_move(move):
     cp.reset_edges()
     cp.arm_confirm_ok()
     screen.typing_confirm(move)
-    link.suppress_tft = True   # suppress DISP only during the 300ms ACK window
+    link.suppress_tft = True  # suppress DISP only during the 300ms ACK window
     acked, ok_seen_during_ack = screen.wait_for_lcd_ack(
         "heyArduinolcd_ack_confirm", timeout_ms=300
     )
@@ -621,7 +622,7 @@ def _confirm_move(move):
         cp.only_ok(False)
         return None
     if tft:
-        tft.show_confirm(move)   # render confirm screen directly, set touch zone
+        tft.show_confirm(move)  # render confirm screen directly, set touch zone
     time.sleep_ms(30)
     if ok_seen_during_ack or cp.consume_confirm_ok(window_ms=300):
         cp.disarm_confirm_ok()
@@ -1716,7 +1717,7 @@ def _handle_update_mode(_msg):
     cp.off(force=True)
     cp.disable_hint_irq()
     gc.collect()
-    link.suppress_tft = True   # prevent SPI renders exhausting heap during upload
+    link.suppress_tft = True  # prevent SPI renders exhausting heap during upload
     link.send("UpdateReady")
     temp_paths = {}
     current_name = None
