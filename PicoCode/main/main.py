@@ -270,7 +270,8 @@ class Screen:
 
 time.sleep_ms(500)
 link = FilteredUARTLink()
-tft = TFTDisplay()          # shows "SMARTCHESS / Starting..." immediately at boot
+# tft = TFTDisplay()          # shows "SMARTCHESS / Starting..." immediately at boot
+tft = None
 link.set_tft(tft)
 screen = Screen(link, st)
 _configure_hw(
@@ -619,7 +620,8 @@ def _confirm_move(move):
         cp.disarm_confirm_ok()
         cp.only_ok(False)
         return None
-    tft.show_confirm(move)   # render confirm screen directly, set touch zone
+    if tft:
+        tft.show_confirm(move)   # render confirm screen directly, set touch zone
     time.sleep_ms(30)
     if ok_seen_during_ack or cp.consume_confirm_ok(window_ms=300):
         cp.disarm_confirm_ok()
@@ -1406,6 +1408,8 @@ def _handle_wait_for_ok_or_skip_setup(_msg=None):
 
 
 def _wait_for_touch_release():
+    if not tft:
+        return
     while tft.touch.read() is not None:
         if cp.shutdown_held():
             _shutdown_pico()
@@ -1413,6 +1417,8 @@ def _wait_for_touch_release():
 
 
 def _consume_touch_action():
+    if not tft:
+        return None
     action = tft.touch_action()
     if action is None:
         return None
@@ -1436,6 +1442,8 @@ def _handle_game_touch_action(*, allow_confirm=False):
 
 
 def _menu_touch_button(allow_select, has_next, has_back):
+    if not tft:
+        return None
     action = tft.touch_action()
     if action is None:
         return None
