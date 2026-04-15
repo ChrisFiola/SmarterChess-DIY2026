@@ -452,39 +452,52 @@ class Renderer:
         footer_reserved = (footer_h + 14) if footer_parts else 0
         avail_h = H - footer_reserved - header_reserved
 
-        spacing    = 6
-        vpad       = 8
         min_size, max_size = 14, 28
 
         display_lines = [(ln or "") for ln in raw_items if ln]
+        n = len(display_lines)
 
+        # Equal-height tiles filling the available area
+        tile_gap   = 4          # px gap between tiles
+        tile_pad_x = 8          # horizontal inset from screen edge
+        tile_pad_y = 6          # vertical text padding inside tile
+        tile_h     = max(30, (avail_h - tile_gap * (n + 1)) // n) if n else 30
+        tile_inner = tile_h - 2 * tile_pad_y
+
+        # Fit font into tile inner height
         item_size = min_size
         for sz in range(max_size, min_size - 1, -1):
-            font    = self._get_font(sz, font_key=font_key)
-            heights = [self._measure(sz, ln, font, font_key=font_key)[1]
-                       for ln in display_lines]
-            total_h = sum(heights) + spacing * (len(heights) - 1) if heights else 0
-            widths  = [self._measure(sz, ln, font, font_key=font_key)[0]
-                       for ln in display_lines]
-            if total_h <= avail_h - 2 * vpad and all(w <= W - 16 for w in widths):
+            font   = self._get_font(sz, font_key=font_key)
+            widths = [self._measure(sz, ln, font, font_key=font_key)[0]
+                      for ln in display_lines]
+            max_h  = max((self._measure(sz, ln, font, font_key=font_key)[1]
+                          for ln in display_lines), default=sz)
+            if max_h <= tile_inner and all(w <= W - 2 * tile_pad_x - 16 for w in widths):
                 item_size = sz
                 break
 
         item_font = self._get_font(item_size, font_key=font_key)
-        heights   = [self._measure(item_size, ln, item_font, font_key=font_key)[1]
-                     for ln in display_lines]
-        total_h   = sum(heights) + spacing * (len(heights) - 1) if heights else 0
 
-        left_pad = 8
-        y = header_reserved + max(vpad, (avail_h - total_h) // 2)
         self._rendered_item_rects = []
-        for ln, h in zip(display_lines, heights):
-            item_y0 = int(y)
-            w = self._measure(item_size, ln, item_font, font_key=font_key)[0]
-            x = left_pad if align == "left" else (W - w) // 2
-            self._draw.text((x, y), ln, font=item_font, fill="WHITE")
-            y += h + spacing
-            self._rendered_item_rects.append((0, item_y0, W - 1, int(y) - spacing - 1))
+        for i, ln in enumerate(display_lines):
+            tile_y0 = header_reserved + tile_gap + i * (tile_h + tile_gap)
+            tile_y1 = tile_y0 + tile_h - 1
+            # Outline box
+            try:
+                self._draw.rounded_rectangle(
+                    [tile_pad_x, tile_y0, W - 1 - tile_pad_x, tile_y1],
+                    radius=6, outline="WHITE", width=1)
+            except AttributeError:
+                self._draw.rectangle(
+                    [tile_pad_x, tile_y0, W - 1 - tile_pad_x, tile_y1],
+                    outline="WHITE", width=1)
+            # Text centred in tile
+            tw, th = self._measure(item_size, ln, item_font, font_key=font_key)
+            tx = tile_pad_x + 8 if align == "left" else (W - tw) // 2
+            ty = tile_y0 + (tile_h - th) // 2
+            self._draw.text((tx, ty), ln, font=item_font, fill="WHITE")
+            self._rendered_item_rects.append((0, tile_y0, W - 1, tile_y1))
+
         self._rendered_hdr_bot = header_reserved
 
         if footer_parts:
