@@ -617,6 +617,7 @@ def _confirm_move(move):
         cp.disarm_confirm_ok()
         cp.only_ok(False)
         return None
+    tft.show_confirm(move)   # render directly — bypass DISP pipeline, set touch zone
     time.sleep_ms(30)
     if ok_seen_during_ack or cp.consume_confirm_ok(window_ms=300):
         cp.disarm_confirm_ok()
@@ -726,6 +727,7 @@ def _retry_to_square(frm, preset_to_col=None):
 
 def _collect_and_submit_move():
     st.in_input = True
+    link.suppress_tft = True   # no DISP renders while entering buttons — eliminates lag
     try:
         seed = None
         preset_from_col = None
@@ -825,6 +827,7 @@ def _collect_and_submit_move():
                 return
     finally:
         st.in_input = False
+        link.suppress_tft = False
 
 
 def _show_game_over_and_ack(result_str):

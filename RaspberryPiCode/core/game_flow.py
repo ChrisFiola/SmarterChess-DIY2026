@@ -1716,7 +1716,7 @@ def _render_paged_menu(
     items: List[str],
     *,
     can_back: bool,
-    per_page: int = 3,
+    per_page: int = 4,
     back_label: str = "Back",
 ) -> str:
     """Format a paged menu for the graphical LCD display.
@@ -1732,7 +1732,7 @@ def _render_paged_menu(
 
     lines = [header] + [_fmt(i + 1, opt) for i, opt in enumerate(items[:per_page])]
 
-    while len(lines) < 4:
+    while len(lines) < per_page + 1:
         lines.append("")
 
     has_hint = pages > 1
@@ -1757,7 +1757,7 @@ def _paged_menu(
     can_back: bool = True,
     wake_command: Optional[str] = None,
     resend_timeout: Optional[float] = None,
-    per_page: int = 3,
+    per_page: int = 4,
     back_label: str = "Back",
 ) -> Optional[str]:
     """Show a scrollable menu and return the user's selection.

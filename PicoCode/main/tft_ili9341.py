@@ -544,6 +544,31 @@ class TFTDisplay:
 
     # ── Splash / boot ─────────────────────────────────────────────────────────
 
+    def show_confirm(self, move_uci):
+        """Render a move-confirmation screen directly on the TFT.
+        Bypasses the DISP: pipeline — safe to call while suppress_tft is True.
+        Registers the body+action+nav area as a single 'game_confirm' touch zone."""
+        lcd = self._lcd
+        frm = (move_uci[:2] if len(move_uci) >= 2 else "??").upper()
+        to  = (move_uci[2:4] if len(move_uci) >= 4 else "??").upper()
+        move_str = frm + " -> " + to
+
+        lcd.fill_rect(0, self.HDR_TOP, W, self.HDR_BOT, ACCENT_DIM)
+        lcd.text_centered((self.HDR_BOT - _F_MD.height()) // 2,
+                          "Confirm move", DIM_WHITE, ACCENT_DIM, _F_MD)
+
+        lcd.fill_rect(0, self.BODY_TOP, W, self.BODY_BOT - self.BODY_TOP, BLACK)
+        body_mid = self.BODY_TOP + (self.BODY_BOT - self.BODY_TOP - _F_LG.height()) // 2
+        lcd.text_centered(body_mid, move_str, WHITE, BLACK, _F_LG)
+
+        lcd.fill_rect(0, self.BODY_BOT, W, H - self.BODY_BOT, CONFIRM_BG)
+        lcd.hline(0, self.BODY_BOT, W, CONFIRM_FG)
+        tap_y = self.BODY_BOT + (H - self.BODY_BOT - _F_MD.height()) // 2
+        lcd.text_centered(tap_y, "Tap to confirm", CONFIRM_FG, CONFIRM_BG, _F_MD)
+
+        self._touch_zones = {"game_confirm": (0, self.BODY_TOP, W - 1, H - 1)}
+        self._last_payload = None  # force full re-render on next DISP message
+
     def show_splash(self):
         lcd = self._lcd
         lcd.fill(BLACK)

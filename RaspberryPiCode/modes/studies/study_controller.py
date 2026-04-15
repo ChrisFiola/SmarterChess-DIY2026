@@ -297,7 +297,7 @@ class StudyController:
     # ----------------------------------------------------------------- private
 
     @staticmethod
-    def _paginate_lines(lines: List[str], *, per_page: int = 3) -> List[List[str]]:
+    def _paginate_lines(lines: List[str], *, per_page: int = 4) -> List[List[str]]:
         return [lines[i : i + per_page] for i in range(0, len(lines), per_page)]
 
     @staticmethod
