@@ -6,28 +6,40 @@ The protocol uses two prefixes:
   - Pi → Pico: "heyArduino" + payload + newline
   - Pico → Pi: "heypi" + payload + newline  (or "heypixshutdown" for shutdown)
 
+Touch events from the ILI9341/XPT2046 (via Display.touch_queue) are merged
+transparently: read_from_board() and try_read_from_board() drain the touch
+queue first so callers see touch events as if they came from the Pico.
+
 Public methods:
   send_to_board(text)        — send a message to the Pico
   read_from_board()          — blocking read; returns payload or "shutdown"
   try_read_from_board()      — non-blocking read; returns None if nothing waiting
   clear_input()              — drop any buffered input from the Pico
+  set_touch_queue(q)         — attach Display.touch_queue
 """
+import queue as _queue
 from typing import Optional
 import serial
 
 SERIAL_PORT: str = "/dev/serial0"
 BAUD: int = 115200
-SERIAL_TIMEOUT: float = 2.0
+SERIAL_TIMEOUT: float = 0.05   # short timeout so touch queue is polled regularly
 
 
 class BoardLink:
     def __init__(
-        self, port: str = SERIAL_PORT, baud: int = BAUD, timeout: float = SERIAL_TIMEOUT
+        self, port: str = SERIAL_PORT, baud: int = BAUD,
+        timeout: float = SERIAL_TIMEOUT,
     ):
         self.ser = serial.Serial(port, baud, timeout=timeout)
         self.ser.reset_input_buffer()
         self.ser.reset_output_buffer()
         self.ser.flush()
+        self._touch_queue: Optional[_queue.Queue] = None
+
+    def set_touch_queue(self, q: _queue.Queue) -> None:
+        """Attach the Display.touch_queue so touch events merge with UART reads."""
+        self._touch_queue = q
 
     def close(self):
         try:
@@ -41,6 +53,13 @@ class BoardLink:
             self.ser.reset_input_buffer()
         except Exception:
             pass
+        # Also drain touch queue
+        if self._touch_queue:
+            try:
+                while True:
+                    self._touch_queue.get_nowait()
+            except _queue.Empty:
+                pass
 
     # ── Writes ────────────────────────────────────────────────────────────────
 
@@ -51,7 +70,7 @@ class BoardLink:
         self.ser.flush()
         print(f"[-→Board] {payload}")
 
-    # ── Reads ─────────────────────────────────────────────────────────────────
+    # ── Internal parse ────────────────────────────────────────────────────────
 
     def _readline(self) -> Optional[str]:
         line = self.ser.readline()
@@ -62,11 +81,8 @@ class BoardLink:
         except UnicodeDecodeError:
             return None
 
-    def try_read_from_board(self) -> Optional[str]:
-        """Non-blocking read. Returns the payload string, "shutdown", or None."""
-        if not self.ser.in_waiting:
-            return None
-        raw = self._readline()
+    def _parse_raw(self, raw: str) -> Optional[str]:
+        """Return payload string, 'shutdown', or None for unrecognised lines."""
         if not raw:
             return None
         low = raw.lower()
@@ -74,20 +90,54 @@ class BoardLink:
             return "shutdown"
         if low.startswith("heypi"):
             payload = low[5:]
-            print(f"[Board→] {low}  | payload='{payload}'")
+            print(f"[Board→] {raw}  | payload='{payload}'")
             return payload
         return None
 
+    def _poll_touch(self) -> Optional[str]:
+        """Return one touch event from the queue, or None."""
+        if not self._touch_queue:
+            return None
+        try:
+            return self._touch_queue.get_nowait()
+        except _queue.Empty:
+            return None
+
+    # ── Reads ─────────────────────────────────────────────────────────────────
+
+    def try_read_from_board(self) -> Optional[str]:
+        """Non-blocking read. Returns the payload string, 'shutdown', or None."""
+        # Touch queue takes priority
+        touch = self._poll_touch()
+        if touch is not None:
+            print(f"[Touch→] {touch}")
+            return touch
+        # UART
+        if not self.ser.in_waiting:
+            return None
+        raw = self._readline()
+        return self._parse_raw(raw)
+
     def read_from_board(self) -> Optional[str]:
-        """Blocking read. Returns the payload string, "shutdown", or None on timeout."""
-        while True:
+        """Blocking read with 2-second equivalent timeout.
+
+        Polls UART in 50 ms slices and checks the touch queue each slice so
+        touch events are never blocked behind a silent serial port.
+        Returns the payload string, 'shutdown', or None on timeout.
+        """
+        _MAX_ITERS = 40   # 40 × 50 ms = 2 s total timeout
+
+        for _ in range(_MAX_ITERS):
+            # Touch queue first
+            touch = self._poll_touch()
+            if touch is not None:
+                print(f"[Touch→] {touch}")
+                return touch
+
+            # UART (ser.timeout = 50 ms set in __init__)
             raw = self._readline()
-            if raw is None:
-                return None
-            low = raw.lower()
-            if low.startswith("heypixshutdown"):
-                return "shutdown"
-            if low.startswith("heypi"):
-                payload = low[5:]
-                print(f"[Board→] {raw}  | payload='{payload}'")
-                return payload
+            result = self._parse_raw(raw)
+            if result is not None:
+                return result
+
+        return None

@@ -1,47 +1,160 @@
 # -*- coding: utf-8 -*-
 """
 Display abstraction for SmarterChess.
-Communicates with display_server.py via a named pipe (FIFO at /tmp/lcdpipe).
-Use send(message) for all LCD output; helper methods cover common UI patterns.
+
+Drives ILI9341 2.8" TFT (240x320) directly from the Pi via SPI0.
+PIL rendering runs in a background thread so game logic is never blocked.
+XPT2046 touch events are polled in the same thread and queued as protocol
+strings (matching what the Pico previously sent over UART: "ok", "hint",
+"n", "1"–"4") so BoardLink can read them transparently.
+
+No display_server subprocess required.
 """
-import os
-import subprocess
+import queue
+import threading
 import time
 
-from screen.lcd_pipe import PIPE_PATH, READY_FLAG_PATH
+# ── Hardware drivers (only imported when running on Pi) ───────────────────────
+try:
+    from screen.ili9341_pi import ILI9341
+    from screen.xpt2046    import XPT2046
+    from screen.renderer   import Renderer
+    _HW_AVAILABLE = True
+except Exception as _hw_err:
+    print(f"[Display] hardware drivers unavailable ({_hw_err}), running headless",
+          flush=True)
+    _HW_AVAILABLE = False
 
-DISPLAY_SERVER_SCRIPT: str = os.path.join(os.path.dirname(os.path.abspath(__file__)), "display_server.py")
+# Touch zone → protocol string (matches Pico UART payloads expected by game_flow)
+_ZONE_TO_PROTO = {
+    "item_1":      "1",
+    "item_2":      "2",
+    "item_3":      "3",
+    "item_4":      "4",
+    "btn_ok":      "ok",
+    "game_confirm":"ok",
+    "btn_hint":    "hint",
+    "game_hint":   "hint",
+    "game_menu":   "n",
+    "page_next":   "hint",
+    "page_prev":   "hint",
+    "btn_back":    "n",
+}
+
+_FPS_CAP   = 15.0
+_MIN_DT    = 1.0 / _FPS_CAP
+_TOUCH_POLL_S = 0.05   # seconds between touch polls inside render thread
 
 
 class Display:
     """
-    Minimal abstraction around display_server IPC.
+    Public API is unchanged from the Version-2 Display class.
+    Internally all rendering now happens on the Pi via PIL + ILI9341.
     """
 
-    def __init__(self, pipe_path: str = PIPE_PATH, ready_flag: str = READY_FLAG_PATH):
-        self.pipe_path = pipe_path
-        self.ready_flag = ready_flag
-        self._last_payload = None
-        self._last_message = ""
-        self._last_size = "auto"
-        self._last_send_t = 0.0
-        # Simple "UI lock" to prevent important prompts (typing / confirmations)
-        # from being immediately overwritten by background/status messages.
-        self._lock_until = 0.0
+    def __init__(self):
+        self._last_message  = ""
+        self._last_size     = "auto"
+        self._last_payload  = None
+        self._lock_until    = 0.0
         self._locked_category = None
-        self._pipe = None
-        self._online_clock = None
-        self._header_badge = ""
-        # BoardLink injected after serial port is open (set via set_boardlink)
-        self._boardlink = None
+        self._online_clock  = None
+        self._header_badge  = ""
+
+        # Render queue: (payload_str,)
+        self._render_queue: queue.Queue = queue.Queue(maxsize=4)
+        # Touch event queue: protocol strings read by BoardLink
+        self.touch_queue: queue.Queue = queue.Queue(maxsize=32)
+
+        if _HW_AVAILABLE:
+            self._disp     = ILI9341()
+            self._renderer = Renderer(self._disp.width, self._disp.height)
+            self._touch    = XPT2046()
+            self._disp.Init()
+            self._disp.bl_DutyCycle(80)
+            # Splash on startup
+            splash = self._renderer.render_splash()
+            self._disp.ShowImage(splash)
+        else:
+            self._disp     = None
+            self._renderer = None
+            self._touch    = None
+
+        self._thread = threading.Thread(target=self._render_loop, daemon=True)
+        self._thread.start()
+
+    # ── Render thread ─────────────────────────────────────────────────────────
+
+    def _render_loop(self) -> None:
+        last_draw_t   = 0.0
+        last_drawn    = None
+        pending       = None
+        last_touch_t  = 0.0
+
+        while True:
+            now = time.monotonic()
+
+            # Drain render queue — keep only the newest message
+            try:
+                while True:
+                    pending = self._render_queue.get_nowait()
+            except queue.Empty:
+                pass
+
+            # Poll touch
+            if self._touch and now - last_touch_t >= _TOUCH_POLL_S:
+                last_touch_t = now
+                try:
+                    zones = (self._renderer.current_touch_zones()
+                             if self._renderer else {})
+                    now_ms = int(now * 1000)
+                    zone   = self._touch.get_zone_debounced(zones, now_ms)
+                    if zone:
+                        proto = _ZONE_TO_PROTO.get(zone)
+                        if proto:
+                            try:
+                                self.touch_queue.put_nowait(proto)
+                            except queue.Full:
+                                pass
+                except Exception:
+                    pass
+
+            # Nothing to draw yet
+            if pending is None:
+                time.sleep(0.01)
+                continue
+
+            # FPS cap
+            if now - last_draw_t < _MIN_DT:
+                time.sleep(0.005)
+                continue
+
+            # Dedup
+            if pending == last_drawn:
+                last_draw_t = now
+                pending     = None
+                continue
+
+            # Render
+            if self._renderer and self._disp:
+                try:
+                    img = self._renderer.render(pending)
+                    self._disp.ShowImage(img)
+                except Exception as exc:
+                    print(f"[Display] render error: {exc}", flush=True)
+
+            last_drawn  = pending
+            last_draw_t = now
+            pending     = None
+
+    # ── Internal payload helpers ──────────────────────────────────────────────
 
     def _format_clock_ms(self, ms: int) -> str:
-        ms = max(0, int(ms or 0))
+        ms      = max(0, int(ms or 0))
         total_s = ms // 1000
-        days, rem = divmod(total_s, 86400)
-        hours, rem = divmod(rem, 3600)
+        days, rem        = divmod(total_s, 86400)
+        hours, rem       = divmod(rem, 3600)
         minutes, seconds = divmod(rem, 60)
-
         if days:
             return f"{days}d {hours:02}h"
         if hours:
@@ -51,34 +164,25 @@ class Display:
     def _clock_overlay_lines(self):
         if not self._online_clock:
             return []
-
-        white_ms = self._online_clock["white_ms"]
-        black_ms = self._online_clock["black_ms"]
-        you_are_white = self._online_clock["you_are_white"]
-        active_color = self._online_clock["active_color"]
-
-        if you_are_white is None:
-            white_label = "W"
-            black_label = "B"
-        else:
-            white_label = "YOU" if you_are_white else "OPP"
-            black_label = "OPP" if you_are_white else "YOU"
-
-        white_active = "*" if active_color == "white" else " "
-        black_active = "*" if active_color == "black" else " "
-
+        c = self._online_clock
+        wl = "YOU" if c["you_are_white"] else "OPP" if c["you_are_white"] is not None else "W"
+        bl = "OPP" if c["you_are_white"] else "YOU" if c["you_are_white"] is not None else "B"
+        wa = "*" if c["active_color"] == "white" else " "
+        ba = "*" if c["active_color"] == "black" else " "
         return [
-            f"{white_active}{white_label} {self._format_clock_ms(white_ms)}",
-            f"{black_active}{black_label} {self._format_clock_ms(black_ms)}",
+            f"{wa}{wl} {self._format_clock_ms(c['white_ms'])}",
+            f"{ba}{bl} {self._format_clock_ms(c['black_ms'])}",
         ]
 
     def _compose_payload(self, message: str, size: str) -> str:
         parts = message.split("\n")
         return "|".join(parts) + f"|{size}\n"
 
-    def _header_size_token(self) -> str:
-        badge = (self._header_badge or "").strip()
-        return f"header:{badge}" if badge else "header"
+    def _compose_clock_payload(self) -> str:
+        return "|".join(["__clock__"] + self._clock_overlay_lines()) + "|clock\n"
+
+    def _compose_clock_clear_payload(self) -> str:
+        return "__clock_clear__|clock\n"
 
     @staticmethod
     def _is_footer_hint(line: str) -> bool:
@@ -103,114 +207,81 @@ class Display:
             return "menu"
         return size
 
-    def _compose_clock_payload(self) -> str:
-        return "|".join(["__clock__"] + self._clock_overlay_lines()) + "|clock\n"
-
-    def _compose_clock_clear_payload(self) -> str:
-        return "__clock_clear__|clock\n"
-
     def _classify(self, message: str) -> str:
         m = (message or "").lower()
-        # Critical should always break through
-        if any(
-            k in m
-            for k in [
-                "illegal",
-                "invalid",
-                "game over",
-                "promotion",
-                "draw",
-                "shutting down",
-            ]
-        ):
+        if any(k in m for k in ["illegal", "invalid", "game over",
+                                  "promotion", "draw", "shutting down"]):
             return "critical"
-        # High-salience prompts while user is actively entering a move
-        if any(
-            k in m
-            for k in ["enter move", "enter to", "confirm", "ok to send", "press ok"]
-        ):
+        if any(k in m for k in ["enter move", "enter to", "confirm",
+                                  "ok to send", "press ok"]):
             return "prompt"
-        # Low-value transient status
         if any(k in m for k in ["engine thinking", "engine starting", "loading"]):
             return "status"
         return "normal"
 
-    def set_boardlink(self, boardlink) -> None:
-        """Inject the BoardLink instance so display messages can be sent via UART."""
-        self._boardlink = boardlink
-
     def _write_payload(self, payload: str) -> None:
-        """Route a pipe-format payload to the Pico over UART as a DISP: message."""
-        if not self._boardlink:
-            return
         try:
-            # payload ends with '\n'; strip it — boardlink.send_to_board adds its own
-            self._boardlink.send_to_board("DISP:" + payload.rstrip("\n"))
-            self._last_payload = payload
-        except Exception:
-            pass
+            self._render_queue.put_nowait(payload.rstrip("\n"))
+        except queue.Full:
+            # Drop oldest, enqueue newest
+            try:
+                self._render_queue.get_nowait()
+            except queue.Empty:
+                pass
+            try:
+                self._render_queue.put_nowait(payload.rstrip("\n"))
+            except queue.Full:
+                pass
+
+    # ── Compatibility stub (no longer routes to Pico) ─────────────────────────
+
+    def set_boardlink(self, boardlink) -> None:
+        """No-op: display now renders locally. Kept for call-site compatibility."""
 
     def restart_server(self) -> None:
-        # Display is now driven by the Pico W (ILI9341 via SPI1).
-        # The Pi no longer owns the display hardware; nothing to start.
-        self._last_payload = None
+        """No-op: no subprocess. Display starts in __init__."""
 
     def wait_ready(self, timeout_s: float = 10.0) -> None:
-        # Pico initialises the TFT at boot; no ready-flag handshake needed.
-        pass
+        """No-op: hardware is ready after __init__."""
+
+    # ── Public send API ───────────────────────────────────────────────────────
 
     def send(self, message: str, size: str = "auto", force: bool = False) -> None:
         self._last_message = message
-        size = self._resolve_size(message, size or "auto")
+        size    = self._resolve_size(message, size or "auto")
         self._last_size = size
         payload = self._compose_payload(message, size)
 
         now = time.monotonic()
         cat = self._classify(message)
 
-        # If we're locked on a prompt, do not let background messages overwrite
-        # it for a short window. Critical messages can always break through.
-        if (
-            (not force)
-            and now < self._lock_until
-            and self._locked_category == "prompt"
-            and cat not in ("prompt", "critical")
-        ):
+        if (not force
+                and now < self._lock_until
+                and self._locked_category == "prompt"
+                and cat not in ("prompt", "critical")):
             return
 
-        # Acquire/refresh prompt lock so the user can read it.
         if cat == "prompt":
-            m = (message or "").lower()
+            m    = (message or "").lower()
             hold = 1.15 if "confirm" in m or "ok to send" in m else 0.65
-            self._lock_until = now + hold
+            self._lock_until      = now + hold
             self._locked_category = "prompt"
         elif cat == "critical" or force:
-            self._lock_until = 0.0
+            self._lock_until      = 0.0
             self._locked_category = None
 
-        # Client-side de-dupe: don’t spam identical frames
         if payload == self._last_payload:
             return
 
+        self._last_payload = payload
         self._write_payload(payload)
 
     def show_qr(self, data: str, *caption_lines: str) -> None:
-        """Render a QR code on the LCD.
-
-        Protocol extension: use trailing size token 'qr'.
-        Line1 is the QR payload, remaining lines are optional captions.
-        """
         lines = [data] + [ln for ln in caption_lines if ln]
         self.send("\n".join(lines), size="qr")
 
-    def set_online_clock(
-        self,
-        *,
-        white_ms: int,
-        black_ms: int,
-        you_are_white=None,
-        active_color=None,
-    ) -> None:
+    def set_online_clock(self, *, white_ms: int, black_ms: int,
+                         you_are_white=None, active_color=None) -> None:
         active = None
         if active_color in (True, False):
             active = "white" if active_color else "black"
@@ -218,12 +289,11 @@ class Display:
             low = active_color.strip().lower()
             if low in ("white", "black"):
                 active = low
-
         state = {
-            "white_ms": int(max(0, white_ms or 0)),
-            "black_ms": int(max(0, black_ms or 0)),
+            "white_ms":     int(max(0, white_ms or 0)),
+            "black_ms":     int(max(0, black_ms or 0)),
             "you_are_white": you_are_white,
-            "active_color": active,
+            "active_color":  active,
         }
         if state == self._online_clock:
             return
@@ -234,43 +304,29 @@ class Display:
         self._online_clock = None
         self._write_payload(self._compose_clock_clear_payload())
 
-    # Convenience UI helpers
+    # ── Convenience UI helpers ────────────────────────────────────────────────
+
     def banner(self, text: str, delay_s: float = 0.0) -> None:
         self.send(text)
         if delay_s > 0:
             time.sleep(delay_s)
 
-    def show_panel(
-        self,
-        *body_lines: str,
-        footer: str = "",
-        force: bool = False,
-        size: str = "menu",
-    ) -> None:
+    def show_panel(self, *body_lines: str, footer: str = "",
+                   force: bool = False, size: str = "menu") -> None:
         lines = [ln for ln in body_lines if ln is not None]
         if footer:
             lines.append(footer)
         self.send("\n".join(lines), size=size if footer else "auto", force=force)
 
-    def show_setup_panel(
-        self,
-        header: str,
-        *body_lines: str,
-        footer: str = "",
-        force: bool = False,
-    ) -> None:
+    def show_setup_panel(self, header: str, *body_lines: str,
+                         footer: str = "", force: bool = False) -> None:
         lines = [header] + [ln for ln in body_lines if ln is not None]
         if footer:
             lines.append(footer)
         self.send("\n".join(lines), size="setup", force=force)
 
-    def show_header_panel(
-        self,
-        header: str,
-        *body_lines: str,
-        footer: str = "",
-        force: bool = False,
-    ) -> None:
+    def show_header_panel(self, header: str, *body_lines: str,
+                          footer: str = "", force: bool = False) -> None:
         lines = [header] + [ln for ln in body_lines if ln is not None]
         if footer:
             lines.append(footer)
@@ -278,6 +334,10 @@ class Display:
 
     def set_header_badge(self, text: str | None) -> None:
         self._header_badge = (text or "").strip()
+
+    def _header_size_token(self) -> str:
+        badge = (self._header_badge or "").strip()
+        return f"header:{badge}" if badge else "header"
 
     def show_arrow(self, uci: str, suffix: str = "", force: bool = False) -> None:
         arrow = f"{uci[:2]} → {uci[2:4]}"
@@ -290,15 +350,11 @@ class Display:
         self.show_header_panel(f"You are {side.upper()}", "Play move", force=force)
 
     def show_hint_result(self, uci: str) -> None:
-        """Fallback hint display using the shared header/footer layout."""
         try:
             frm, to = uci[:2], uci[2:4]
             if len(uci) >= 4:
-                self.show_header_panel(
-                    "Hint received",
-                    f"{frm} → {to}",
-                    footer="OK=Clear",
-                )
+                self.show_header_panel("Hint received", f"{frm} → {to}",
+                                       footer="OK=Clear")
             else:
                 self.show_header_panel("Hint received", uci, footer="OK=Clear")
         except Exception:
@@ -308,24 +364,27 @@ class Display:
         self.send(f"Invalid\n{text}\nTry again")
 
     def promo_name(self, promo_letter: str) -> str:
-        return {
-            "q": "Queen",
-            "r": "Rook",
-            "b": "Bishop",
-            "n": "Knight",
-        }.get((promo_letter or "").lower(), (promo_letter or "").upper())
+        return {"q": "Queen", "r": "Rook", "b": "Bishop", "n": "Knight"}.get(
+            (promo_letter or "").lower(), (promo_letter or "").upper()
+        )
 
     def format_promo_line(self, promo_letter: str) -> str:
-        """Return 'Promoted to {NAME}' for a promotion letter (q/r/b/n)."""
         return f"Promoted to {self.promo_name(promo_letter)}"
 
     def show_draw(self, reason: str, move_no: int) -> None:
-        """Display draw reason. move_no is full move count (approx)."""
-        # Keep it short for 3-line LCD
         if reason:
             self.send(f"DRAW\n{reason}\nMove {move_no}")
         else:
             self.send(f"DRAW\nMove {move_no}")
 
-    def close(self):
-        return
+    def close(self) -> None:
+        if self._touch:
+            try:
+                self._touch.close()
+            except Exception:
+                pass
+        if self._disp:
+            try:
+                self._disp.close()
+            except Exception:
+                pass

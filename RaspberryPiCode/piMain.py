@@ -31,10 +31,10 @@ from screen.display import Display
 
 def main():
     display = Display()
-    # BoardLink must be created before any display call so the Pico TFT
-    # can receive DISP: messages over UART from the very first send.
     link = BoardLink()
-    display.set_boardlink(link)
+    # Route touch events (ILI9341/XPT2046) into the UART read path so all
+    # game-flow code sees touch the same way it saw Pico button presses.
+    link.set_touch_queue(display.touch_queue)
     display.show_header_panel("SMARTCHESS")
 
     ensure_wifi(display)
