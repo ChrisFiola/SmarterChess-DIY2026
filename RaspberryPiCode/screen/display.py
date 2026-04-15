@@ -13,37 +13,41 @@ No display_server subprocess required.
 import queue
 import threading
 import time
+import os
 
 # ── Hardware drivers (only imported when running on Pi) ───────────────────────
 try:
     from screen.ili9341_pi import ILI9341
-    from screen.xpt2046    import XPT2046
-    from screen.renderer   import Renderer
+    from screen.xpt2046 import XPT2046
+    from screen.renderer import Renderer
+
     _HW_AVAILABLE = True
 except Exception as _hw_err:
-    print(f"[Display] hardware drivers unavailable ({_hw_err}), running headless",
-          flush=True)
+    print(
+        f"[Display] hardware drivers unavailable ({_hw_err}), running headless",
+        flush=True,
+    )
     _HW_AVAILABLE = False
 
 # Touch zone → protocol string (matches Pico UART payloads expected by game_flow)
 _ZONE_TO_PROTO = {
-    "item_1":      "1",
-    "item_2":      "2",
-    "item_3":      "3",
-    "item_4":      "4",
-    "btn_ok":      "ok",
-    "game_confirm":"ok",
-    "btn_hint":    "hint",
-    "game_hint":   "hint",
-    "game_menu":   "n",
-    "page_next":   "hint",
-    "page_prev":   "hint",
-    "btn_back":    "n",
+    "item_1": "1",
+    "item_2": "2",
+    "item_3": "3",
+    "item_4": "4",
+    "btn_ok": "ok",
+    "game_confirm": "ok",
+    "btn_hint": "hint",
+    "game_hint": "hint",
+    "game_menu": "n",
+    "page_next": "hint",
+    "page_prev": "hint",
+    "btn_back": "n",
 }
 
-_FPS_CAP   = 15.0
-_MIN_DT    = 1.0 / _FPS_CAP
-_TOUCH_POLL_S = 0.05   # seconds between touch polls inside render thread
+_FPS_CAP = 15.0
+_MIN_DT = 1.0 / _FPS_CAP
+_TOUCH_POLL_S = 0.05  # seconds between touch polls inside render thread
 
 
 class Display:
@@ -53,13 +57,13 @@ class Display:
     """
 
     def __init__(self):
-        self._last_message  = ""
-        self._last_size     = "auto"
-        self._last_payload  = None
-        self._lock_until    = 0.0
+        self._last_message = ""
+        self._last_size = "auto"
+        self._last_payload = None
+        self._lock_until = 0.0
         self._locked_category = None
-        self._online_clock  = None
-        self._header_badge  = ""
+        self._online_clock = None
+        self._header_badge = ""
 
         # Render queue: (payload_str,)
         self._render_queue: queue.Queue = queue.Queue(maxsize=4)
@@ -67,18 +71,18 @@ class Display:
         self.touch_queue: queue.Queue = queue.Queue(maxsize=32)
 
         if _HW_AVAILABLE:
-            self._disp     = ILI9341()
+            self._disp = ILI9341()
             self._renderer = Renderer(self._disp.width, self._disp.height)
-            self._touch    = XPT2046()
+            self._touch = XPT2046()
             self._disp.Init()
             self._disp.bl_DutyCycle(80)
             # Splash on startup
             splash = self._renderer.render_splash()
             self._disp.ShowImage(splash)
         else:
-            self._disp     = None
+            self._disp = None
             self._renderer = None
-            self._touch    = None
+            self._touch = None
 
         self._thread = threading.Thread(target=self._render_loop, daemon=True)
         self._thread.start()
@@ -86,10 +90,10 @@ class Display:
     # ── Render thread ─────────────────────────────────────────────────────────
 
     def _render_loop(self) -> None:
-        last_draw_t   = 0.0
-        last_drawn    = None
-        pending       = None
-        last_touch_t  = 0.0
+        last_draw_t = 0.0
+        last_drawn = None
+        pending = None
+        last_touch_t = 0.0
 
         while True:
             now = time.monotonic()
@@ -105,10 +109,11 @@ class Display:
             if self._touch and now - last_touch_t >= _TOUCH_POLL_S:
                 last_touch_t = now
                 try:
-                    zones = (self._renderer.current_touch_zones()
-                             if self._renderer else {})
+                    zones = (
+                        self._renderer.current_touch_zones() if self._renderer else {}
+                    )
                     now_ms = int(now * 1000)
-                    zone   = self._touch.get_zone_debounced(zones, now_ms)
+                    zone = self._touch.get_zone_debounced(zones, now_ms)
                     if zone:
                         proto = _ZONE_TO_PROTO.get(zone)
                         if proto:
@@ -132,7 +137,7 @@ class Display:
             # Dedup
             if pending == last_drawn:
                 last_draw_t = now
-                pending     = None
+                pending = None
                 continue
 
             # Render
@@ -143,17 +148,17 @@ class Display:
                 except Exception as exc:
                     print(f"[Display] render error: {exc}", flush=True)
 
-            last_drawn  = pending
+            last_drawn = pending
             last_draw_t = now
-            pending     = None
+            pending = None
 
     # ── Internal payload helpers ──────────────────────────────────────────────
 
     def _format_clock_ms(self, ms: int) -> str:
-        ms      = max(0, int(ms or 0))
+        ms = max(0, int(ms or 0))
         total_s = ms // 1000
-        days, rem        = divmod(total_s, 86400)
-        hours, rem       = divmod(rem, 3600)
+        days, rem = divmod(total_s, 86400)
+        hours, rem = divmod(rem, 3600)
         minutes, seconds = divmod(rem, 60)
         if days:
             return f"{days}d {hours:02}h"
@@ -165,8 +170,16 @@ class Display:
         if not self._online_clock:
             return []
         c = self._online_clock
-        wl = "YOU" if c["you_are_white"] else "OPP" if c["you_are_white"] is not None else "W"
-        bl = "OPP" if c["you_are_white"] else "YOU" if c["you_are_white"] is not None else "B"
+        wl = (
+            "YOU"
+            if c["you_are_white"]
+            else "OPP" if c["you_are_white"] is not None else "W"
+        )
+        bl = (
+            "OPP"
+            if c["you_are_white"]
+            else "YOU" if c["you_are_white"] is not None else "B"
+        )
         wa = "*" if c["active_color"] == "white" else " "
         ba = "*" if c["active_color"] == "black" else " "
         return [
@@ -209,11 +222,22 @@ class Display:
 
     def _classify(self, message: str) -> str:
         m = (message or "").lower()
-        if any(k in m for k in ["illegal", "invalid", "game over",
-                                  "promotion", "draw", "shutting down"]):
+        if any(
+            k in m
+            for k in [
+                "illegal",
+                "invalid",
+                "game over",
+                "promotion",
+                "draw",
+                "shutting down",
+            ]
+        ):
             return "critical"
-        if any(k in m for k in ["enter move", "enter to", "confirm",
-                                  "ok to send", "press ok"]):
+        if any(
+            k in m
+            for k in ["enter move", "enter to", "confirm", "ok to send", "press ok"]
+        ):
             return "prompt"
         if any(k in m for k in ["engine thinking", "engine starting", "loading"]):
             return "status"
@@ -242,32 +266,38 @@ class Display:
         """No-op: no subprocess. Display starts in __init__."""
 
     def wait_ready(self, timeout_s: float = 10.0) -> None:
-        """No-op: hardware is ready after __init__."""
+        start = time.time()
+        while not os.path.exists(self.ready_flag):
+            if time.time() - start > timeout_s:
+                break
+            time.sleep(0.05)
 
     # ── Public send API ───────────────────────────────────────────────────────
 
     def send(self, message: str, size: str = "auto", force: bool = False) -> None:
         self._last_message = message
-        size    = self._resolve_size(message, size or "auto")
+        size = self._resolve_size(message, size or "auto")
         self._last_size = size
         payload = self._compose_payload(message, size)
 
         now = time.monotonic()
         cat = self._classify(message)
 
-        if (not force
-                and now < self._lock_until
-                and self._locked_category == "prompt"
-                and cat not in ("prompt", "critical")):
+        if (
+            not force
+            and now < self._lock_until
+            and self._locked_category == "prompt"
+            and cat not in ("prompt", "critical")
+        ):
             return
 
         if cat == "prompt":
-            m    = (message or "").lower()
+            m = (message or "").lower()
             hold = 1.15 if "confirm" in m or "ok to send" in m else 0.65
-            self._lock_until      = now + hold
+            self._lock_until = now + hold
             self._locked_category = "prompt"
         elif cat == "critical" or force:
-            self._lock_until      = 0.0
+            self._lock_until = 0.0
             self._locked_category = None
 
         if payload == self._last_payload:
@@ -280,8 +310,9 @@ class Display:
         lines = [data] + [ln for ln in caption_lines if ln]
         self.send("\n".join(lines), size="qr")
 
-    def set_online_clock(self, *, white_ms: int, black_ms: int,
-                         you_are_white=None, active_color=None) -> None:
+    def set_online_clock(
+        self, *, white_ms: int, black_ms: int, you_are_white=None, active_color=None
+    ) -> None:
         active = None
         if active_color in (True, False):
             active = "white" if active_color else "black"
@@ -290,10 +321,10 @@ class Display:
             if low in ("white", "black"):
                 active = low
         state = {
-            "white_ms":     int(max(0, white_ms or 0)),
-            "black_ms":     int(max(0, black_ms or 0)),
+            "white_ms": int(max(0, white_ms or 0)),
+            "black_ms": int(max(0, black_ms or 0)),
             "you_are_white": you_are_white,
-            "active_color":  active,
+            "active_color": active,
         }
         if state == self._online_clock:
             return
@@ -311,22 +342,29 @@ class Display:
         if delay_s > 0:
             time.sleep(delay_s)
 
-    def show_panel(self, *body_lines: str, footer: str = "",
-                   force: bool = False, size: str = "menu") -> None:
+    def show_panel(
+        self,
+        *body_lines: str,
+        footer: str = "",
+        force: bool = False,
+        size: str = "menu",
+    ) -> None:
         lines = [ln for ln in body_lines if ln is not None]
         if footer:
             lines.append(footer)
         self.send("\n".join(lines), size=size if footer else "auto", force=force)
 
-    def show_setup_panel(self, header: str, *body_lines: str,
-                         footer: str = "", force: bool = False) -> None:
+    def show_setup_panel(
+        self, header: str, *body_lines: str, footer: str = "", force: bool = False
+    ) -> None:
         lines = [header] + [ln for ln in body_lines if ln is not None]
         if footer:
             lines.append(footer)
         self.send("\n".join(lines), size="setup", force=force)
 
-    def show_header_panel(self, header: str, *body_lines: str,
-                          footer: str = "", force: bool = False) -> None:
+    def show_header_panel(
+        self, header: str, *body_lines: str, footer: str = "", force: bool = False
+    ) -> None:
         lines = [header] + [ln for ln in body_lines if ln is not None]
         if footer:
             lines.append(footer)
@@ -353,8 +391,9 @@ class Display:
         try:
             frm, to = uci[:2], uci[2:4]
             if len(uci) >= 4:
-                self.show_header_panel("Hint received", f"{frm} → {to}",
-                                       footer="OK=Clear")
+                self.show_header_panel(
+                    "Hint received", f"{frm} → {to}", footer="OK=Clear"
+                )
             else:
                 self.show_header_panel("Hint received", uci, footer="OK=Clear")
         except Exception:
