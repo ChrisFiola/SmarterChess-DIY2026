@@ -41,6 +41,9 @@ def main():
     cfg = GameConfig()
     state = GameState(board=chess.Board(), mode="stockfish")
     link.set_touch_queue(display.touch_queue)
+    # Signal Pico Pi is ready — Pico _run_startup_sequence() waits for
+    # "heyArduinoChooseMode" before exiting its loading screen.
+    link.send_to_board("ChooseMode")
 
     try:
         while True:

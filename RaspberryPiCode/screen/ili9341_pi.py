@@ -31,7 +31,7 @@ _INIT_SEQ = (
     (0xC1, b"\x10"),
     (0xC5, b"\x3e\x28"),
     (0xC7, b"\x86"),
-    (0x36, b"\xe8"),           # MADCTL: portrait, BGR
+    (0x36, b"\xe0"),           # MADCTL: portrait, RGB (bit3=BGR cleared)
     (0x3A, b"\x55"),           # 16-bit colour
     (0xB1, b"\x00\x18"),
     (0xB6, b"\x08\x82\x27"),
@@ -66,6 +66,10 @@ class ILI9341:
         self._spi.max_speed_hz = spi_speed
         self._spi.mode = 0
 
+        # writebytes2 accepts bytes-like objects; xfer2 needs a list but always works
+        if not hasattr(self._spi, 'writebytes2'):
+            self._spi.writebytes2 = lambda d: self._spi.xfer2(list(d))
+
         self._hard_reset()
         for cmd, data in _INIT_SEQ:
             self._cmd(cmd)
@@ -85,11 +89,13 @@ class ILI9341:
         GPIO.output(self._dc, GPIO.LOW)
         self._spi.writebytes([cmd])
 
-    def _write_data(self, data: bytes) -> None:
+    def _write_data(self, data) -> None:
         GPIO.output(self._dc, GPIO.HIGH)
-        mv = memoryview(data) if not isinstance(data, (memoryview, bytearray)) else data
-        for off in range(0, len(mv), _SPI_CHUNK):
-            self._spi.writebytes2(mv[off: off + _SPI_CHUNK])
+        # Keep as bytes/bytearray — avoid memoryview (silently fails on some spidev builds)
+        if not isinstance(data, (bytes, bytearray)):
+            data = bytes(data)
+        for off in range(0, len(data), _SPI_CHUNK):
+            self._spi.writebytes2(data[off: off + _SPI_CHUNK])
 
     def _set_window(self, x0: int, y0: int, x1: int, y1: int) -> None:
         self._cmd(0x2A)
@@ -109,7 +115,7 @@ class ILI9341:
     def clear(self) -> None:
         self._set_window(0, 0, self.width - 1, self.height - 1)
         GPIO.output(self._dc, GPIO.HIGH)
-        row = b"\x00\x00" * self.width
+        row = bytearray(self.width * 2)   # all zeros = black
         for _ in range(self.height):
             self._spi.writebytes2(row)
 
@@ -124,20 +130,20 @@ class ILI9341:
             g = arr[:, :, 1].astype(np.uint16)
             b = arr[:, :, 2].astype(np.uint16)
             rgb565 = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
-            data = rgb565.byteswap().tobytes()
+            # byteswap: convert little-endian uint16 to big-endian SPI bytes
+            data = bytearray(rgb565.byteswap().tobytes())
         else:
-            buf = bytearray(self.width * self.height * 2)
+            data = bytearray(self.width * self.height * 2)
             i = 0
             for r, g, b in img.getdata():
                 c = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
-                buf[i]     = c >> 8
-                buf[i + 1] = c & 0xFF
+                data[i]     = c >> 8
+                data[i + 1] = c & 0xFF
                 i += 2
-            data = bytes(buf)
 
-        mv = memoryview(data)
-        for off in range(0, len(mv), _SPI_CHUNK):
-            self._spi.writebytes2(mv[off: off + _SPI_CHUNK])
+        # Send as bytearray slices — most compatible across spidev versions
+        for off in range(0, len(data), _SPI_CHUNK):
+            self._spi.writebytes2(data[off: off + _SPI_CHUNK])
 
     def close(self) -> None:
         try:
