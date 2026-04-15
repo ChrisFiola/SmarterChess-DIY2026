@@ -13,7 +13,6 @@ No display_server subprocess required.
 import queue
 import threading
 import time
-import os
 
 # ── Hardware drivers (only imported when running on Pi) ───────────────────────
 try:
@@ -266,11 +265,7 @@ class Display:
         """No-op: no subprocess. Display starts in __init__."""
 
     def wait_ready(self, timeout_s: float = 10.0) -> None:
-        start = time.time()
-        while not os.path.exists(self.ready_flag):
-            if time.time() - start > timeout_s:
-                break
-            time.sleep(0.05)
+        """No-op: hardware is ready after __init__."""
 
     # ── Public send API ───────────────────────────────────────────────────────
 
