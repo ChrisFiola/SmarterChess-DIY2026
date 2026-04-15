@@ -123,14 +123,6 @@ class Display:
                 except Exception:
                     pass
 
-            # Clear stale touch events when a new frame is about to render.
-            if pending is not None and pending != last_drawn:
-                try:
-                    while True:
-                        self.touch_queue.get_nowait()
-                except queue.Empty:
-                    pass
-
             # Nothing to draw yet
             if pending is None:
                 time.sleep(0.01)

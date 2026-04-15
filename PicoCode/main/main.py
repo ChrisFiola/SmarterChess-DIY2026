@@ -1515,6 +1515,29 @@ def _handle_menu_paged(_msg, *, ok_color=None):
                 cp.reset_edges()
                 link.send("menu_ready")
                 continue
+            if msg.startswith("heyArduinoMenuSelect_"):
+                sel = msg.split("_", 1)[1]
+                b = None
+                if sel == "ok":
+                    b = Config.Buttons.OK_INDEX + 1
+                elif sel == "hint":
+                    b = Config.Buttons.HINT_INDEX + 1
+                else:
+                    try:
+                        b = int(sel)
+                    except Exception:
+                        b = None
+                if b is not None:
+                    if b == (Config.Buttons.OK_INDEX + 1):
+                        while cp.BTN_OK.value() == 0:
+                            time.sleep_ms(Config.Timing.POLL_MS)
+                        cp.reset_edges()
+                        break
+                    if b == (Config.Buttons.HINT_INDEX + 1):
+                        break
+                    if 1 <= b <= 4:
+                        break
+                continue
         b = _menu_touch_button(allow_select, has_next, has_back)
         if not b:
             b = cp.detect_press_allowed()

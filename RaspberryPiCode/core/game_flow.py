@@ -1822,14 +1822,20 @@ def _paged_menu(
 
         last_sync = time.monotonic()
         if m in OK_MSGS | NEW_GAME_MSGS:
+            if link.last_input_was_touch() and can_back:
+                link.send_to_board("MenuSelect_ok")
             if can_back:
                 return None
             continue
         if m in HINT_MSGS:
+            if link.last_input_was_touch():
+                link.send_to_board("MenuSelect_hint")
             page = (page + 1) % pages
             _sync_menu()
             continue
         if m in ("1", "2", "3", "4"):
+            if link.last_input_was_touch():
+                link.send_to_board(f"MenuSelect_{m}")
             idx = int(m) - 1
             if idx < len(chunk) and chunk[idx]:
                 return chunk[idx]

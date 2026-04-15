@@ -38,6 +38,7 @@ class BoardLink:
         self.ser.reset_output_buffer()
         self.ser.flush()
         self._touch_queue: Optional[_queue.Queue] = None
+        self._last_input_is_touch = False
 
     def set_touch_queue(self, q: _queue.Queue) -> None:
         """Attach the Display.touch_queue so touch events merge with UART reads."""
@@ -55,6 +56,7 @@ class BoardLink:
             self.ser.reset_input_buffer()
         except Exception:
             pass
+        self._last_input_is_touch = False
         # Also drain touch queue
         if self._touch_queue:
             try:
@@ -99,11 +101,18 @@ class BoardLink:
     def _poll_touch(self) -> Optional[str]:
         """Return one touch event from the queue, or None."""
         if not self._touch_queue:
+            self._last_input_is_touch = False
             return None
         try:
-            return self._touch_queue.get_nowait()
+            touch = self._touch_queue.get_nowait()
+            self._last_input_is_touch = True
+            return touch
         except _queue.Empty:
+            self._last_input_is_touch = False
             return None
+
+    def last_input_was_touch(self) -> bool:
+        return self._last_input_is_touch
 
     # ── Reads ─────────────────────────────────────────────────────────────────
 
