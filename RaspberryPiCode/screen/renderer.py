@@ -95,6 +95,12 @@ class Renderer:
         # Online clock state
         self._clock_lines = None
 
+        # Touch zone tracking — updated by draw methods each frame
+        self._rendered_hdr_bot  = 56
+        self._rendered_nav_top  = 270
+        self._rendered_act_top  = 220
+        self._rendered_item_rects: list = []
+
     # ══════════════════════════════════════════════════════════════════════════
     # Public API
     # ══════════════════════════════════════════════════════════════════════════
@@ -140,10 +146,11 @@ class Renderer:
 
     def _compute_zones(self, size_key: str, lines: list) -> dict:
         W, H = self.W, self.H
-        # Layout constants (portrait 240×320, matches tft_ili9341.py zones)
-        NAV_TOP = 270
-        ACT_TOP = 220
-        HDR_BOT = 56    # header bottom (after divider)
+        # Use positions tracked during last render; fall back to estimates
+        HDR_BOT    = self._rendered_hdr_bot
+        NAV_TOP    = self._rendered_nav_top
+        ACT_TOP    = self._rendered_act_top
+        item_rects = self._rendered_item_rects
 
         zones = {}
         sk = size_key.lower()
@@ -157,25 +164,29 @@ class Renderer:
         if sk in ("header", "auto", "setup") or sk.startswith("header:"):
             zones["game_confirm"] = (0, ACT_TOP, W - 1, NAV_TOP - 1)
 
-        # Item zones for menu / menuheader layouts
+        # Item zones for menu / annotation layouts
         if sk.startswith(("menu", "annotation")):
-            # body = lines[1:] minus footer
-            body = []
-            if lines:
-                rest = lines[1:]
-                if rest and _is_footer_hint(rest[-1]):
-                    body = rest[:-1]
-                else:
-                    body = rest
-            body = [l for l in body if l]
-            n = min(len(body), 4)
-            if n:
-                content_h = ACT_TOP - HDR_BOT
-                item_h    = content_h // n
-                for i in range(n):
-                    y0 = HDR_BOT + i * item_h
-                    y1 = y0 + item_h - 1
-                    zones[f"item_{i + 1}"] = (0, y0, W - 1, y1)
+            if item_rects:
+                for i, rect in enumerate(item_rects[:4]):
+                    zones[f"item_{i + 1}"] = rect
+            else:
+                # Fallback: divide content area evenly
+                body = []
+                if lines:
+                    rest = lines[1:]
+                    if rest and _is_footer_hint(rest[-1]):
+                        body = rest[:-1]
+                    else:
+                        body = rest
+                body = [l for l in body if l]
+                n = min(len(body), 4)
+                if n:
+                    content_h = NAV_TOP - HDR_BOT
+                    item_h    = content_h // n
+                    for i in range(n):
+                        y0 = HDR_BOT + i * item_h
+                        y1 = y0 + item_h - 1
+                        zones[f"item_{i + 1}"] = (0, y0, W - 1, y1)
 
         return zones
 
@@ -466,19 +477,28 @@ class Renderer:
 
         left_pad = 8
         y = header_reserved + max(vpad, (avail_h - total_h) // 2)
+        self._rendered_item_rects = []
         for ln, h in zip(display_lines, heights):
+            item_y0 = int(y)
             w = self._measure(item_size, ln, item_font, font_key=font_key)[0]
             x = left_pad if align == "left" else (W - w) // 2
             self._draw.text((x, y), ln, font=item_font, fill="WHITE")
             y += h + spacing
+            self._rendered_item_rects.append((0, item_y0, W - 1, int(y) - spacing - 1))
+        self._rendered_hdr_bot = header_reserved
 
         if footer_parts:
             footer_y = H - footer_h - 4
+            self._rendered_nav_top = max(footer_y - 8, 260)
+            self._rendered_act_top = self._rendered_nav_top
             self._draw.line((10, footer_y - 5, W - 10, footer_y - 5),
                             fill="WHITE", width=1)
             self._draw_footer_aligned(footer_parts, footer_font,
                                       self.FOOTER_SIZE, footer_y,
                                       font_key=footer_font_key)
+        else:
+            self._rendered_nav_top = H - 50
+            self._rendered_act_top = H - 50
 
     def _draw_header_panel(self, lines, badge: str = ""):
         W, H = self.W, self.H
@@ -529,6 +549,12 @@ class Renderer:
         avail_h   = H - avail_top - footer_reserved - 8
         spacing   = 5
         min_size, max_size = 12, 24
+
+        # Track for touch zones
+        self._rendered_hdr_bot      = avail_top
+        self._rendered_nav_top      = max(footer_y - 8, divider_y + 40)
+        self._rendered_act_top      = max(avail_top + 20, self._rendered_nav_top - 60)
+        self._rendered_item_rects   = []
 
         body_size = self._pick_header_body_size(
             body_lines, avail_h=avail_h, max_w=W - 16,

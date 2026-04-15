@@ -31,19 +31,19 @@ from screen.display import Display
 
 def main():
     display = Display()
+    link = BoardLink()
     # Route touch events (ILI9341/XPT2046) into the UART read path so all
     # game-flow code sees touch the same way it saw Pico button presses.
+    link.set_touch_queue(display.touch_queue)
+    # Unblock Pico immediately — _run_startup_sequence() waits for
+    # "heyArduinoChooseMode" before exiting its loading screen.
+    link.send_to_board("ChooseMode")
     display.show_header_panel("SMARTCHESS")
 
     ensure_wifi(display)
-    link = BoardLink()
     ctx = EngineContext()
     cfg = GameConfig()
     state = GameState(board=chess.Board(), mode="stockfish")
-    link.set_touch_queue(display.touch_queue)
-    # Signal Pico Pi is ready — Pico _run_startup_sequence() waits for
-    # "heyArduinoChooseMode" before exiting its loading screen.
-    link.send_to_board("ChooseMode")
 
     try:
         while True:
