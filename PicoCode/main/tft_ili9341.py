@@ -153,13 +153,13 @@ class ILI9341:
         self._set_window(0, 0, W - 1, H - 1)
         hi, lo = color >> 8, color & 0xFF
         BATCH = 8
-        chunk = bytes([hi, lo] * (W * BATCH))
+        chunk = bytes([hi, lo]) * (W * BATCH)   # bytes × int — no intermediate list
         self._dc.value(1)
         self._cs.value(0)
         for _ in range(H // BATCH):
             self._spi.write(chunk)
         if H % BATCH:
-            self._spi.write(bytes([hi, lo] * (W * (H % BATCH))))
+            self._spi.write(bytes([hi, lo]) * (W * (H % BATCH)))
         self._cs.value(1)
 
     def fill_rect(self, x, y, w, h, color):
@@ -167,7 +167,7 @@ class ILI9341:
             return
         self._set_window(x, y, x + w - 1, y + h - 1)
         hi, lo = color >> 8, color & 0xFF
-        row = bytes([hi, lo] * w)
+        row = bytes([hi, lo]) * w              # bytes × int — no intermediate list
         self._dc.value(1)
         self._cs.value(0)
         # Batch 8 rows per write — reduces Python→C call overhead ~8×
