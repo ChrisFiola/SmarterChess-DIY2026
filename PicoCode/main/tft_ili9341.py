@@ -152,11 +152,14 @@ class ILI9341:
     def fill(self, color):
         self._set_window(0, 0, W - 1, H - 1)
         hi, lo = color >> 8, color & 0xFF
-        chunk = bytes([hi, lo] * W)
+        BATCH = 8
+        chunk = bytes([hi, lo] * (W * BATCH))
         self._dc.value(1)
         self._cs.value(0)
-        for _ in range(H):
+        for _ in range(H // BATCH):
             self._spi.write(chunk)
+        if H % BATCH:
+            self._spi.write(bytes([hi, lo] * (W * (H % BATCH))))
         self._cs.value(1)
 
     def fill_rect(self, x, y, w, h, color):
