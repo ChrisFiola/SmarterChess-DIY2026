@@ -369,28 +369,51 @@ class Renderer:
         parts = re.split(r"\s{2,}", raw)
         return [self._normalize_footer_text(p) for p in parts if p.strip()][:3]
 
+    @staticmethod
+    def _strip_btn_label(text: str) -> str:
+        """'OK=Back' → 'Back', 'Hint=Next' → 'Next', 'Back' → 'Back'."""
+        txt = (text or "").strip()
+        if "=" in txt:
+            txt = txt.split("=", 1)[1].strip()
+        return txt
+
+    def _draw_btn_box(self, x0, y0, x1, y1, label, font, size, font_key="default"):
+        try:
+            self._draw.rounded_rectangle([x0, y0, x1, y1],
+                                         radius=4, outline="WHITE", width=1)
+        except AttributeError:
+            self._draw.rectangle([x0, y0, x1, y1], outline="WHITE", width=1)
+        if label:
+            w, h = self._measure(size, label, font, font_key=font_key)
+            self._draw.text((x0 + (x1 - x0 - w) // 2, y0 + (y1 - y0 - h) // 2),
+                            label, font=font, fill="WHITE")
+
     def _draw_footer_aligned(self, parts, font, size, footer_y, *,
                               pad=12, font_key="default"):
         if not parts:
             return
-        W = self.W
-        if len(parts) == 1:
-            w = self._measure(size, parts[0], font, font_key=font_key)[0]
-            self._draw.text(((W - w) // 2, footer_y), parts[0],
-                            font=font, fill="WHITE")
-        elif len(parts) == 2:
-            rw = self._measure(size, parts[1], font, font_key=font_key)[0]
-            self._draw.text((pad, footer_y), parts[0], font=font, fill="WHITE")
-            self._draw.text((W - rw - pad, footer_y), parts[1],
-                            font=font, fill="WHITE")
+        W, H = self.W, self.H
+        labels = [self._strip_btn_label(p) for p in parts]
+        btn_y0 = footer_y - 3
+        btn_y1 = H - 3
+
+        if len(labels) == 1:
+            self._draw_btn_box(8, btn_y0, W - 8, btn_y1,
+                               labels[0], font, size, font_key)
+        elif len(labels) == 2:
+            mid = W // 2
+            self._draw_btn_box(8,       btn_y0, mid - 3,  btn_y1,
+                               labels[0], font, size, font_key)
+            self._draw_btn_box(mid + 3, btn_y0, W - 8,    btn_y1,
+                               labels[1], font, size, font_key)
         else:
-            cw = self._measure(size, parts[1], font, font_key=font_key)[0]
-            rw = self._measure(size, parts[2], font, font_key=font_key)[0]
-            self._draw.text((pad, footer_y), parts[0], font=font, fill="WHITE")
-            self._draw.text(((W - cw) // 2, footer_y), parts[1],
-                            font=font, fill="WHITE")
-            self._draw.text((W - rw - pad, footer_y), parts[2],
-                            font=font, fill="WHITE")
+            third = W // 3
+            self._draw_btn_box(4,           btn_y0, third - 2,     btn_y1,
+                               labels[0], font, size, font_key)
+            self._draw_btn_box(third + 2,   btn_y0, 2*third - 2,   btn_y1,
+                               labels[1], font, size, font_key)
+            self._draw_btn_box(2*third + 2, btn_y0, W - 4,         btn_y1,
+                               labels[2], font, size, font_key)
 
     # ══════════════════════════════════════════════════════════════════════════
     # Draw functions (ported from display_server.py)
