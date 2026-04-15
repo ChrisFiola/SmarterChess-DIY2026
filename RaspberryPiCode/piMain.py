@@ -41,7 +41,6 @@ def main():
     cfg = GameConfig()
     state = GameState(board=chess.Board(), mode="stockfish")
     link.set_touch_queue(display.touch_queue)
-    link.send_to_board("heyArduinoReady")
 
     try:
         while True:
