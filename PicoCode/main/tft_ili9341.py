@@ -167,8 +167,14 @@ class ILI9341:
         row = bytes([hi, lo] * w)
         self._dc.value(1)
         self._cs.value(0)
-        for _ in range(h):
-            self._spi.write(row)
+        # Batch 8 rows per write — reduces Python→C call overhead ~8×
+        BATCH = 8
+        chunk = row * BATCH
+        full, rem = divmod(h, BATCH)
+        for _ in range(full):
+            self._spi.write(chunk)
+        if rem:
+            self._spi.write(row * rem)
         self._cs.value(1)
 
     def hline(self, x, y, length, color):
@@ -569,6 +575,45 @@ class TFTDisplay:
         self._touch_zones = {"game_confirm": (0, self.BODY_TOP, W - 1, H - 1)}
         self._last_payload = None  # force full re-render on next DISP message
 
+    def show_move_entry(self, from_sq="", to_sq=""):
+        """Render real-time move entry feedback as buttons are pressed.
+        from_sq: partial/full source square ("", "e", or "e2")
+        to_sq:   partial/full destination square ("", "e", or "e4")
+        Safe to call while suppress_tft is True — renders directly."""
+        lcd = self._lcd
+
+        frm = (from_sq or "").upper()
+        if len(frm) == 0:
+            frm_disp = "__"
+        elif len(frm) == 1:
+            frm_disp = frm + "_"
+        else:
+            frm_disp = frm[:2]
+
+        to = (to_sq or "").upper()
+        if len(to) == 0:
+            to_disp = "__"
+        elif len(to) == 1:
+            to_disp = to + "_"
+        else:
+            to_disp = to[:2]
+
+        move_str = frm_disp + " -> " + to_disp
+
+        lcd.fill_rect(0, self.HDR_TOP, W, self.HDR_BOT, ACCENT_DIM)
+        lcd.text_centered((self.HDR_BOT - _F_MD.height()) // 2,
+                          "Enter Move", DIM_WHITE, ACCENT_DIM, _F_MD)
+
+        lcd.fill_rect(0, self.BODY_TOP, W, self.NAV_TOP - self.BODY_TOP, BLACK)
+        body_mid = self.BODY_TOP + (self.NAV_TOP - self.BODY_TOP - _F_LG.height()) // 2
+        lcd.text_centered(body_mid, move_str, WHITE, BLACK, _F_LG)
+
+        lcd.fill_rect(0, self.NAV_TOP, W, H - self.NAV_TOP, DARK_GRAY)
+        lcd.hline(0, self.NAV_TOP, W, GRAY)
+
+        self._touch_zones = {}
+        self._last_payload = None  # force full re-render on next DISP message
+
     def show_splash(self):
         lcd = self._lcd
         lcd.fill(BLACK)
@@ -663,14 +708,16 @@ class TFTDisplay:
 
         for i, item in enumerate(items[:5]):
             y0 = i * row_h
-            y1 = y0 + row_h
+            # Last item stretches to NAV_TOP to fill any remaining pixels
+            y1 = self.NAV_TOP if i == n - 1 else y0 + row_h
+            actual_h = y1 - y0
 
             if i > 0:
                 lcd.hline(0, y0, W, ITEM_SEP)
-            lcd.fill_rect(0, y0 + 2, 4, row_h - 4, ACCENT)
+            lcd.fill_rect(0, y0 + 2, 4, actual_h - 4, ACCENT)
 
             # Item text: 18pt bold, vertically centred in row
-            text_y = y0 + (row_h - _F_MD.height()) // 2
+            text_y = y0 + (actual_h - _F_MD.height()) // 2
             t = _trunc_px(item, W - 16, _F_MD)
             lcd.text_centered(text_y, t, WHITE, BLACK, _F_MD)
 
@@ -708,37 +755,40 @@ class TFTDisplay:
             lcd.text_right(hdr_y + (hdr_h - _F_SM.height()) // 2,
                            _trunc_px(badge, 60, _F_SM), GRAY, ACCENT_DIM, _F_SM)
 
-        # ── Content (body) — clear zone before drawing ─────────────────────────
-        body_top    = self.BODY_TOP + 8
-        body_bottom = self.BODY_BOT - 4
-        lcd.fill_rect(0, self.BODY_TOP, W, self.BODY_BOT - self.BODY_TOP, BLACK)
+        is_gameplay = self._is_gameplay(header, body_lines, footer_raw)
 
         if is_menu_header:
-            # Items as tappable rows
-            self._render_items_in_zone(body_lines, body_top, body_bottom)
+            # Items fill all space from header bottom to nav bar — no action zone gap
+            menu_top    = self.HDR_BOT
+            menu_bottom = self.NAV_TOP
+            lcd.fill_rect(0, menu_top, W, menu_bottom - menu_top, BLACK)
+            self._render_items_in_zone(body_lines, menu_top, menu_bottom)
         else:
-            # Plain body text, auto-scaled
+            # ── Content (body) ────────────────────────────────────────────────
+            body_top    = self.BODY_TOP + 8
+            body_bottom = self.BODY_BOT - 4
+            lcd.fill_rect(0, self.BODY_TOP, W, self.BODY_BOT - self.BODY_TOP, BLACK)
             self._render_body_text(body_lines, body_top, body_bottom)
-
-        # ── Action zone ───────────────────────────────────────────────────────
-        is_gameplay = self._is_gameplay(header, body_lines, footer_raw)
-        self._render_action_zone(foot_parts, is_gameplay, footer_raw)
+            # ── Action zone ───────────────────────────────────────────────────
+            self._render_action_zone(foot_parts, is_gameplay, footer_raw)
 
         # ── Nav bar ───────────────────────────────────────────────────────────
-        if is_gameplay:
+        if not is_menu_header and is_gameplay:
             self._draw_nav_bar("< Menu", "Hint >")
             self._touch_zones["game_menu"] = (0, self.NAV_TOP, W // 2 - 1, H - 1)
             self._touch_zones["game_hint"] = (W // 2, self.NAV_TOP, W - 1, H - 1)
         else:
             nav_left, nav_right = _parse_nav_from_footer(foot_parts)
-            if nav_left or nav_right or is_menu_header:
-                if not nav_left and is_menu_header:
-                    nav_left = "< Back"
+            if nav_left or nav_right:
                 self._draw_nav_bar(nav_left, nav_right)
                 if nav_left:
                     self._touch_zones["btn_ok"] = (0, self.NAV_TOP, W // 2 - 1, H - 1)
                 if nav_right:
                     self._touch_zones["btn_hint"] = (W // 2, self.NAV_TOP, W - 1, H - 1)
+            else:
+                # No buttons — draw empty nav bar background
+                lcd.fill_rect(0, self.NAV_TOP, W, H - self.NAV_TOP, DARK_GRAY)
+                lcd.hline(0, self.NAV_TOP, W, GRAY)
 
     def _render_annotation(self, lines, page=""):
         """
@@ -892,7 +942,8 @@ class TFTDisplay:
     # ═══════════════════════════════════════════════════════════════════════
 
     def _render_items_in_zone(self, items, top, bottom):
-        """Render a list of items as tappable rows within [top, bottom]."""
+        """Render a list of items as tappable rows within [top, bottom].
+        The last item extends to *bottom* so no gap remains before the nav bar."""
         lcd = self._lcd
         items = [i for i in items if i]
         n = max(len(items), 1)
@@ -900,13 +951,16 @@ class TFTDisplay:
         row_h  = zone_h // n
 
         for i, item in enumerate(items[:5]):
-            y0     = top + i * row_h
-            text_y = y0 + (row_h - _F_MD.height()) // 2
+            y0 = top + i * row_h
+            # Last item stretches to fill any remaining pixels
+            y1 = bottom if i == n - 1 else y0 + row_h
+            actual_h = y1 - y0
+            text_y = y0 + (actual_h - _F_MD.height()) // 2
             if i > 0:
                 lcd.hline(0, y0, W, ITEM_SEP)
-            lcd.fill_rect(0, y0 + 2, 4, row_h - 4, ACCENT)
+            lcd.fill_rect(0, y0 + 2, 4, actual_h - 4, ACCENT)
             lcd.text_centered(text_y, _trunc_px(item, W - 16, _F_MD), WHITE, BLACK, _F_MD)
-            self._touch_zones["item_%d" % (i + 1)] = (0, y0 + 1, W - 1, y0 + row_h - 1)
+            self._touch_zones["item_%d" % (i + 1)] = (0, y0 + 1, W - 1, y1 - 1)
 
     def _render_body_text(self, body_lines, top, bottom):
         """Render wrapped body text centered in the given vertical zone."""

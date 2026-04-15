@@ -491,6 +491,7 @@ def _select_from_square(seed_btn=None, preset_col=None):
     if preset_col is not None:
         col = preset_col
         screen.typing_from(col)
+        tft.show_move_entry(col)
     while col is None:
         if st.game_state != Game.RUNNING:
             return None
@@ -506,6 +507,7 @@ def _select_from_square(seed_btn=None, preset_col=None):
         if not cp.is_non_coord_button(b):
             col = chr(ord("a") + b - 1)
             screen.typing_from(col)
+            tft.show_move_entry(col)
     while True:
         if st.game_state != Game.RUNNING:
             return None
@@ -513,6 +515,7 @@ def _select_from_square(seed_btn=None, preset_col=None):
             _shutdown_pico()
         if cp.ok_long_hold_fired():
             screen.typing_from("")
+            tft.show_move_entry()
             board.markings()
             while cp.BTN_OK.value() == 0:
                 time.sleep_ms(Config.Timing.POLL_MS)
@@ -528,6 +531,7 @@ def _select_from_square(seed_btn=None, preset_col=None):
         if not cp.is_non_coord_button(b):
             frm = col + str(b)
             screen.typing_from(frm)
+            tft.show_move_entry(frm)
             board.preview_from(frm)
             return frm
 
@@ -547,6 +551,7 @@ def _select_to_square(move_from, preset_col=None):
     if preset_col and len(preset_col) == 1 and "a" <= preset_col <= "h":
         col = preset_col
         screen.typing_to(move_from, col)
+        tft.show_move_entry(move_from, col)
     while col is None:
         if st.game_state != Game.RUNNING:
             return None
@@ -554,6 +559,7 @@ def _select_to_square(move_from, preset_col=None):
             _shutdown_pico()
         if cp.ok_long_hold_fired():
             screen.typing_from(move_from[0])
+            tft.show_move_entry(move_from[0])
             board.markings()
             while cp.BTN_OK.value() == 0:
                 time.sleep_ms(Config.Timing.POLL_MS)
@@ -569,6 +575,7 @@ def _select_to_square(move_from, preset_col=None):
         if not cp.is_non_coord_button(b):
             col = chr(ord("a") + b - 1)
             screen.typing_to(move_from, col)
+            tft.show_move_entry(move_from, col)
     while True:
         if st.game_state != Game.RUNNING:
             return None
@@ -576,6 +583,7 @@ def _select_to_square(move_from, preset_col=None):
             _shutdown_pico()
         if cp.ok_long_hold_fired():
             screen.typing_to(move_from, "")
+            tft.show_move_entry(move_from)
             board.preview_from(move_from)
             while cp.BTN_OK.value() == 0:
                 time.sleep_ms(Config.Timing.POLL_MS)
@@ -593,6 +601,7 @@ def _select_to_square(move_from, preset_col=None):
             uci = move_from + to
             board.preview_trail(uci, cap=_check_if_move_captures(uci))
             screen.typing_to(move_from, to)
+            tft.show_move_entry(move_from, to)
             return to
 
 
@@ -728,6 +737,7 @@ def _retry_to_square(frm, preset_to_col=None):
 def _collect_and_submit_move():
     st.in_input = True
     link.suppress_tft = True   # no DISP renders while entering buttons — eliminates lag
+    tft.show_move_entry()       # blank move entry screen immediately
     try:
         seed = None
         preset_from_col = None
