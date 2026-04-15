@@ -773,7 +773,7 @@ class TFTDisplay:
             lcd.fill_rect(0, self.BODY_TOP, W, self.BODY_BOT - self.BODY_TOP, BLACK)
             self._render_body_text(body_lines, body_top, body_bottom)
             # ── Action zone ───────────────────────────────────────────────────
-            self._render_action_zone(foot_parts, is_gameplay, footer_raw)
+            self._render_action_zone()
 
         # ── Nav bar ───────────────────────────────────────────────────────────
         if not is_menu_header and is_gameplay:
@@ -998,25 +998,14 @@ class TFTDisplay:
             lcd.text_centered(y, _trunc_px(ln, W - 16, font), WHITE, BLACK, font)
             y += line_h
 
-    def _render_action_zone(self, foot_parts, is_gameplay, footer_raw=""):
-        """Draw the action zone (y=220..270) with contextual content."""
+    def _render_action_zone(self):
+        """Draw the action zone (y=220..270).
+        Always empty during normal gameplay — confirm prompt only appears via
+        show_confirm() once a full move (e.g. e2→e4) has been typed."""
         lcd = self._lcd
         y_top = self.ACT_TOP
         lcd.fill_rect(0, y_top, W, self.ACT_BOT - y_top, BLACK)
-
-        if is_gameplay:
-            # Active confirm zone: bright green background, prominent text
-            lcd.fill_rect(0, y_top, W, self.ACT_BOT - y_top, CONFIRM_BG)
-            lcd.hline(0, y_top, W, CONFIRM_FG)
-            lcd.text_centered(y_top + 4,  "TAP TO CONFIRM", CONFIRM_FG, CONFIRM_BG, _F_SM)
-            lcd.text_centered(y_top + 4 + _F_SM.height() + 4,
-                              "YOUR MOVE",      CONFIRM_FG, CONFIRM_BG, _F_MD)
-            self._touch_zones["game_confirm"] = (
-                40, y_top, W - 41, self.ACT_BOT - 1
-            )
-        else:
-            # Thin separator — labels are in the nav bar, no duplication
-            lcd.hline(0, y_top, W, DARK_GRAY)
+        lcd.hline(0, y_top, W, DARK_GRAY)
 
     # ═══════════════════════════════════════════════════════════════════════
     # Nav bar
