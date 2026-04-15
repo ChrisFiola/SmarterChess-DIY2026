@@ -556,26 +556,47 @@ class TFTDisplay:
     def show_confirm(self, move_uci):
         """Render a move-confirmation screen directly on the TFT.
         Bypasses the DISP: pipeline — safe to call while suppress_tft is True.
-        Registers the body+action+nav area as a single 'game_confirm' touch zone."""
+        The entire area between header and footer is the tap zone."""
         lcd = self._lcd
         frm = (move_uci[:2] if len(move_uci) >= 2 else "??").upper()
         to  = (move_uci[2:4] if len(move_uci) >= 4 else "??").upper()
         move_str = frm + " -> " + to
 
+        # Header bar
         lcd.fill_rect(0, self.HDR_TOP, W, self.HDR_BOT, ACCENT_DIM)
         lcd.text_centered((self.HDR_BOT - _F_MD.height()) // 2,
                           "Confirm move", DIM_WHITE, ACCENT_DIM, _F_MD)
 
-        lcd.fill_rect(0, self.BODY_TOP, W, self.BODY_BOT - self.BODY_TOP, BLACK)
-        body_mid = self.BODY_TOP + (self.BODY_BOT - self.BODY_TOP - _F_LG.height()) // 2
-        lcd.text_centered(body_mid, move_str, WHITE, BLACK, _F_LG)
+        # Body: HDR_BOT(48) to NAV_TOP(270) = 222px, all black
+        zone_top = self.HDR_BOT
+        zone_bot = self.NAV_TOP
+        zone_h   = zone_bot - zone_top
+        lcd.fill_rect(0, zone_top, W, zone_h, BLACK)
 
-        lcd.fill_rect(0, self.BODY_BOT, W, H - self.BODY_BOT, CONFIRM_BG)
-        lcd.hline(0, self.BODY_BOT, W, CONFIRM_FG)
-        tap_y = self.BODY_BOT + (H - self.BODY_BOT - _F_MD.height()) // 2
-        lcd.text_centered(tap_y, "Tap to confirm", CONFIRM_FG, CONFIRM_BG, _F_MD)
+        # Lay out: king glyph (32×32) + move text (LG) + tap text (MD)
+        GLYPH_SCALE = 4          # 8×8 bitmap × 4 = 32×32 px
+        GLYPH_PX    = 8 * GLYPH_SCALE
+        GAP         = 14
+        content_h   = GLYPH_PX + GAP + _F_LG.height() + GAP + _F_MD.height()
+        y = zone_top + (zone_h - content_h) // 2
 
-        self._touch_zones = {"game_confirm": (0, self.BODY_TOP, W - 1, H - 1)}
+        # King glyph centered
+        glyph_x = (W - GLYPH_PX) // 2
+        self._blit_piece(glyph_x, y, 1, DIM_WHITE, BLACK, scale=GLYPH_SCALE)
+        y += GLYPH_PX + GAP
+
+        # Move text
+        lcd.text_centered(y, move_str, WHITE, BLACK, _F_LG)
+        y += _F_LG.height() + GAP
+
+        # Tap instruction
+        lcd.text_centered(y, "Tap to confirm", DIM_WHITE, BLACK, _F_MD)
+
+        # Nav bar
+        lcd.fill_rect(0, self.NAV_TOP, W, H - self.NAV_TOP, DARK_GRAY)
+        lcd.hline(0, self.NAV_TOP, W, GRAY)
+
+        self._touch_zones = {"game_confirm": (0, zone_top, W - 1, zone_bot - 1)}
         self._last_payload = None  # force full re-render on next DISP message
 
     def show_move_entry(self, from_sq="", to_sq=""):
