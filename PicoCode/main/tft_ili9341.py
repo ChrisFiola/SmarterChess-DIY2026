@@ -582,7 +582,7 @@ class TFTDisplay:
 
         # King glyph centered
         glyph_x = (W - GLYPH_PX) // 2
-        self._blit_piece(glyph_x, y, 1, DIM_WHITE, BLACK, scale=GLYPH_SCALE)
+        lcd._blit_piece(glyph_x, y, 1, DIM_WHITE, BLACK, scale=GLYPH_SCALE)
         y += GLYPH_PX + GAP
 
         # Move text
