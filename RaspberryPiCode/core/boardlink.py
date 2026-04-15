@@ -23,12 +23,14 @@ import serial
 
 SERIAL_PORT: str = "/dev/serial0"
 BAUD: int = 115200
-SERIAL_TIMEOUT: float = 0.05   # short timeout so touch queue is polled regularly
+SERIAL_TIMEOUT: float = 0.05  # short timeout so touch queue is polled regularly
 
 
 class BoardLink:
     def __init__(
-        self, port: str = SERIAL_PORT, baud: int = BAUD,
+        self,
+        port: str = SERIAL_PORT,
+        baud: int = BAUD,
         timeout: float = SERIAL_TIMEOUT,
     ):
         self.ser = serial.Serial(port, baud, timeout=timeout)
@@ -128,7 +130,7 @@ class BoardLink:
         touch events are still delivered while avoiding stale touch hijacks.
         Returns the payload string, 'shutdown', or None on timeout.
         """
-        _MAX_ITERS = 40   # 40 × 50 ms = 2 s total timeout
+        _MAX_ITERS = 40  # 40 × 50 ms = 2 s total timeout
 
         for _ in range(_MAX_ITERS):
             # UART first so board input is not hijacked by stale touch events.
