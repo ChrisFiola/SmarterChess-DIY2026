@@ -18,6 +18,8 @@ Public methods:
   set_touch_queue(q)         — attach Display.touch_queue
 """
 import queue as _queue
+import threading
+import time
 from typing import Optional
 import serial
 
@@ -38,13 +40,51 @@ class BoardLink:
         self.ser.reset_output_buffer()
         self.ser.flush()
         self._touch_queue: Optional[_queue.Queue] = None
+        self._touch_local_queue: _queue.Queue = _queue.Queue(maxsize=64)
         self._last_input_is_touch = False
+        self._touch_thread: Optional[threading.Thread] = None
+        self._touch_stop = threading.Event()
 
     def set_touch_queue(self, q: _queue.Queue) -> None:
         """Attach the Display.touch_queue so touch events merge with UART reads."""
         self._touch_queue = q
+        if self._touch_thread is None or not self._touch_thread.is_alive():
+            self._touch_stop.clear()
+            self._touch_thread = threading.Thread(
+                target=self._touch_relay_loop,
+                daemon=True,
+            )
+            self._touch_thread.start()
+
+    def _touch_relay_loop(self) -> None:
+        """Continuously relay touch events to Pico and mirror them for Pi readers."""
+        while not self._touch_stop.is_set():
+            if not self._touch_queue:
+                time.sleep(0.01)
+                continue
+            try:
+                touch = self._touch_queue.get(timeout=0.05)
+            except _queue.Empty:
+                continue
+
+            # Always forward to Pico immediately so touch behaves like wired buttons.
+            self._forward_touch_to_pico(touch)
+
+            # Mirror touch for Pi-side consumers (read_from_board/try_read_from_board).
+            try:
+                self._touch_local_queue.put_nowait(touch)
+            except _queue.Full:
+                try:
+                    self._touch_local_queue.get_nowait()
+                except _queue.Empty:
+                    pass
+                try:
+                    self._touch_local_queue.put_nowait(touch)
+                except _queue.Full:
+                    pass
 
     def close(self):
+        self._touch_stop.set()
         try:
             self.ser.close()
         except Exception:
@@ -57,7 +97,13 @@ class BoardLink:
         except Exception:
             pass
         self._last_input_is_touch = False
-        # Also drain touch queue
+        # Also drain mirrored touch queue
+        try:
+            while True:
+                self._touch_local_queue.get_nowait()
+        except _queue.Empty:
+            pass
+        # And drain source touch queue if present
         if self._touch_queue:
             try:
                 while True:
@@ -108,10 +154,8 @@ class BoardLink:
             self._last_input_is_touch = False
             return None
         try:
-            touch = self._touch_queue.get_nowait()
+            touch = self._touch_local_queue.get_nowait()
             self._last_input_is_touch = True
-            # Forward to Pico so its blocking loops can react
-            self._forward_touch_to_pico(touch)
             return touch
         except _queue.Empty:
             self._last_input_is_touch = False
