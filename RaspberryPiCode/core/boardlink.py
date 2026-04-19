@@ -44,6 +44,7 @@ class BoardLink:
         self._last_input_is_touch = False
         self._touch_thread: Optional[threading.Thread] = None
         self._touch_stop = threading.Event()
+        self._ser_write_lock = threading.Lock()
 
     def set_touch_queue(self, q: _queue.Queue) -> None:
         """Attach the Display.touch_queue so touch events merge with UART reads."""
@@ -116,8 +117,9 @@ class BoardLink:
     def send_to_board(self, text: str) -> None:
         """Send a message to the Pico. The "heyArduino" prefix is added automatically."""
         payload = "heyArduino" + text
-        self.ser.write(payload.encode("utf-8") + b"\n")
-        self.ser.flush()
+        with self._ser_write_lock:
+            self.ser.write(payload.encode("utf-8") + b"\n")
+            self.ser.flush()
         print(f"[-→Board] {payload}")
 
     # ── Internal parse ────────────────────────────────────────────────────────
@@ -165,8 +167,9 @@ class BoardLink:
         """Send touch event to Pico as 'heyArduinotouch_<action>'."""
         try:
             payload = "heyArduinotouch_" + touch
-            self.ser.write(payload.encode("utf-8") + b"\n")
-            self.ser.flush()
+            with self._ser_write_lock:
+                self.ser.write(payload.encode("utf-8") + b"\n")
+                self.ser.flush()
             print(f"[-→Pico touch] {payload}")
         except Exception:
             pass
