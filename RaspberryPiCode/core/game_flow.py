@@ -1774,8 +1774,10 @@ def _paged_menu(
     ``wake_command`` is used by startup/setup menus that need to recover from a
     Pico reboot before reopening the paged menu UI.
     """
+    print(f"[Menu] _paged_menu starting: header={header}, options={options}, can_back={can_back}", flush=True)
     opts = list(options or [])
     if not opts:
+        print(f"[Menu] No options, returning None", flush=True)
         return None
 
     pages = 1
@@ -1810,17 +1812,21 @@ def _paged_menu(
         )
         msg = link.read_from_board()
         if msg is None:
+            print(f"[Menu] read_from_board() returned None, menu_ready={menu_ready}", flush=True)
             if (
                 not menu_ready
                 and resend_timeout
                 and time.monotonic() - last_sync >= resend_timeout
             ):
+                print(f"[Menu] Resending MenuPaged", flush=True)
                 _sync_menu()
             continue
 
+        print(f"[Menu] Got message: {msg}", flush=True)
         m = msg.strip().lower()
         if m == "menu_ready":
             menu_ready = True
+            print(f"[Menu] menu_ready set to True", flush=True)
             last_sync = time.monotonic()
             continue
         if not menu_ready:
@@ -1836,14 +1842,18 @@ def _paged_menu(
         if m in ("1", "2", "3", "4"):
             idx = int(m) - 1
             visible = display.current_menu_visible_items()
+            print(f"[Menu] Got number: {m}, idx={idx}, visible_items={visible}", flush=True)
             if idx < len(visible) and visible[idx]:
+                print(f"[Menu] Selecting visible item: {visible[idx]}", flush=True)
                 if link.last_input_was_touch():
                     link.send_to_board(f"MenuSelect_{m}")
                 return visible[idx]
             if idx < len(opts) and opts[idx]:
+                print(f"[Menu] Selecting option: {opts[idx]}", flush=True)
                 if link.last_input_was_touch():
                     link.send_to_board(f"MenuSelect_{m}")
                 return opts[idx]
+            print(f"[Menu] Number out of range", flush=True)
             continue
 
 

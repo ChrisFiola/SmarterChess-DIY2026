@@ -153,17 +153,21 @@ class Display:
                     now_ms = int(now * 1000)
                     if touch_down and not last_touch_down:
                         tap_start_zone = _zone_at_point(pt, zones)
+                        print(f"[Touch] Touch DOWN at {pt}, zone: {tap_start_zone}, available zones: {list(zones.keys())}", flush=True)
 
                     # Treat a touch as a tap when it is released and no drag happened.
                     if (not touch_down) and last_touch_down and not dragging:
                         if tap_start_zone and (now_ms - tap_last_emit_ms >= self._touch.DEBOUNCE_MS):
                             proto = _ZONE_TO_PROTO.get(tap_start_zone)
                             if proto:
+                                print(f"[Touch] Emitting tap: zone={tap_start_zone} → proto={proto}", flush=True)
                                 try:
                                     self.touch_queue.put_nowait(proto)
                                     tap_last_emit_ms = now_ms
                                 except queue.Full:
                                     pass
+                        else:
+                            print(f"[Touch] Touch released, no tap (dragging={dragging}, zone={tap_start_zone})", flush=True)
                         tap_start_zone = None
 
                     if dragging:
