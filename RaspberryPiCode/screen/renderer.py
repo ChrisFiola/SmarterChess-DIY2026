@@ -100,6 +100,8 @@ class Renderer:
         self._rendered_nav_top  = 270
         self._rendered_act_top  = 220
         self._rendered_item_rects: list = []
+        self._rendered_footer_zones: list = []
+        self._rendered_mid_action_enabled = False
 
     # ══════════════════════════════════════════════════════════════════════════
     # Public API
@@ -151,17 +153,30 @@ class Renderer:
         NAV_TOP    = self._rendered_nav_top
         ACT_TOP    = self._rendered_act_top
         item_rects = self._rendered_item_rects
+        footer_zones = self._rendered_footer_zones
 
         zones = {}
         sk = size_key.lower()
 
-        # Nav bar present for all structured layouts
-        if sk.startswith(("header", "menu", "setup", "auto", "annotation")):
+        # Prefer explicit footer button zones parsed from rendered labels.
+        if footer_zones:
+            for action, rect in footer_zones:
+                if action == "ok":
+                    zones["btn_ok"] = rect
+                elif action == "hint":
+                    zones["btn_hint"] = rect
+                elif action == "back":
+                    zones["btn_back"] = rect
+                elif action == "delete":
+                    zones["btn_delete"] = rect
+        elif sk.startswith(("header", "menu", "setup", "auto", "annotation")):
             zones["game_menu"] = (0,       NAV_TOP, W // 2 - 1, H - 1)
             zones["game_hint"] = (W // 2,  NAV_TOP, W - 1,      H - 1)
 
-        # Action zone (confirm / OK) for header-style layouts
-        if sk in ("header", "auto", "setup") or sk.startswith("header:"):
+        # Action zone (confirm / OK) for header-style layouts.
+        if self._rendered_mid_action_enabled:
+            zones["game_confirm"] = (0, HDR_BOT, W - 1, max(HDR_BOT, NAV_TOP - 1))
+        elif sk in ("header", "auto", "setup") or sk.startswith("header:"):
             zones["game_confirm"] = (0, ACT_TOP, W - 1, NAV_TOP - 1)
 
         # Item zones for menu / annotation layouts
@@ -195,6 +210,8 @@ class Renderer:
     # ══════════════════════════════════════════════════════════════════════════
 
     def _render_current(self, lines, raw_size):
+        self._rendered_footer_zones = []
+        self._rendered_mid_action_enabled = False
         size_key = (raw_size or "auto").strip().lower()
 
         if size_key == "qr":
@@ -377,6 +394,23 @@ class Renderer:
             txt = txt.split("=", 1)[1].strip()
         return txt
 
+    @staticmethod
+    def _footer_action(text: str) -> str:
+        low = (text or "").strip().lower()
+        if not low:
+            return ""
+        if low.startswith("del=") or "delete" in low:
+            return "delete"
+        if low.startswith("hint="):
+            return "hint"
+        if low.startswith("ok="):
+            return "ok"
+        if low.startswith("menu=") or low.startswith("back="):
+            return "back"
+        if "menu" in low or "exit" in low:
+            return "back"
+        return ""
+
     def _draw_btn_box(self, x0, y0, x1, y1, label, font, size, font_key="default"):
         try:
             self._draw.rounded_rectangle([x0, y0, x1, y1],
@@ -394,26 +428,33 @@ class Renderer:
             return
         W, H = self.W, self.H
         labels = [self._strip_btn_label(p) for p in parts]
-        btn_y0 = footer_y - 3
-        btn_y1 = H - 3
+        actions = [self._footer_action(p) for p in parts]
+        btn_y0 = footer_y - 8
+        btn_y1 = H - 2
+        self._rendered_footer_zones = []
+
+        def _draw_and_track(x0, y0, x1, y1, label, action):
+            self._draw_btn_box(x0, y0, x1, y1, label, font, size, font_key)
+            if action:
+                self._rendered_footer_zones.append((action, (x0, y0, x1, y1)))
 
         if len(labels) == 1:
-            self._draw_btn_box(8, btn_y0, W - 8, btn_y1,
-                               labels[0], font, size, font_key)
+            _draw_and_track(8, btn_y0, W - 8, btn_y1,
+                            labels[0], actions[0])
         elif len(labels) == 2:
             mid = W // 2
-            self._draw_btn_box(8,       btn_y0, mid - 3,  btn_y1,
-                               labels[0], font, size, font_key)
-            self._draw_btn_box(mid + 3, btn_y0, W - 8,    btn_y1,
-                               labels[1], font, size, font_key)
+            _draw_and_track(8,       btn_y0, mid - 3,  btn_y1,
+                            labels[0], actions[0])
+            _draw_and_track(mid + 3, btn_y0, W - 8,    btn_y1,
+                            labels[1], actions[1])
         else:
             third = W // 3
-            self._draw_btn_box(4,           btn_y0, third - 2,     btn_y1,
-                               labels[0], font, size, font_key)
-            self._draw_btn_box(third + 2,   btn_y0, 2*third - 2,   btn_y1,
-                               labels[1], font, size, font_key)
-            self._draw_btn_box(2*third + 2, btn_y0, W - 4,         btn_y1,
-                               labels[2], font, size, font_key)
+            _draw_and_track(4,           btn_y0, third - 2,     btn_y1,
+                            labels[0], actions[0])
+            _draw_and_track(third + 2,   btn_y0, 2*third - 2,   btn_y1,
+                            labels[1], actions[1])
+            _draw_and_track(2*third + 2, btn_y0, W - 4,         btn_y1,
+                            labels[2], actions[2])
 
     # ══════════════════════════════════════════════════════════════════════════
     # Draw functions (ported from display_server.py)
@@ -641,6 +682,12 @@ class Renderer:
         )
         footer_parts = self._split_footer_parts(raw_footer_line)
         footer       = " ".join(footer_parts)
+        footer_tokens = " ".join((p or "").lower() for p in footer_parts)
+        self._rendered_mid_action_enabled = (
+            ("del=" in footer_tokens or "delete" in footer_tokens)
+            and "hint=" in footer_tokens
+            and ("menu" in footer_tokens or "exit" in footer_tokens)
+        )
         raw_body     = lines[1:-1] if footer_parts else lines[1:]
         body_lines   = [(ln or "") for ln in raw_body if ln]
 
@@ -654,38 +701,39 @@ class Renderer:
                             if badge else (0, 0))
 
         header_max_w = W - 20 - (badge_w + 10 if badge else 0)
-        header_size  = self._fit_single_line_size(header, min_size=13, max_size=17,
+        header_size  = self._fit_single_line_size(header, min_size=14, max_size=19,
                                                    max_w=header_max_w)
         header_font  = self._get_font(header_size)
         header_w, header_h = self._measure(header_size, header, header_font)
-        header_y = 6
+        header_y = 8
         if header:
             self._draw.text(((W - header_w) // 2, header_y), header,
                             font=header_font, fill="WHITE")
         if badge:
             self._draw.text((W - badge_w - 8, header_y + 1), badge,
                             font=badge_font, fill="WHITE")
-        divider_y = header_y + header_h + 6
+        divider_y = header_y + header_h + 8
         self._draw.line((10, divider_y, W - 10, divider_y), fill="WHITE", width=1)
 
         footer_size = self._fit_single_line_size(footer or "OK = confirm",
-                                                  min_size=11, max_size=14,
+                              min_size=12, max_size=16,
                                                   max_w=W - 20)
         footer_font = self._get_font(footer_size)
         footer_h    = self._measure(footer_size, footer or "Ag", footer_font)[1]
-        footer_reserved = footer_h + 14
+        footer_reserved = footer_h + 22
 
-        avail_top = divider_y + 8
+        avail_top = divider_y + 10
         avail_h   = H - avail_top - footer_reserved - 8
         spacing   = 5
         min_size, max_size = 12, 24
 
         # Track for touch zones (footer_y = H - footer_h - 4, same formula used below)
-        _ftr_y = H - footer_h - 4
+        _ftr_y = H - footer_h - 8
         self._rendered_hdr_bot      = avail_top
-        self._rendered_nav_top      = max(_ftr_y - 8, divider_y + 40)
+        self._rendered_nav_top      = max(_ftr_y - 10, divider_y + 44)
         self._rendered_act_top      = max(avail_top + 20, self._rendered_nav_top - 60)
         self._rendered_item_rects   = []
+        self._rendered_footer_zones = []
 
         body_size = self._pick_header_body_size(
             body_lines, avail_h=avail_h, max_w=W - 16,
@@ -701,8 +749,8 @@ class Renderer:
             self._draw.text(((W - w) // 2, y), ln, font=body_font, fill="WHITE")
             y += h + spacing
 
-        footer_y = H - footer_h - 4
-        self._draw.line((10, footer_y - 5, W - 10, footer_y - 5),
+        footer_y = H - footer_h - 8
+        self._draw.line((10, footer_y - 7, W - 10, footer_y - 7),
                         fill="WHITE", width=1)
         if footer_parts:
             self._draw_footer_aligned(footer_parts, footer_font, footer_size,

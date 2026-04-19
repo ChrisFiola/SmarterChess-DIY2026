@@ -1360,7 +1360,7 @@ def _update_typing_display(
     """
     try:
         delete_footer = "Hold OK=Delete"
-        confirm_footer = "OK=Confirm   Hold OK=Delete"
+        confirm_footer = "Del=Delete   Hint=Hint   Menu=Exit"
         # label, text
         parts = payload.split("_", 1)
         if len(parts) != 2:

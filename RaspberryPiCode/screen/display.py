@@ -35,6 +35,7 @@ _ZONE_TO_PROTO = {
     "item_3": "3",
     "item_4": "4",
     "btn_ok": "ok",
+    "btn_delete": "delete",
     "game_confirm": "ok",
     "btn_hint": "hint",
     "game_hint": "hint",
@@ -45,9 +46,9 @@ _ZONE_TO_PROTO = {
     "btn_back": "n",
 }
 
-_FPS_CAP = 15.0
+_FPS_CAP = 20.0
 _MIN_DT = 1.0 / _FPS_CAP
-_TOUCH_POLL_S = 0.05  # seconds between touch polls inside render thread
+_TOUCH_POLL_S = 0.02  # seconds between touch polls inside render thread
 
 
 class Display:
@@ -289,7 +290,7 @@ class Display:
 
         if cat == "prompt":
             m = (message or "").lower()
-            hold = 1.15 if "confirm" in m or "ok to send" in m else 0.65
+            hold = 0.45 if "confirm" in m or "ok to send" in m else 0.30
             self._lock_until = now + hold
             self._locked_category = "prompt"
         elif cat == "critical" or force:

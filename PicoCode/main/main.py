@@ -618,6 +618,27 @@ def _confirm_move(move):
                 screen.clear("confirm")
                 cp.reset_edges()
                 return "ok"
+            if tag == "touch" and val == "delete":
+                cp.disarm_confirm_ok()
+                cp.set_ok_led(False)
+                screen.clear("confirm")
+                cp.reset_edges()
+                return ("backspace_confirm", move[:-1])
+            if tag == "touch" and val == "hint":
+                cp.disarm_confirm_ok()
+                cp.set_ok_led(False)
+                screen.clear("confirm")
+                cp.reset_edges()
+                link.send("btn_hint")
+                return None
+            if tag == "touch" and val in ("n", "back"):
+                cp.disarm_confirm_ok()
+                cp.set_ok_led(False)
+                cp.only_ok(False)
+                screen.clear("confirm")
+                cp.reset_edges()
+                link.send("n")
+                return None
             if tag == "msg":
                 outcome = _handle_overlay_or_gameover(val)
                 if outcome == "gameover":
@@ -737,7 +758,6 @@ def _collect_and_submit_move():
                     continue
                 return
             if res == "ok":
-                time.sleep_ms(200)
                 link.send(move)
                 st.preview_cap_flag = False
                 board.markings()
@@ -787,7 +807,6 @@ def _collect_and_submit_move():
             if isinstance(res, tuple) and res[0] == "restart_from":
                 continue
             if res == "ok":
-                time.sleep_ms(200)
                 link.send(move)
                 st.preview_cap_flag = False
                 board.markings()
