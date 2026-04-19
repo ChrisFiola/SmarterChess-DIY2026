@@ -42,6 +42,8 @@ _ANNOTATION_FONT_CANDIDATES = [
     "/home/king/SmarterChess-DIY2026/RaspberryPiCode/ChessSans.ttf",
 ]
 
+_DRAG_START_THRESHOLD_PX = 5
+
 
 def _resolve_font(candidates, label):
     for p in candidates:
@@ -172,9 +174,16 @@ class Renderer:
         in_content = 0 <= px < self.W and content_y0 <= py <= content_y1
 
         if not self._annotation_drag_active:
-            if in_content:
-                self._annotation_drag_active = True
+            if not in_content:
+                self._annotation_last_y = None
+                return False
+            if self._annotation_last_y is None:
                 self._annotation_last_y = py
+                return False
+            if abs(py - self._annotation_last_y) < _DRAG_START_THRESHOLD_PX:
+                return False
+            self._annotation_drag_active = True
+            self._annotation_last_y = py
             return False
 
         if self._annotation_last_y is None:
@@ -216,9 +225,16 @@ class Renderer:
         in_content = 0 <= px < self.W and content_y0 <= py <= content_y1
 
         if not self._menu_drag_active:
-            if in_content:
-                self._menu_drag_active = True
+            if not in_content:
+                self._menu_last_y = None
+                return False
+            if self._menu_last_y is None:
                 self._menu_last_y = py
+                return False
+            if abs(py - self._menu_last_y) < _DRAG_START_THRESHOLD_PX:
+                return False
+            self._menu_drag_active = True
+            self._menu_last_y = py
             return False
 
         if self._menu_last_y is None:
