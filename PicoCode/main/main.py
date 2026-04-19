@@ -343,7 +343,7 @@ def _tick_input_loop():
             outcome = _handle_overlay_or_gameover(val)
             if outcome == "gameover":
                 return ("gameover",)
-            if outcome in ("hint", "engine"):
+            if outcome in ("hint", "engine", "wrong"):
                 cp.reset_edges()
                 return ("overlay",)
     b = cp.detect_press_raw()
@@ -446,6 +446,9 @@ def _handle_overlay_or_gameover(msg):
         res = msg.split(":", 1)[1].strip() if ":" in msg else ""
         _show_game_over_and_ack(res)
         return "gameover"
+    if msg.startswith("heyArduinopuzzle_wrong_"):
+        _handle_puzzle_wrong(msg)
+        return "wrong"
     if msg.startswith("heyArduinocheck_"):
         sq = msg.split("_", 1)[1].strip() if "_" in msg else ""
         if sq:
