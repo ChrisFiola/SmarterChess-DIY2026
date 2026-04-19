@@ -1325,11 +1325,24 @@ def _handle_wait_for_ok_confirm(_msg=None):
     if not st.persistent_trail_active:
         board.markings()
     cp.only_ok(True, GREEN, border_on=st.in_game, force=True)
+    grace_ms = 0
+    if st.persistent_trail_active and st.persistent_trail_type == "engine":
+        grace_ms = Config.Timing.CONFIRM_OK_GRACE_MS
+    t_start = time.ticks_ms()
+
+    def _in_ok_grace():
+        if grace_ms <= 0:
+            return False
+        return time.ticks_diff(time.ticks_ms(), t_start) < grace_ms
+
     while True:
         if cp.shutdown_held():
             _shutdown_pico()
         touch = _poll_touch_uart()
         if touch == "ok":
+            if _in_ok_grace():
+                time.sleep_ms(Config.Timing.FAST_POLL_MS)
+                continue
             cp.disarm_confirm_ok()
             cp.set_ok_led(False)
             cp.reset_edges()
@@ -1340,6 +1353,9 @@ def _handle_wait_for_ok_confirm(_msg=None):
             return
         b = cp.detect_press_raw()
         if b == (Config.Buttons.OK_INDEX + 1):
+            if _in_ok_grace():
+                time.sleep_ms(Config.Timing.FAST_POLL_MS)
+                continue
             while cp.BTN_OK.value() == 0:
                 time.sleep_ms(Config.Timing.POLL_MS)
             cp.disarm_confirm_ok()

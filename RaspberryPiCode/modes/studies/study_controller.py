@@ -311,8 +311,8 @@ class StudyController:
         size_prefix: str = "annotation",
     ) -> None:
         padded = list(page_lines)
-        while len(padded) < 3:
-            padded.append("")
+        if not padded:
+            padded = [""]
         page_tag = f":{page_idx + 1}/{total_pages}" if total_pages > 1 else ""
         display.send("\n".join(padded) + "\n" + footer, size=f"{size_prefix}{page_tag}")
 
@@ -361,11 +361,7 @@ class StudyController:
         return True
 
     def _show_annotation(self, link: BoardLink, display: Display, text: str) -> bool:
-        """Show annotation text in a 3-line scrolling window.
-
-        Hint scrolls down one line; at the bottom it wraps back to the top.
-        OK = done. Returns False if user backs out to menu.
-        """
+        """Show annotation text using full content area with paged scrolling."""
         cleaned = _clean_comment(text)
         # Break at sentence boundaries ('. ' not preceded by digit or dot)
         cleaned = re.sub(r"(?<![.\d])\. ", ".\n", cleaned)
@@ -373,25 +369,27 @@ class StudyController:
         if not lines or lines == [""]:
             return True
 
-        WINDOW = 3
-        total = len(lines)
-        offset = 0
+        pages = self._paginate_lines(lines, per_page=8)
+        page_idx = 0
 
         while True:
-            at_bottom = offset + WINDOW >= total
-            visible = lines[offset : offset + WINDOW]
-            # Pad to WINDOW lines so font size stays consistent
-            padded = list(visible)
-            while len(padded) < WINDOW:
-                padded.append("")
-            if total <= WINDOW:
+            at_last = page_idx >= len(pages) - 1
+            page_lines = pages[page_idx]
+            if len(pages) <= 1:
                 footer = "OK=Done"
-            elif at_bottom:
+            elif at_last:
                 footer = "Hint=Top  OK=Done"
             else:
-                footer = "Hint=Scroll  OK=Done"
+                footer = "Hint=Next  OK=Done"
 
-            display.send("\n".join(padded) + "\n" + footer, size="annotation")
+            self._render_page(
+                display,
+                page_lines,
+                footer=footer,
+                page_idx=page_idx,
+                total_pages=len(pages),
+                size_prefix="annotation",
+            )
             link.send_to_board("WaitForAnnotationPage")
 
             while True:
@@ -412,7 +410,7 @@ class StudyController:
                 if msg in OK_MSGS:
                     return True
                 if msg in HINT_MSGS:
-                    offset = 0 if at_bottom else offset + 1
+                    page_idx = 0 if at_last else page_idx + 1
                     break  # redisplay
 
     def _collect_move(

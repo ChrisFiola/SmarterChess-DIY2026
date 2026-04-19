@@ -45,6 +45,7 @@ _ZONE_TO_PROTO = {
     "page_next": "hint",
     "page_prev": "hint",
     "btn_back": "n",
+    "btn_one": "1",
 }
 
 _FPS_CAP = 25.0
