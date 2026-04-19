@@ -100,6 +100,7 @@ class Display:
         last_touch_down = False
         tap_start_zone = None
         tap_last_emit_ms = 0
+        touch_had_drag = False
 
         while True:
             now = time.monotonic()
@@ -118,6 +119,8 @@ class Display:
                     pt = self._touch.read()
                     touch_down = pt is not None
                     zones = self._renderer.current_touch_zones() if self._renderer else {}
+                    annotation_scrolled = False
+                    menu_scrolled = False
 
                     def _zone_at_point(point, zone_map):
                         if point is None:
@@ -130,20 +133,25 @@ class Display:
 
                     # Annotation scroll follows finger; redraw immediately on drag.
                     if self._renderer and self._disp:
-                        if self._renderer.handle_annotation_drag(pt):
+                        annotation_scrolled = self._renderer.handle_annotation_drag(pt)
+                        if annotation_scrolled:
                             active_payload = pending if pending is not None else last_drawn
                             if active_payload is not None:
                                 img = self._renderer.render(active_payload)
                                 self._disp.ShowImage(img)
                                 last_drawn = active_payload
                                 last_draw_t = now
-                        if self._renderer.handle_menu_drag(pt):
+                        menu_scrolled = self._renderer.handle_menu_drag(pt)
+                        if menu_scrolled:
                             active_payload = pending if pending is not None else last_drawn
                             if active_payload is not None:
                                 img = self._renderer.render(active_payload)
                                 self._disp.ShowImage(img)
                                 last_drawn = active_payload
                                 last_draw_t = now
+
+                    if annotation_scrolled or menu_scrolled:
+                        touch_had_drag = True
 
                     dragging = self._renderer.annotation_drag_active() if self._renderer else False
                     dragging = dragging or (
@@ -153,32 +161,20 @@ class Display:
                     now_ms = int(now * 1000)
                     if touch_down and not last_touch_down:
                         tap_start_zone = _zone_at_point(pt, zones)
-                        print(f"[Touch] Touch DOWN at {pt}, zone: {tap_start_zone}, available zones: {list(zones.keys())}", flush=True)
-                    elif touch_down and last_touch_down:
-                        print(f"[Touch] Continuing drag: tap_start_zone={tap_start_zone}, dragging={dragging}", flush=True)
+                        touch_had_drag = False
 
                     # Treat a touch as a tap when it is released and no drag happened.
                     if (not touch_down) and last_touch_down:
-                        print(f"[Touch] RELEASE: tap_start_zone={tap_start_zone}, dragging={dragging}", flush=True)
-                        if not dragging and tap_start_zone and (now_ms - tap_last_emit_ms >= self._touch.DEBOUNCE_MS):
+                        if (not touch_had_drag) and (not dragging) and tap_start_zone and (now_ms - tap_last_emit_ms >= self._touch.DEBOUNCE_MS):
                             proto = _ZONE_TO_PROTO.get(tap_start_zone)
                             if proto:
-                                print(f"[Touch] ✓ EMIT TAP: zone={tap_start_zone} → proto={proto}", flush=True)
                                 try:
                                     self.touch_queue.put_nowait(proto)
                                     tap_last_emit_ms = now_ms
                                 except queue.Full:
-                                    print(f"[Touch] ✗ Queue full, dropped tap", flush=True)
-                            else:
-                                print(f"[Touch] ✗ No proto for zone {tap_start_zone}", flush=True)
-                        else:
-                            if dragging:
-                                print(f"[Touch] ✗ Drag was detected", flush=True)
-                            elif not tap_start_zone:
-                                print(f"[Touch] ✗ No zone was tracked", flush=True)
-                            else:
-                                print(f"[Touch] ✗ Debounce fail: {now_ms - tap_last_emit_ms}ms < {self._touch.DEBOUNCE_MS}ms", flush=True)
+                                    pass
                         tap_start_zone = None
+                        touch_had_drag = False
 
                     last_touch_down = touch_down
                 except Exception:

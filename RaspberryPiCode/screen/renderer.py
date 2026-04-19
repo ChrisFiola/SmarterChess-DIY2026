@@ -913,27 +913,32 @@ class Renderer:
 
         item_font = self._get_font(item_size)
 
-        # Draw all rows at virtual positions, clipped to menu content viewport.
+        # Draw rows on an overlay and crop to content viewport to avoid footer/header bleed.
+        overlay = Image.new("RGB", (W, H), "BLACK")
+        odraw = ImageDraw.Draw(overlay)
         for i, ln in enumerate(display_lines):
             tile_y0 = y_offset_base + i * row_step - self._menu_scroll_y
             tile_y1 = tile_y0 + tile_h - 1
             if tile_y1 < content_top or tile_y0 > content_bot:
                 continue
             try:
-                self._draw.rounded_rectangle(
+                odraw.rounded_rectangle(
                     [tile_pad_x, tile_y0, W - 1 - tile_pad_x, tile_y1],
                     radius=5,
                     outline="WHITE",
                     width=1,
                 )
             except AttributeError:
-                self._draw.rectangle(
+                odraw.rectangle(
                     [tile_pad_x, tile_y0, W - 1 - tile_pad_x, tile_y1],
                     outline="WHITE",
                     width=1,
                 )
             tw, th = self._measure(item_size, ln, item_font)
-            self._draw.text(((W - tw) // 2, tile_y0 + (tile_h - th) // 2), ln, font=item_font, fill="WHITE")
+            odraw.text(((W - tw) // 2, tile_y0 + (tile_h - th) // 2), ln, font=item_font, fill="WHITE")
+
+        clipped = overlay.crop((0, content_top, W, content_bot + 1))
+        self._frame.paste(clipped, (0, content_top))
 
         # Always expose exactly 4 item touch slots and corresponding visible labels.
         self._rendered_item_rects = []
