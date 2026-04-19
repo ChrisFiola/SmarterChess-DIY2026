@@ -311,8 +311,8 @@ class Renderer:
         elif sk in ("header", "auto", "setup") or sk.startswith("header:"):
             zones["game_confirm"] = (0, ACT_TOP, W - 1, NAV_TOP - 1)
 
-        # Item zones for paged menu layouts only.
-        if sk.startswith("menu"):
+        # Item zones for menu layouts.
+        if sk.startswith(("menu", "menuheader")):
             if item_rects:
                 for i, rect in enumerate(item_rects[:4]):
                     zones[f"item_{i + 1}"] = rect
