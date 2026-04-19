@@ -1609,7 +1609,11 @@ def _handle_puzzle_wrong(msg):
     mv = "".join(ch for ch in raw if _is_alphanumeric(ch))[:4]
     if len(mv) < 4:
         return
-    _show_overlay(mv, RED, "wrong")
+    st.persistent_trail_active = True
+    st.persistent_trail_type = "wrong"
+    st.persistent_trail_move = mv
+    st.persistent_trail_end_color = None
+    board.illegal_trail(mv)
     cp.only_ok(True)
     cp.reset_edges()
     while True:

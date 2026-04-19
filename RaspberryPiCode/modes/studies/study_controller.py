@@ -444,12 +444,7 @@ class StudyController:
             link.send_to_board(
                 f"turn_{'white' if board.turn == chess.WHITE else 'black'}"
             )
-            display.show_header_panel(
-                f"You are {side}",
-                "Play move",
-                footer="Hint=See move",
-                force=force,
-            )
+            display.prompt_move(side, force=force)
 
         _arm()
 

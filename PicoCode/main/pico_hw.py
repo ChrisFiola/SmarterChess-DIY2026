@@ -599,6 +599,11 @@ class ChessBoard:
         self._last_from_only = None
         self.show_markings()
 
+    def illegal_trail(self, uci):
+        self._last_from_only = None
+        self.markings()
+        self.draw_trail(uci, RED)
+
     def puzzle_blink(self, sq, color, times, on_ms=200, off_ms=200):
         xy = self.algebraic_to_xy(sq)
         if not xy:
