@@ -19,7 +19,7 @@ class Config:
         OK_INDEX = 8
         HINT_INDEX = 9
         SHUTDOWN_INDEX = 7  # button "8"/H
-        DEBOUNCE_MS = 60
+        DEBOUNCE_MS = 25
         OK_LONG_PRESS_MS = 500
         HINT_HOLD_DRAW_MS = 2000
         SHUTDOWN_HOLD_MS = 2000
@@ -326,14 +326,26 @@ def _tick_input_loop():
     irq = _handle_hint_irq()
     if irq == "new":
         return ("new_game",)
-    msg = link.read()
-    if msg:
-        outcome = _handle_overlay_or_gameover(msg)
-        if outcome == "gameover":
-            return ("gameover",)
-        if outcome in ("hint", "engine"):
-            cp.reset_edges()
-            return ("overlay",)
+    ev = _poll_touch_or_msg()
+    if ev:
+        tag, val = ev
+        if tag == "touch":
+            if val == "delete":
+                return ("delete",)
+            if val == "hint":
+                link.send("btn_hint")
+                return ("hint",)
+            if val in ("n", "back"):
+                return ("new_game",)
+            if val == "ok":
+                return ("ok",)
+        if tag == "msg":
+            outcome = _handle_overlay_or_gameover(val)
+            if outcome == "gameover":
+                return ("gameover",)
+            if outcome in ("hint", "engine"):
+                cp.reset_edges()
+                return ("overlay",)
     b = cp.detect_press_raw()
     if b is not None:
         return ("btn", b)
@@ -475,6 +487,8 @@ def _select_from_square(seed_btn=None, preset_col=None):
             ev = _tick_input_loop()
             if ev is None:
                 continue
+            if ev[0] == "delete":
+                continue
             if ev[0] != "btn":
                 return None  # new_game / gameover / overlay
             b = ev[1]
@@ -497,6 +511,10 @@ def _select_from_square(seed_btn=None, preset_col=None):
         ev = _tick_input_loop()
         if ev is None:
             continue
+        if ev[0] == "delete":
+            screen.typing_from("")
+            board.markings()
+            return ("back_from", None)
         if ev[0] != "btn":
             return None
         b = ev[1]
@@ -538,6 +556,10 @@ def _select_to_square(move_from, preset_col=None):
         ev = _tick_input_loop()
         if ev is None:
             continue
+        if ev[0] == "delete":
+            screen.typing_from(move_from[0])
+            board.markings()
+            return ("back_to_from_rank", move_from[0])
         if ev[0] != "btn":
             return None
         b = ev[1]
@@ -560,6 +582,10 @@ def _select_to_square(move_from, preset_col=None):
         ev = _tick_input_loop()
         if ev is None:
             continue
+        if ev[0] == "delete":
+            screen.typing_to(move_from, "")
+            board.preview_from(move_from)
+            return ("back_to_to_file", move_from)
         if ev[0] != "btn":
             return None
         b = ev[1]

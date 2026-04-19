@@ -65,6 +65,7 @@ class ILI9341:
         self._spi.open(0, 0)
         self._spi.max_speed_hz = spi_speed
         self._spi.mode = 0
+        print(f"[ILI9341] numpy_accel={_HAS_NUMPY}", flush=True)
 
         # writebytes2 accepts bytes-like objects; xfer2 needs a list but always works
         if not hasattr(self._spi, 'writebytes2'):
@@ -133,13 +134,17 @@ class ILI9341:
             # byteswap: convert little-endian uint16 to big-endian SPI bytes
             data = bytearray(rgb565.byteswap().tobytes())
         else:
-            data = bytearray(self.width * self.height * 2)
-            i = 0
-            for r, g, b in img.getdata():
-                c = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
-                data[i]     = c >> 8
-                data[i + 1] = c & 0xFF
-                i += 2
+            # Fast C-backed Pillow conversion path (massively faster than per-pixel Python loop).
+            try:
+                data = bytearray(img.convert("RGB").tobytes("raw", "RGB;16B"))
+            except Exception:
+                data = bytearray(self.width * self.height * 2)
+                i = 0
+                for r, g, b in img.getdata():
+                    c = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
+                    data[i] = c >> 8
+                    data[i + 1] = c & 0xFF
+                    i += 2
 
         # Send as bytearray slices — most compatible across spidev versions
         for off in range(0, len(data), _SPI_CHUNK):
