@@ -50,7 +50,7 @@ _ZONE_TO_PROTO = {
 
 _FPS_CAP = 25.0
 _MIN_DT = 1.0 / _FPS_CAP
-_TOUCH_POLL_S = 0.015  # seconds between touch polls inside render thread
+_TOUCH_POLL_S = 0.008  # seconds between touch polls inside render thread
 
 
 class Display:
@@ -165,12 +165,18 @@ class Display:
 
             # Nothing to draw yet
             if pending is None:
-                time.sleep(0.01)
+                if self._renderer and self._renderer.annotation_drag_active():
+                    time.sleep(0.001)
+                else:
+                    time.sleep(0.01)
                 continue
 
             # FPS cap
             if now - last_draw_t < _MIN_DT:
-                time.sleep(0.005)
+                if self._renderer and self._renderer.annotation_drag_active():
+                    time.sleep(0.001)
+                else:
+                    time.sleep(0.005)
                 continue
 
             # Dedup
