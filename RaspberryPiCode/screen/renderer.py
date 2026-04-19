@@ -915,6 +915,15 @@ class Renderer:
                             ln, font=item_font, fill="WHITE")
             self._rendered_item_rects.append((0, tile_y0, W - 1, tile_y1))
 
+        # Track visible items for menu selection: extract option text from "1) Option" format
+        self._menu_visible_items = []
+        for ln in display_lines:
+            if ") " in ln:
+                option_text = ln.split(") ", 1)[1]
+                self._menu_visible_items.append(option_text)
+            else:
+                self._menu_visible_items.append(ln)
+
         # Touch zone tracking
         _ftr_y = H - footer_h - 8 if footer_parts else H
         self._rendered_hdr_bot  = content_top
