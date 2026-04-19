@@ -428,6 +428,14 @@ def handle_illegal_move(
             force=True,
         )
 
+    # If the move was confirmed via touch, that same touch event can still be
+    # queued and would instantly satisfy wait_for_ok(), hiding the illegal trail.
+    # Flush pending board/touch input before waiting for explicit user ack.
+    try:
+        link.clear_input()
+    except Exception:
+        pass
+
     ok = wait_for_ok(link, display, send_prompt=False)
     if not ok:
         return False
