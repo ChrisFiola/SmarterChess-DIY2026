@@ -36,6 +36,7 @@ _ZONE_TO_PROTO = {
     "item_4": "4",
     "btn_ok": "ok",
     "btn_delete": "delete",
+    "game_delete": "delete",
     "game_confirm": "ok",
     "btn_hint": "hint",
     "game_hint": "hint",
@@ -382,7 +383,12 @@ class Display:
             self.send(arrow, force=force)
 
     def prompt_move(self, side: str, force: bool = False) -> None:
-        self.show_header_panel(f"You are {side.upper()}", "Play move", force=force)
+        self.show_header_panel(
+            f"You are {side.upper()}",
+            "Play move",
+            footer="Del=Delete   Hint=Hint   Menu=Exit",
+            force=force,
+        )
 
     def show_hint_result(self, uci: str) -> None:
         try:

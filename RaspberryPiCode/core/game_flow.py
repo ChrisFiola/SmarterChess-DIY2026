@@ -1359,8 +1359,8 @@ def _update_typing_display(
     Displays short contextual prompts.
     """
     try:
-        delete_footer = "Hold OK=Delete"
-        confirm_footer = "Del=Delete   Hint=Hint   Menu=Exit"
+        delete_footer = "Del=Delete   Hint=Hint   Menu=Exit"
+        confirm_footer = "OK=Confirm   Del=Delete   Hint=Hint   Menu=Exit"
         # label, text
         parts = payload.split("_", 1)
         if len(parts) != 2:

@@ -101,7 +101,7 @@ class Renderer:
         self._rendered_act_top  = 220
         self._rendered_item_rects: list = []
         self._rendered_footer_zones: list = []
-        self._rendered_mid_action_enabled = False
+        self._rendered_mid_action_mode = None
 
     # ══════════════════════════════════════════════════════════════════════════
     # Public API
@@ -174,8 +174,10 @@ class Renderer:
             zones["game_hint"] = (W // 2,  NAV_TOP, W - 1,      H - 1)
 
         # Action zone (confirm / OK) for header-style layouts.
-        if self._rendered_mid_action_enabled:
+        if self._rendered_mid_action_mode == "confirm":
             zones["game_confirm"] = (0, HDR_BOT, W - 1, max(HDR_BOT, NAV_TOP - 1))
+        elif self._rendered_mid_action_mode == "delete":
+            zones["game_delete"] = (0, HDR_BOT, W - 1, max(HDR_BOT, NAV_TOP - 1))
         elif sk in ("header", "auto", "setup") or sk.startswith("header:"):
             zones["game_confirm"] = (0, ACT_TOP, W - 1, NAV_TOP - 1)
 
@@ -211,7 +213,7 @@ class Renderer:
 
     def _render_current(self, lines, raw_size):
         self._rendered_footer_zones = []
-        self._rendered_mid_action_enabled = False
+        self._rendered_mid_action_mode = None
         size_key = (raw_size or "auto").strip().lower()
 
         if size_key == "qr":
@@ -683,11 +685,14 @@ class Renderer:
         footer_parts = self._split_footer_parts(raw_footer_line)
         footer       = " ".join(footer_parts)
         footer_tokens = " ".join((p or "").lower() for p in footer_parts)
-        self._rendered_mid_action_enabled = (
+        if "confirm" in footer_tokens:
+            self._rendered_mid_action_mode = "confirm"
+        elif (
             ("del=" in footer_tokens or "delete" in footer_tokens)
             and "hint=" in footer_tokens
             and ("menu" in footer_tokens or "exit" in footer_tokens)
-        )
+        ):
+            self._rendered_mid_action_mode = "delete"
         raw_body     = lines[1:-1] if footer_parts else lines[1:]
         body_lines   = [(ln or "") for ln in raw_body if ln]
 
