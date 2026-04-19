@@ -42,7 +42,7 @@ _ANNOTATION_FONT_CANDIDATES = [
     "/home/king/SmarterChess-DIY2026/RaspberryPiCode/ChessSans.ttf",
 ]
 
-_DRAG_START_THRESHOLD_PX = 5
+_DRAG_START_THRESHOLD_PX = 8
 
 
 def _resolve_font(candidates, label):
@@ -489,11 +489,17 @@ class Renderer:
         if self._annotation_scroll_y < 0:
             self._annotation_scroll_y = 0
 
+        overlay = Image.new("RGB", (W, H), "BLACK")
+        odraw = ImageDraw.Draw(overlay)
+
         y = content_y0 - self._annotation_scroll_y
         for ln, lh in zip(display_lines, line_heights):
             if y + lh >= content_y0 and y <= content_y1:
-                self._draw.text((left_pad, y), ln, font=item_font, fill="WHITE")
+                odraw.text((left_pad, y), ln, font=item_font, fill="WHITE")
             y += lh + spacing
+
+        clipped = overlay.crop((0, content_y0, W, content_y1 + 1))
+        self._frame.paste(clipped, (0, content_y0))
 
         self._rendered_item_rects = []
         self._rendered_hdr_bot = content_y0
