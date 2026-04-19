@@ -38,7 +38,8 @@ _ZONE_TO_PROTO = {
     "game_confirm": "ok",
     "btn_hint": "hint",
     "game_hint": "hint",
-    "game_menu": "n",
+    # Footer left action maps to OK semantics in current UI flows (Confirm/Back/Menu labels).
+    "game_menu": "ok",
     "page_next": "hint",
     "page_prev": "hint",
     "btn_back": "n",
