@@ -926,12 +926,11 @@ class Renderer:
         if not lines:
             return
 
-        header         = (lines[0] or "").strip()
+        header = (lines[0] or "").strip()
         raw_footer_line = (
             lines[-1] if (len(lines) > 1 and _is_footer_hint(lines[-1])) else ""
         )
         footer_parts = self._split_footer_parts(raw_footer_line)
-        footer       = " ".join(footer_parts)
         footer_tokens = " ".join((p or "").lower() for p in footer_parts)
         if "confirm" in footer_tokens:
             self._rendered_mid_action_mode = "confirm"
@@ -941,79 +940,65 @@ class Renderer:
             and ("menu" in footer_tokens or "exit" in footer_tokens)
         ):
             self._rendered_mid_action_mode = "delete"
-        raw_body     = lines[1:-1] if footer_parts else lines[1:]
-        # ── Scrollable plain list items ───────────────────────────────────────
-        sig = tuple(lines)
-        if sig != self._menu_content_sig:
-            self._menu_content_sig = sig
-            self._menu_scroll_y = 0
-            self._menu_max_scroll = 0
-            self._menu_drag_active = False
-            self._menu_last_y = None
 
-        display_lines = [(ln or "") for ln in raw_items if ln]
-        avail_h = content_bot - content_top
-        min_size, max_size = 14, 24
-        spacing = 6
-        left_pad = 10
+        raw_body = lines[1:-1] if footer_parts else lines[1:]
+        body_lines = [(ln or "") for ln in raw_body if ln]
 
-        item_size = min_size
-        for sz in range(max_size, min_size - 1, -1):
-            font = self._get_font(sz)
-            widths = [self._measure(sz, ln, font)[0] for ln in display_lines if ln]
-            if all(w <= W - 2 * left_pad for w in widths):
-                item_size = sz
-                break
+        self._draw.rectangle((0, 0, W, H), fill="BLACK")
 
-        item_font = self._get_font(item_size)
-        line_heights = [self._measure(item_size, ln or "Ag", item_font)[1] for ln in display_lines]
-        total_h = sum(line_heights) + spacing * (len(line_heights) - 1) if line_heights else 0
-        self._menu_max_scroll = max(0, total_h - avail_h)
-        if self._menu_scroll_y > self._menu_max_scroll:
-            self._menu_scroll_y = self._menu_max_scroll
-        if self._menu_scroll_y < 0:
-            self._menu_scroll_y = 0
+        badge = (badge or "").strip()
+        badge_size = self._fit_single_line_size(badge, min_size=11, max_size=14, max_w=52)
+        badge_font = self._get_font(badge_size)
+        badge_w, _ = (self._measure(badge_size, badge, badge_font) if badge else (0, 0))
 
-        y = content_top - self._menu_scroll_y
-        self._rendered_item_rects = []
-        visible_items = []
-        for ln, lh in zip(display_lines, line_heights):
-            if y + lh >= content_top and y <= content_bot:
-                tw = self._measure(item_size, ln, item_font)[0]
-                self._draw.text((left_pad, y), ln, font=item_font, fill="WHITE")
-                self._rendered_item_rects.append((0, y - 2, W - 1, y + lh + 2))
-                visible_items.append(ln)
-            y += lh + spacing
-        self._menu_visible_items = visible_items[:4]
+        header_max_w = W - 20 - (badge_w + 10 if badge else 0)
+        header_size = self._fit_single_line_size(header, min_size=16, max_size=21, max_w=header_max_w)
+        header_font = self._get_font(header_size)
+        header_w, header_h = self._measure(header_size, header, header_font)
+        header_y = 10
+        if header:
+            self._draw.text(((W - header_w) // 2, header_y), header, font=header_font, fill="WHITE")
+        if badge:
+            self._draw.text((W - badge_w - 8, header_y + 1), badge, font=badge_font, fill="WHITE")
+        divider_y = header_y + header_h + 10
+        self._draw.line((10, divider_y, W - 10, divider_y), fill="WHITE", width=1)
 
-        # Track for touch zones (footer_y = H - footer_h - 4, same formula used below)
-        _ftr_y = H - footer_h - 10
-        self._rendered_hdr_bot      = avail_top
-        self._rendered_nav_top      = max(_ftr_y - 12, divider_y + 50)
-        self._rendered_act_top      = max(avail_top + 20, self._rendered_nav_top - 60)
-        self._rendered_item_rects   = []
-        self._rendered_footer_zones = []
+        footer_size = self._fit_single_line_size(footer_parts[0] if footer_parts else "OK = confirm", min_size=14, max_size=18, max_w=W - 20)
+        footer_font = self._get_font(footer_size)
+        footer_h = self._measure(footer_size, footer_parts[0] if footer_parts else "Ag", footer_font)[1]
+        footer_reserved = footer_h + 30
+
+        avail_top = divider_y + 12
+        avail_h = H - avail_top - footer_reserved - 8
+        spacing = 5
+        min_size, max_size = 12, 24
 
         body_size = self._pick_header_body_size(
-            body_lines, avail_h=avail_h, max_w=W - 16,
-            spacing=spacing, min_size=min_size, max_size=max_size,
+            body_lines,
+            avail_h=avail_h,
+            max_w=W - 16,
+            spacing=spacing,
+            min_size=min_size,
+            max_size=max_size,
         )
         body_font = self._get_font(body_size)
-        sized     = [(ln, self._measure(body_size, ln, body_font))
-                     for ln in body_lines]
-        total_h   = (sum(h for _, (_, h) in sized) + spacing * (len(sized) - 1)
-                     if sized else 0)
+        sized = [(ln, self._measure(body_size, ln, body_font)) for ln in body_lines]
+        total_h = sum(h for _, (_, h) in sized) + spacing * (len(sized) - 1) if sized else 0
         y = avail_top + max(0, (avail_h - total_h) // 2)
         for ln, (w, h) in sized:
             self._draw.text(((W - w) // 2, y), ln, font=body_font, fill="WHITE")
             y += h + spacing
 
         footer_y = H - footer_h - 10
-        self._draw.line((10, footer_y - 9, W - 10, footer_y - 9),
-                        fill="WHITE", width=1)
+        self._draw.line((10, footer_y - 9, W - 10, footer_y - 9), fill="WHITE", width=1)
         if footer_parts:
-            self._draw_footer_aligned(footer_parts, footer_font, footer_size,
-                                      footer_y)
+            self._draw_footer_aligned(footer_parts, footer_font, footer_size, footer_y)
+
+        self._rendered_hdr_bot = avail_top
+        self._rendered_nav_top = max(footer_y - 12, divider_y + 50)
+        self._rendered_act_top = max(avail_top + 20, self._rendered_nav_top - 60)
+        self._rendered_item_rects = []
+        self._rendered_footer_zones = []
 
     def _draw_online(self, lines):
         W, H = self.W, self.H
