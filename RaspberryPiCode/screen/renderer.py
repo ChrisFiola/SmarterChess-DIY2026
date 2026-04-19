@@ -940,6 +940,22 @@ class Renderer:
         clipped = overlay.crop((0, content_top, W, content_bot + 1))
         self._frame.paste(clipped, (0, content_top))
 
+        # Scroll affordance: show scrollbar when there is more content than viewport.
+        if self._menu_max_scroll > 0 and avail_h > 0:
+            track_x0 = W - 4
+            track_x1 = W - 2
+            track_y0 = content_top
+            track_y1 = content_bot
+            self._draw.rectangle((track_x0, track_y0, track_x1, track_y1), outline="GRAY", fill="BLACK")
+
+            thumb_h = max(18, int((avail_h * avail_h) / max(1, total_h)))
+            thumb_h = min(thumb_h, avail_h)
+            travel = max(1, avail_h - thumb_h)
+            pos = int((self._menu_scroll_y / self._menu_max_scroll) * travel)
+            thumb_y0 = track_y0 + pos
+            thumb_y1 = thumb_y0 + thumb_h
+            self._draw.rectangle((track_x0, thumb_y0, track_x1, thumb_y1), fill="WHITE")
+
         # Always expose exactly 4 item touch slots and corresponding visible labels.
         self._rendered_item_rects = []
         self._menu_visible_items = []

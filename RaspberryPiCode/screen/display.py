@@ -51,6 +51,7 @@ _ZONE_TO_PROTO = {
 _FPS_CAP = 25.0
 _MIN_DT = 1.0 / _FPS_CAP
 _TOUCH_POLL_S = 0.008  # seconds between touch polls inside render thread
+_DRAG_TAP_THRESHOLD_PX = 5  # movement below this still counts as a tap
 
 
 class Display:
@@ -101,6 +102,7 @@ class Display:
         tap_start_zone = None
         tap_last_emit_ms = 0
         touch_had_drag = False
+        touch_start_pt = None
 
         while True:
             now = time.monotonic()
@@ -162,6 +164,13 @@ class Display:
                     if touch_down and not last_touch_down:
                         tap_start_zone = _zone_at_point(pt, zones)
                         touch_had_drag = False
+                        touch_start_pt = pt
+
+                    if touch_down and last_touch_down and touch_start_pt and pt:
+                        dx = pt[0] - touch_start_pt[0]
+                        dy = pt[1] - touch_start_pt[1]
+                        if (dx * dx + dy * dy) >= (_DRAG_TAP_THRESHOLD_PX * _DRAG_TAP_THRESHOLD_PX):
+                            touch_had_drag = True
 
                     # Treat a touch as a tap when it is released and no drag happened.
                     if (not touch_down) and last_touch_down:
@@ -175,6 +184,7 @@ class Display:
                                     pass
                         tap_start_zone = None
                         touch_had_drag = False
+                        touch_start_pt = None
 
                     last_touch_down = touch_down
                 except Exception:
