@@ -207,6 +207,10 @@ class Renderer:
                         y1 = y0 + item_h - 1
                         zones[f"item_{i + 1}"] = (0, y0, W - 1, y1)
 
+        # Gesture-only area for annotation text scrolling.
+        if sk.startswith("annotation"):
+            zones["swipe_annotation"] = (0, HDR_BOT, W - 1, max(HDR_BOT, NAV_TOP - 1))
+
         return zones
 
     # ══════════════════════════════════════════════════════════════════════════

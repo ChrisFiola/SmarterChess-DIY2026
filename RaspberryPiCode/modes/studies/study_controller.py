@@ -361,7 +361,7 @@ class StudyController:
         return True
 
     def _show_annotation(self, link: BoardLink, display: Display, text: str) -> bool:
-        """Show annotation text using full content area with paged scrolling."""
+        """Show annotation text in a scrolling window (line-by-line)."""
         cleaned = _clean_comment(text)
         # Break at sentence boundaries ('. ' not preceded by digit or dot)
         cleaned = re.sub(r"(?<![.\d])\. ", ".\n", cleaned)
@@ -369,25 +369,30 @@ class StudyController:
         if not lines or lines == [""]:
             return True
 
-        pages = self._paginate_lines(lines, per_page=8)
-        page_idx = 0
+        window = 8
+        total = len(lines)
+        offset = 0
 
         while True:
-            at_last = page_idx >= len(pages) - 1
-            page_lines = pages[page_idx]
-            if len(pages) <= 1:
+            at_top = offset <= 0
+            at_bottom = offset + window >= total
+            visible = lines[offset : offset + window]
+
+            if total <= window:
                 footer = "OK=Done"
-            elif at_last:
-                footer = "Hint=Top  OK=Done"
+            elif at_top:
+                footer = "SwipeUp=Scroll  OK=Done"
+            elif at_bottom:
+                footer = "SwipeDown=Up  OK=Done"
             else:
-                footer = "Hint=Next  OK=Done"
+                footer = "Swipe=Scroll  OK=Done"
 
             self._render_page(
                 display,
-                page_lines,
+                visible,
                 footer=footer,
-                page_idx=page_idx,
-                total_pages=len(pages),
+                page_idx=0,
+                total_pages=1,
                 size_prefix="annotation",
             )
             link.send_to_board("WaitForAnnotationPage")
@@ -410,7 +415,12 @@ class StudyController:
                 if msg in OK_MSGS:
                     return True
                 if msg in HINT_MSGS:
-                    page_idx = 0 if at_last else page_idx + 1
+                    if total > window:
+                        offset = 0 if at_bottom else offset + 1
+                        break  # redisplay
+                if msg == "delete":
+                    if total > window:
+                        offset = max(0, offset - 1)
                     break  # redisplay
 
     def _collect_move(
