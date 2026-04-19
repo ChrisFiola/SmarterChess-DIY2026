@@ -35,14 +35,19 @@ class Event:
 NEW_GAME_MSGS: frozenset = frozenset({"n", "new", "in", "newgame", "btn_new"})
 OK_MSGS: frozenset = frozenset({"ok", "btnok", "btn_ok"})
 HINT_MSGS: frozenset = frozenset({"hint", "btn_hint"})
+TOUCH_ACTION_MSGS: frozenset = frozenset({"delete", "back"})
 
 #: Tokens that should be silently ignored in most message loops
 IGNORED_MSGS: frozenset = (
-    NEW_GAME_MSGS | OK_MSGS | HINT_MSGS | frozenset({"draw", "btn_draw"})
+    NEW_GAME_MSGS
+    | OK_MSGS
+    | HINT_MSGS
+    | TOUCH_ACTION_MSGS
+    | frozenset({"draw", "btn_draw"})
 )
 
 RESERVED_NON_MOVES: frozenset = (
-    NEW_GAME_MSGS | HINT_MSGS | OK_MSGS | {"draw", "btn_draw"}
+    NEW_GAME_MSGS | HINT_MSGS | OK_MSGS | TOUCH_ACTION_MSGS | {"draw", "btn_draw"}
 )
 
 

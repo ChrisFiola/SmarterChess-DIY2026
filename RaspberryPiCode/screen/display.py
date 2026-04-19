@@ -46,9 +46,9 @@ _ZONE_TO_PROTO = {
     "btn_back": "n",
 }
 
-_FPS_CAP = 20.0
+_FPS_CAP = 25.0
 _MIN_DT = 1.0 / _FPS_CAP
-_TOUCH_POLL_S = 0.02  # seconds between touch polls inside render thread
+_TOUCH_POLL_S = 0.015  # seconds between touch polls inside render thread
 
 
 class Display:

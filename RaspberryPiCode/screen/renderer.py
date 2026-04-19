@@ -69,7 +69,7 @@ def _is_footer_hint(line: str) -> bool:
 class Renderer:
     """Stateful PIL renderer.  Call render(pipe_line) to get a PIL Image."""
 
-    FOOTER_SIZE = 15
+    FOOTER_SIZE = 17
 
     def __init__(self, width: int = 240, height: int = 320):
         self.W = width
@@ -429,8 +429,8 @@ class Renderer:
         W, H = self.W, self.H
         labels = [self._strip_btn_label(p) for p in parts]
         actions = [self._footer_action(p) for p in parts]
-        btn_y0 = footer_y - 8
-        btn_y1 = H - 2
+        btn_y0 = footer_y - 10
+        btn_y1 = H - 1
         self._rendered_footer_zones = []
 
         def _draw_and_track(x0, y0, x1, y1, label, action):
@@ -513,7 +513,7 @@ class Renderer:
                           font_key=footer_font_key)[1]
             if footer_parts else 0
         )
-        footer_reserved = (footer_h + 14) if footer_parts else 0
+        footer_reserved = (footer_h + 24) if footer_parts else 0
         avail_h = H - footer_reserved - header_reserved
 
         min_size, max_size = 14, 28
@@ -565,17 +565,17 @@ class Renderer:
         self._rendered_hdr_bot = header_reserved
 
         if footer_parts:
-            footer_y = H - footer_h - 4
-            self._rendered_nav_top = max(footer_y - 8, 260)
+            footer_y = H - footer_h - 8
+            self._rendered_nav_top = max(footer_y - 12, 252)
             self._rendered_act_top = self._rendered_nav_top
-            self._draw.line((10, footer_y - 5, W - 10, footer_y - 5),
+            self._draw.line((10, footer_y - 9, W - 10, footer_y - 9),
                             fill="WHITE", width=1)
             self._draw_footer_aligned(footer_parts, footer_font,
                                       self.FOOTER_SIZE, footer_y,
                                       font_key=footer_font_key)
         else:
-            self._rendered_nav_top = H - 50
-            self._rendered_act_top = H - 50
+            self._rendered_nav_top = H - 58
+            self._rendered_act_top = H - 58
 
     def _draw_menuheader(self, lines, page_info: str = ""):
         """Header bar + equal-height outlined item tiles + footer."""
@@ -591,18 +591,18 @@ class Renderer:
         self._draw.rectangle((0, 0, W, H), fill="BLACK")
 
         # ── Header bar ────────────────────────────────────────────────────────
-        header_size = self._fit_single_line_size(header, min_size=13, max_size=17,
+        header_size = self._fit_single_line_size(header, min_size=15, max_size=20,
                                                   max_w=W - 20)
         header_font = self._get_font(header_size)
         _, header_h = self._measure(header_size, header, header_font)
-        header_y    = 6
+        header_y    = 8
         if header:
             hw = self._measure(header_size, header, header_font)[0]
             self._draw.text(((W - hw) // 2, header_y), header,
                             font=header_font, fill="WHITE")
-        divider_y = header_y + header_h + 6
+        divider_y = header_y + header_h + 8
         self._draw.line((10, divider_y, W - 10, divider_y), fill="WHITE", width=1)
-        content_top = divider_y + 6
+        content_top = divider_y + 8
 
         # Page indicator (top-right)
         if page_info:
@@ -615,12 +615,12 @@ class Renderer:
         footer_font = self._get_font(self.FOOTER_SIZE)
         footer_h    = (self._measure(self.FOOTER_SIZE, footer_parts[0], footer_font)[1]
                        if footer_parts else 0)
-        footer_reserved = (footer_h + 14) if footer_parts else 0
+        footer_reserved = (footer_h + 24) if footer_parts else 0
         content_bot = H - footer_reserved
 
         if footer_parts:
-            footer_y = H - footer_h - 4
-            self._draw.line((10, footer_y - 5, W - 10, footer_y - 5),
+            footer_y = H - footer_h - 8
+            self._draw.line((10, footer_y - 9, W - 10, footer_y - 9),
                             fill="WHITE", width=1)
             self._draw_footer_aligned(footer_parts, footer_font, self.FOOTER_SIZE,
                                       footer_y)
@@ -666,9 +666,9 @@ class Renderer:
             self._rendered_item_rects.append((0, tile_y0, W - 1, tile_y1))
 
         # Touch zone tracking
-        _ftr_y = H - footer_h - 4 if footer_parts else H
+        _ftr_y = H - footer_h - 8 if footer_parts else H
         self._rendered_hdr_bot  = content_top
-        self._rendered_nav_top  = max(_ftr_y - 8, divider_y + 40)
+        self._rendered_nav_top  = max(_ftr_y - 12, divider_y + 48)
         self._rendered_act_top  = self._rendered_nav_top
 
     def _draw_header_panel(self, lines, badge: str = ""):
@@ -701,36 +701,36 @@ class Renderer:
                             if badge else (0, 0))
 
         header_max_w = W - 20 - (badge_w + 10 if badge else 0)
-        header_size  = self._fit_single_line_size(header, min_size=14, max_size=19,
+        header_size  = self._fit_single_line_size(header, min_size=16, max_size=21,
                                                    max_w=header_max_w)
         header_font  = self._get_font(header_size)
         header_w, header_h = self._measure(header_size, header, header_font)
-        header_y = 8
+        header_y = 10
         if header:
             self._draw.text(((W - header_w) // 2, header_y), header,
                             font=header_font, fill="WHITE")
         if badge:
             self._draw.text((W - badge_w - 8, header_y + 1), badge,
                             font=badge_font, fill="WHITE")
-        divider_y = header_y + header_h + 8
+        divider_y = header_y + header_h + 10
         self._draw.line((10, divider_y, W - 10, divider_y), fill="WHITE", width=1)
 
         footer_size = self._fit_single_line_size(footer or "OK = confirm",
-                              min_size=12, max_size=16,
+                              min_size=14, max_size=18,
                                                   max_w=W - 20)
         footer_font = self._get_font(footer_size)
         footer_h    = self._measure(footer_size, footer or "Ag", footer_font)[1]
-        footer_reserved = footer_h + 22
+        footer_reserved = footer_h + 30
 
-        avail_top = divider_y + 10
+        avail_top = divider_y + 12
         avail_h   = H - avail_top - footer_reserved - 8
         spacing   = 5
         min_size, max_size = 12, 24
 
         # Track for touch zones (footer_y = H - footer_h - 4, same formula used below)
-        _ftr_y = H - footer_h - 8
+        _ftr_y = H - footer_h - 10
         self._rendered_hdr_bot      = avail_top
-        self._rendered_nav_top      = max(_ftr_y - 10, divider_y + 44)
+        self._rendered_nav_top      = max(_ftr_y - 12, divider_y + 50)
         self._rendered_act_top      = max(avail_top + 20, self._rendered_nav_top - 60)
         self._rendered_item_rects   = []
         self._rendered_footer_zones = []
@@ -749,8 +749,8 @@ class Renderer:
             self._draw.text(((W - w) // 2, y), ln, font=body_font, fill="WHITE")
             y += h + spacing
 
-        footer_y = H - footer_h - 8
-        self._draw.line((10, footer_y - 7, W - 10, footer_y - 7),
+        footer_y = H - footer_h - 10
+        self._draw.line((10, footer_y - 9, W - 10, footer_y - 9),
                         fill="WHITE", width=1)
         if footer_parts:
             self._draw_footer_aligned(footer_parts, footer_font, footer_size,

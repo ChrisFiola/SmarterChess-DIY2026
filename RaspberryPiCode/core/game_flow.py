@@ -1498,7 +1498,7 @@ def _run_local_game(
             continue
 
         # Silently ignore lingering navigation/system messages
-        if msg == "menu_ready" or msg in {"draw", "btn_draw"}:
+        if msg == "menu_ready" or msg in IGNORED_MSGS:
             continue
 
         if handle_capq_message(link, state.board, msg):

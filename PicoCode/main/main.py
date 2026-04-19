@@ -19,7 +19,7 @@ class Config:
         OK_INDEX = 8
         HINT_INDEX = 9
         SHUTDOWN_INDEX = 7  # button "8"/H
-        DEBOUNCE_MS = 200
+        DEBOUNCE_MS = 60
         OK_LONG_PRESS_MS = 500
         HINT_HOLD_DRAW_MS = 2000
         SHUTDOWN_HOLD_MS = 2000

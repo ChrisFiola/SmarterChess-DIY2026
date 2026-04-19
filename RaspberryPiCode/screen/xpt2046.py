@@ -25,7 +25,7 @@ class XPT2046:
     X_MIN, X_MAX   = 200, 3800
     Y_MIN, Y_MAX   = 200, 3800
     SAMPLE_JITTER  = 120
-    DEBOUNCE_MS    = 250    # minimum ms between reported touches
+    DEBOUNCE_MS    = 120    # minimum ms between reported touches
 
     # Orientation correction matching MADCTL=0xe8 (same as Pico driver)
     SWAP_XY = False
