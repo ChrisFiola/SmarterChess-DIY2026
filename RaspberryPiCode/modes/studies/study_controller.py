@@ -334,7 +334,7 @@ class StudyController:
                 footer="1=Play  OK=Back",
                 page_idx=page_idx,
                 total_pages=len(pages),
-                size_prefix="menu",
+                size_prefix="annotation",
             )
             link.send_to_board("WaitForOkOrSkipSetup")
 
