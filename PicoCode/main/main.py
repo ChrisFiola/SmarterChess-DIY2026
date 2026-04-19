@@ -950,6 +950,14 @@ def _select_mapped_value(out_min, out_max, *, cancel_to_idle=False):
     while True:
         if cp.shutdown_held():
             _shutdown_pico()
+        touch = _poll_touch_uart()
+        if touch == "ok":
+            link.send("btn_ok")
+            if cancel_to_idle:
+                _reset_to_idle()
+            return None
+        if touch and len(touch) == 1 and "1" <= touch <= "8":
+            return _map_range(int(touch), 1, 8, out_min, out_max)
         b = cp.detect_press_allowed()
         if b == (Config.Buttons.OK_INDEX + 1):
             link.send("btn_ok")
@@ -1003,6 +1011,18 @@ def _select_difficulty(default_level):
                 return level
             if touch == "hint":
                 return None
+            if touch == "1":
+                new_level = min(8, level + 1)
+                if new_level != level:
+                    level = new_level
+                    link.send("lvl_" + str(level))
+                    _difficulty_board_preview(level)
+            if touch == "2":
+                new_level = max(1, level - 1)
+                if new_level != level:
+                    level = new_level
+                    link.send("lvl_" + str(level))
+                    _difficulty_board_preview(level)
 
             # Check for OK (confirm) or Hint (back) via edge detection
             b = cp.detect_press_allowed()
@@ -1089,6 +1109,13 @@ def _run_game_setup_loop():
                 while True:
                     if cp.shutdown_held():
                         _shutdown_pico()
+                    touch = _poll_touch_uart()
+                    if touch == "ok":
+                        link.send("btn_ok")
+                        return
+                    if touch in ("1", "2", "3"):
+                        link.send("s" + touch)
+                        return
                     b2 = cp.detect_press_allowed()
                     if b2 == (Config.Buttons.OK_INDEX + 1):
                         link.send("btn_ok")
@@ -1173,6 +1200,12 @@ def _handle_promotion_choice():
                 _shutdown_pico()
             if _handle_hint_irq() == "new":
                 return
+            touch = _poll_touch_uart()
+            if touch in ("1", "2", "3", "4"):
+                n = int(touch)
+                if n in _PROMO:
+                    link.send(_PROMO[n])
+                    break
             b = cp.detect_press_raw()
             if b in _PROMO:
                 link.send(_PROMO[b])
@@ -1930,6 +1963,16 @@ def _main_loop():
             msg_setup = link.read()
             if msg_setup:
                 _handle_puzzle_setup_message(msg_setup)
+            touch = _poll_touch_uart()
+            if touch in ("n", "back"):
+                link.send("n")
+                st.puzzle_setup_active = False
+                cp.only_ok(False)
+                cp.enable_hint_irq()
+                cp.reset_edges()
+                board.opening()
+                time.sleep_ms(50)
+                continue
             if cp.BTN_OK.value() == 0 and cp.BTN_HINT.value() == 0:
                 link.send("n")
                 st.puzzle_setup_active = False
