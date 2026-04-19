@@ -369,7 +369,7 @@ class StudyController:
         if not lines or lines == [""]:
             return True
 
-        footer = "Swipe=Scroll  OK=Done" if len(lines) > 8 else "OK=Done"
+        footer = "OK=Done"
         self._render_page(
             display,
             lines,

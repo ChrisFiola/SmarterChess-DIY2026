@@ -958,14 +958,6 @@ def _select_mapped_value(out_min, out_max, *, cancel_to_idle=False):
             return None
         if touch and len(touch) == 1 and "1" <= touch <= "8":
             return _map_range(int(touch), 1, 8, out_min, out_max)
-        b = cp.detect_press_allowed()
-        if b == (Config.Buttons.OK_INDEX + 1):
-            link.send("btn_ok")
-            if cancel_to_idle:
-                _reset_to_idle()
-            return None
-        if b and 1 <= b <= 8:
-            return _map_range(b, 1, 8, out_min, out_max)
         time.sleep_ms(Config.Timing.FAST_POLL_MS)
 
 
@@ -978,11 +970,9 @@ def _difficulty_board_preview(level):
 
 
 def _select_difficulty(default_level):
-    """Increment/decrement difficulty selector.
+    """Touch-only difficulty selector.
 
-    Button 1 = up, Button 2 = down (hold for continuous).
-    OK = confirm (returns level 1-8).
-    Hint = back (returns None).
+    Touch 1 = up, Touch 2 = down, OK = confirm, Hint = back.
     """
     level = max(1, min(8, default_level))
     cp.disable_hint_irq()
@@ -990,15 +980,6 @@ def _select_difficulty(default_level):
     cp.reset_edges()
     _difficulty_board_preview(level)
     link.send("lvl_" + str(level))
-
-    HOLD_INITIAL_MS = 400
-    HOLD_REPEAT_MS = 150
-    btn1_pin = cp.pins[0]  # button 1
-    btn2_pin = cp.pins[1]  # button 2
-    hold_pin = None
-    hold_dir = 0
-    hold_start = 0
-    last_repeat = 0
 
     try:
         while True:
@@ -1023,52 +1004,6 @@ def _select_difficulty(default_level):
                     level = new_level
                     link.send("lvl_" + str(level))
                     _difficulty_board_preview(level)
-
-            # Check for OK (confirm) or Hint (back) via edge detection
-            b = cp.detect_press_allowed()
-            if b == (Config.Buttons.OK_INDEX + 1):
-                return level
-            if b == (Config.Buttons.HINT_INDEX + 1):
-                return None
-
-            # Hold detection for button 1 (up) and button 2 (down)
-            now = time.ticks_ms()
-            if b == 1:
-                hold_pin = btn1_pin
-                hold_dir = 1
-                hold_start = now
-                last_repeat = now
-                new_level = min(8, level + 1)
-                if new_level != level:
-                    level = new_level
-                    link.send("lvl_" + str(level))
-                    _difficulty_board_preview(level)
-            elif b == 2:
-                hold_pin = btn2_pin
-                hold_dir = -1
-                hold_start = now
-                last_repeat = now
-                new_level = max(1, level - 1)
-                if new_level != level:
-                    level = new_level
-                    link.send("lvl_" + str(level))
-                    _difficulty_board_preview(level)
-
-            # Continuous hold repeat
-            if hold_pin is not None:
-                if hold_pin.value() == 0:
-                    elapsed = time.ticks_diff(now, hold_start)
-                    since_repeat = time.ticks_diff(now, last_repeat)
-                    if elapsed >= HOLD_INITIAL_MS and since_repeat >= HOLD_REPEAT_MS:
-                        new_level = max(1, min(8, level + hold_dir))
-                        if new_level != level:
-                            level = new_level
-                            link.send("lvl_" + str(level))
-                            _difficulty_board_preview(level)
-                        last_repeat = now
-                else:
-                    hold_pin = None
-                    hold_dir = 0
 
             time.sleep_ms(Config.Timing.FAST_POLL_MS)
     finally:
@@ -1115,13 +1050,6 @@ def _run_game_setup_loop():
                         return
                     if touch in ("1", "2", "3"):
                         link.send("s" + touch)
-                        return
-                    b2 = cp.detect_press_allowed()
-                    if b2 == (Config.Buttons.OK_INDEX + 1):
-                        link.send("btn_ok")
-                        return
-                    if b2 in (1, 2, 3):
-                        link.send("s" + str(b2))
                         return
                     time.sleep_ms(Config.Timing.FAST_POLL_MS)
             if msg.startswith("heyArduinohint_enable"):
@@ -1206,14 +1134,7 @@ def _handle_promotion_choice():
                 if n in _PROMO:
                     link.send(_PROMO[n])
                     break
-            b = cp.detect_press_raw()
-            if b in _PROMO:
-                link.send(_PROMO[b])
-                break
-            if b:
-                pass  # ignore other buttons
-            else:
-                time.sleep_ms(Config.Timing.FAST_POLL_MS)
+            time.sleep_ms(Config.Timing.FAST_POLL_MS)
     finally:
         cp.clear_header()
         cp.apply(force=True)
@@ -1453,37 +1374,19 @@ def _handle_wait_for_ok_or_skip_setup(_msg=None):
     cp.border(st.in_game or st.puzzle_setup_active, force=True, apply_now=False)
     cp._set_cp_buttons(True, False, True, False, ok_color=GREEN)
     cp.apply(force=True)
-    cp.set_allowed([1, Config.Buttons.OK_INDEX + 1])
     while True:
         if cp.shutdown_held():
             _shutdown_pico()
         touch = _poll_touch_uart()
         if touch == "ok":
-            cp.set_allowed(None)
             cp.reset_edges()
             link.send("btn_ok")
             return
         if touch == "1":
-            cp.set_allowed(None)
             cp.reset_edges()
             link.send("1")
             return
-        b = cp.detect_press_allowed()
-        if not b:
-            time.sleep_ms(Config.Timing.FAST_POLL_MS)
-            continue
-        if b == 1:
-            cp.set_allowed(None)
-            cp.reset_edges()
-            link.send("1")
-            return
-        if b == (Config.Buttons.OK_INDEX + 1):
-            while cp.BTN_OK.value() == 0:
-                time.sleep_ms(Config.Timing.POLL_MS)
-            cp.set_allowed(None)
-            cp.reset_edges()
-            link.send("btn_ok")
-            return
+        time.sleep_ms(Config.Timing.FAST_POLL_MS)
 
 
 def _handle_menu_paged(_msg, *, ok_color=None):
@@ -1548,32 +1451,9 @@ def _handle_menu_paged(_msg, *, ok_color=None):
                     except Exception:
                         b = None
                 if b is not None:
-                    if b == (Config.Buttons.OK_INDEX + 1):
-                        while cp.BTN_OK.value() == 0:
-                            time.sleep_ms(Config.Timing.POLL_MS)
-                        cp.reset_edges()
-                        break
-                    if b == (Config.Buttons.HINT_INDEX + 1):
-                        break
-                    if 1 <= b <= 4:
-                        break
+                    break
                 continue
-        b = cp.detect_press_allowed()
-        if not b:
-            time.sleep_ms(Config.Timing.FAST_POLL_MS)
-            continue
-        if b == (Config.Buttons.OK_INDEX + 1):
-            while cp.BTN_OK.value() == 0:
-                time.sleep_ms(Config.Timing.POLL_MS)
-            cp.reset_edges()
-            link.send("btn_ok")
-            break
-        if b == (Config.Buttons.HINT_INDEX + 1):
-            link.send("btn_hint")
-            break
-        if 1 <= b <= 4:
-            link.send(str(b))
-            break
+        time.sleep_ms(Config.Timing.FAST_POLL_MS)
     board.markings()
     cp.enable_hint_irq()
 

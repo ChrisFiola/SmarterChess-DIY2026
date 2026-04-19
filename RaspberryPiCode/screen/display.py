@@ -137,8 +137,18 @@ class Display:
                                 self._disp.ShowImage(img)
                                 last_drawn = active_payload
                                 last_draw_t = now
+                        if self._renderer.handle_menu_drag(pt):
+                            active_payload = pending if pending is not None else last_drawn
+                            if active_payload is not None:
+                                img = self._renderer.render(active_payload)
+                                self._disp.ShowImage(img)
+                                last_drawn = active_payload
+                                last_draw_t = now
 
                     dragging = self._renderer.annotation_drag_active() if self._renderer else False
+                    dragging = dragging or (
+                        self._renderer.menu_drag_active() if self._renderer else False
+                    )
 
                     now_ms = int(now * 1000)
                     if touch_down and not last_touch_down:
@@ -165,7 +175,10 @@ class Display:
 
             # Nothing to draw yet
             if pending is None:
-                if self._renderer and self._renderer.annotation_drag_active():
+                if self._renderer and (
+                    self._renderer.annotation_drag_active()
+                    or self._renderer.menu_drag_active()
+                ):
                     time.sleep(0.001)
                 else:
                     time.sleep(0.01)
@@ -173,7 +186,10 @@ class Display:
 
             # FPS cap
             if now - last_draw_t < _MIN_DT:
-                if self._renderer and self._renderer.annotation_drag_active():
+                if self._renderer and (
+                    self._renderer.annotation_drag_active()
+                    or self._renderer.menu_drag_active()
+                ):
                     time.sleep(0.001)
                 else:
                     time.sleep(0.005)
@@ -196,6 +212,21 @@ class Display:
             last_drawn = pending
             last_draw_t = now
             pending = None
+
+    def scroll_menu(self, lines: int) -> None:
+        """Nudge current menu scroll and redraw immediately if a menu is active."""
+        if not self._renderer or not self._disp:
+            return
+        if not getattr(self, "_last_size", "").startswith("menu"):
+            return
+        if self._renderer.nudge_menu_scroll(lines) and self._last_payload:
+            img = self._renderer.render(self._last_payload)
+            self._disp.ShowImage(img)
+
+    def current_menu_visible_items(self):
+        if not self._renderer:
+            return []
+        return self._renderer.current_menu_visible_items()
 
     # ── Internal payload helpers ──────────────────────────────────────────────
 

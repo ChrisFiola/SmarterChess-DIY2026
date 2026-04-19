@@ -1733,21 +1733,16 @@ def _render_paged_menu(
     per_page: int = 4,
     back_label: str = "Back",
 ) -> str:
-    """Format a paged menu for the graphical LCD display.
+    """Format a scrollable menu for the graphical LCD display.
 
     The display server handles word-wrap, so we just pass clean text without
     character-count constraints.
-    Page indicator is rendered separately by the display server via the
-    size token (e.g. ``menu:1/2``).
     """
 
     def _fmt(i: int, s: str) -> str:
         return f"{i}) {(s or '').strip()}"
 
-    lines = [header] + [_fmt(i + 1, opt) for i, opt in enumerate(items[:per_page])]
-
-    while len(lines) < per_page + 1:
-        lines.append("")
+    lines = [header] + [_fmt(i + 1, opt) for i, opt in enumerate(items)]
 
     has_hint = pages > 1
     if can_back and has_hint:
@@ -1783,8 +1778,7 @@ def _paged_menu(
     if not opts:
         return None
 
-    pages = (len(opts) + per_page - 1) // per_page
-    page = 0
+    pages = 1
     last_sync = 0.0
     menu_ready = False
 
@@ -1792,7 +1786,7 @@ def _paged_menu(
         nonlocal last_sync, menu_ready
         if wake_command:
             link.send_to_board(wake_command)
-        has_hint = 1 if pages > 1 else 0
+        has_hint = 0
         has_back = 1 if can_back else 0
         link.send_to_board(f"MenuPaged_{has_hint}_{has_back}")
         last_sync = time.monotonic()
@@ -1802,19 +1796,17 @@ def _paged_menu(
     _sync_menu()
 
     while True:
-        chunk = opts[page * per_page : page * per_page + per_page]
-        page_tag = f":{page + 1}/{pages}" if pages > 1 else ""
         display.send(
             _render_paged_menu(
                 header,
-                page,
+                0,
                 pages,
-                chunk,
+                opts,
                 can_back=can_back,
                 per_page=per_page,
                 back_label=back_label,
             ),
-            size=f"menuheader{page_tag}",
+            size="menuheader",
         )
         msg = link.read_from_board()
         if msg is None:
@@ -1841,19 +1833,17 @@ def _paged_menu(
             if can_back:
                 return None
             continue
-        if m in HINT_MSGS:
-            if link.last_input_was_touch():
-                link.send_to_board("MenuSelect_hint")
-            page = (page + 1) % pages
-            _sync_menu()
-            continue
         if m in ("1", "2", "3", "4"):
-            if link.last_input_was_touch():
-                link.send_to_board(f"MenuSelect_{m}")
             idx = int(m) - 1
-            if idx < len(chunk) and chunk[idx]:
-                return chunk[idx]
-            _sync_menu()
+            visible = display.current_menu_visible_items()
+            if idx < len(visible) and visible[idx]:
+                if link.last_input_was_touch():
+                    link.send_to_board(f"MenuSelect_{m}")
+                return visible[idx]
+            if idx < len(opts) and opts[idx]:
+                if link.last_input_was_touch():
+                    link.send_to_board(f"MenuSelect_{m}")
+                return opts[idx]
             continue
 
 

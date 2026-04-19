@@ -107,6 +107,12 @@ class Renderer:
         self._annotation_drag_active = False
         self._annotation_last_y = None
         self._annotation_content_sig = None
+        self._menu_scroll_y = 0
+        self._menu_max_scroll = 0
+        self._menu_drag_active = False
+        self._menu_last_y = None
+        self._menu_content_sig = None
+        self._menu_visible_items = []
 
     # ══════════════════════════════════════════════════════════════════════════
     # Public API
@@ -143,6 +149,9 @@ class Renderer:
 
     def annotation_drag_active(self) -> bool:
         return self._annotation_drag_active
+
+    def menu_drag_active(self) -> bool:
+        return self._menu_drag_active
 
     def handle_annotation_drag(self, pt):
         """Update annotation scroll offset while finger drags in content area."""
@@ -186,6 +195,73 @@ class Renderer:
             return False
 
         self._annotation_scroll_y = new_scroll
+        return True
+
+    def handle_menu_drag(self, pt):
+        """Update menu scroll offset while finger drags in content area."""
+        size_key = (getattr(self, "_current_size", "auto") or "auto").lower()
+        if not size_key.startswith("menu"):
+            self._menu_drag_active = False
+            self._menu_last_y = None
+            return False
+
+        if pt is None:
+            self._menu_drag_active = False
+            self._menu_last_y = None
+            return False
+
+        px, py = pt
+        content_y0 = self._rendered_hdr_bot
+        content_y1 = max(content_y0, self._rendered_nav_top - 1)
+        in_content = 0 <= px < self.W and content_y0 <= py <= content_y1
+
+        if not self._menu_drag_active:
+            if in_content:
+                self._menu_drag_active = True
+                self._menu_last_y = py
+            return False
+
+        if self._menu_last_y is None:
+            self._menu_last_y = py
+            return False
+
+        dy = py - self._menu_last_y
+        self._menu_last_y = py
+        if dy == 0:
+            return False
+
+        new_scroll = self._menu_scroll_y - dy
+        if new_scroll < 0:
+            new_scroll = 0
+        if new_scroll > self._menu_max_scroll:
+            new_scroll = self._menu_max_scroll
+        if new_scroll == self._menu_scroll_y:
+            return False
+
+        self._menu_scroll_y = new_scroll
+        return True
+
+    def current_menu_visible_items(self):
+        return list(self._menu_visible_items)
+
+    def nudge_menu_scroll(self, lines: int) -> bool:
+        """Scroll current menu by a fixed amount; returns True if it changed."""
+        size_key = (getattr(self, "_current_size", "auto") or "auto").lower()
+        if not size_key.startswith("menu"):
+            return False
+        if not lines:
+            return False
+        step = 18 * int(lines)
+        new_scroll = self._menu_scroll_y + step
+        if new_scroll < 0:
+            new_scroll = 0
+        if new_scroll > self._menu_max_scroll:
+            new_scroll = self._menu_max_scroll
+        if new_scroll == self._menu_scroll_y:
+            return False
+        self._menu_scroll_y = new_scroll
+        self._menu_drag_active = False
+        self._menu_last_y = None
         return True
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -292,10 +368,17 @@ class Renderer:
             return
 
         self._annotation_scroll_y = 0
+        self._annotation_scroll_y = 0
         self._annotation_max_scroll = 0
         self._annotation_drag_active = False
         self._annotation_last_y = None
         self._annotation_content_sig = None
+        self._menu_scroll_y = 0
+        self._menu_max_scroll = 0
+        self._menu_drag_active = False
+        self._menu_last_y = None
+        self._menu_content_sig = None
+        self._menu_visible_items = []
 
         if size_key == "setup":
             self._draw_header_panel(lines)
@@ -746,7 +829,7 @@ class Renderer:
             self._rendered_act_top = H - 58
 
     def _draw_menuheader(self, lines, page_info: str = ""):
-        """Header bar + equal-height outlined item tiles + footer."""
+        """Scrollable header + plain list items + footer."""
         W, H = self.W, self.H
         if not lines:
             return
@@ -859,43 +942,49 @@ class Renderer:
         ):
             self._rendered_mid_action_mode = "delete"
         raw_body     = lines[1:-1] if footer_parts else lines[1:]
-        body_lines   = [(ln or "") for ln in raw_body if ln]
+        # ── Scrollable plain list items ───────────────────────────────────────
+        sig = tuple(lines)
+        if sig != self._menu_content_sig:
+            self._menu_content_sig = sig
+            self._menu_scroll_y = 0
+            self._menu_max_scroll = 0
+            self._menu_drag_active = False
+            self._menu_last_y = None
 
-        self._draw.rectangle((0, 0, W, H), fill="BLACK")
+        display_lines = [(ln or "") for ln in raw_items if ln]
+        avail_h = content_bot - content_top
+        min_size, max_size = 14, 24
+        spacing = 6
+        left_pad = 10
 
-        badge = (badge or "").strip()
-        badge_size = self._fit_single_line_size(badge, min_size=11, max_size=14,
-                                                max_w=52)
-        badge_font = self._get_font(badge_size)
-        badge_w, badge_h = (self._measure(badge_size, badge, badge_font)
-                            if badge else (0, 0))
+        item_size = min_size
+        for sz in range(max_size, min_size - 1, -1):
+            font = self._get_font(sz)
+            widths = [self._measure(sz, ln, font)[0] for ln in display_lines if ln]
+            if all(w <= W - 2 * left_pad for w in widths):
+                item_size = sz
+                break
 
-        header_max_w = W - 20 - (badge_w + 10 if badge else 0)
-        header_size  = self._fit_single_line_size(header, min_size=16, max_size=21,
-                                                   max_w=header_max_w)
-        header_font  = self._get_font(header_size)
-        header_w, header_h = self._measure(header_size, header, header_font)
-        header_y = 10
-        if header:
-            self._draw.text(((W - header_w) // 2, header_y), header,
-                            font=header_font, fill="WHITE")
-        if badge:
-            self._draw.text((W - badge_w - 8, header_y + 1), badge,
-                            font=badge_font, fill="WHITE")
-        divider_y = header_y + header_h + 10
-        self._draw.line((10, divider_y, W - 10, divider_y), fill="WHITE", width=1)
+        item_font = self._get_font(item_size)
+        line_heights = [self._measure(item_size, ln or "Ag", item_font)[1] for ln in display_lines]
+        total_h = sum(line_heights) + spacing * (len(line_heights) - 1) if line_heights else 0
+        self._menu_max_scroll = max(0, total_h - avail_h)
+        if self._menu_scroll_y > self._menu_max_scroll:
+            self._menu_scroll_y = self._menu_max_scroll
+        if self._menu_scroll_y < 0:
+            self._menu_scroll_y = 0
 
-        footer_size = self._fit_single_line_size(footer or "OK = confirm",
-                              min_size=14, max_size=18,
-                                                  max_w=W - 20)
-        footer_font = self._get_font(footer_size)
-        footer_h    = self._measure(footer_size, footer or "Ag", footer_font)[1]
-        footer_reserved = footer_h + 30
-
-        avail_top = divider_y + 12
-        avail_h   = H - avail_top - footer_reserved - 8
-        spacing   = 5
-        min_size, max_size = 12, 24
+        y = content_top - self._menu_scroll_y
+        self._rendered_item_rects = []
+        visible_items = []
+        for ln, lh in zip(display_lines, line_heights):
+            if y + lh >= content_top and y <= content_bot:
+                tw = self._measure(item_size, ln, item_font)[0]
+                self._draw.text((left_pad, y), ln, font=item_font, fill="WHITE")
+                self._rendered_item_rects.append((0, y - 2, W - 1, y + lh + 2))
+                visible_items.append(ln)
+            y += lh + spacing
+        self._menu_visible_items = visible_items[:4]
 
         # Track for touch zones (footer_y = H - footer_h - 4, same formula used below)
         _ftr_y = H - footer_h - 10
