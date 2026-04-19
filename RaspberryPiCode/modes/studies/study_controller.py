@@ -378,7 +378,16 @@ class StudyController:
             total_pages=1,
             size_prefix="annotation",
         )
+
+        # Drop any touch/ok left from the previous confirm screen so
+        # annotation does not auto-dismiss instantly.
+        try:
+            link.clear_input()
+        except Exception:
+            pass
+
         link.send_to_board("WaitForAnnotationPage")
+        ignore_touch_ok_until = time.monotonic() + 0.30
 
         while True:
             msg = link.read_from_board()
@@ -396,6 +405,8 @@ class StudyController:
                     return False
                 continue
             if msg in OK_MSGS:
+                if link.last_input_was_touch() and time.monotonic() < ignore_touch_ok_until:
+                    continue
                 return True
             if msg in HINT_MSGS or msg == "delete":
                 # Ignore legacy paging buttons; scrolling is local touch-drag now.
@@ -653,6 +664,7 @@ class StudyController:
                         display,
                         allow_exit_menu=True,
                         rearm_command="WaitForOkConfirm",
+                        ignore_touch_ok_s=0.30,
                     ):
                         return
                     if pending_check_sq is not None:
@@ -772,6 +784,7 @@ class StudyController:
                     display,
                     allow_exit_menu=True,
                     rearm_command="WaitForOkConfirm",
+                    ignore_touch_ok_s=0.30,
                 ):
                     return
                 node = opp_chosen_var

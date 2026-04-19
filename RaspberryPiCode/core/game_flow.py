@@ -59,6 +59,7 @@ def wait_for_ok(
     send_prompt: bool = True,
     allow_exit_menu: bool = False,
     rearm_command: Optional[str] = None,
+    ignore_touch_ok_s: float = 0.0,
 ) -> bool:
     """Wait for Pico OK acknowledgement (btn_ok/ok).
 
@@ -75,6 +76,8 @@ def wait_for_ok(
 
     if send_prompt:
         link.send_to_board("WaitForOkConfirm")
+
+    ignore_until = time.monotonic() + max(0.0, float(ignore_touch_ok_s or 0.0))
 
     while True:
         m = link.read_from_board()
@@ -97,6 +100,8 @@ def wait_for_ok(
             return False
 
         if m in OK_MSGS:
+            if link.last_input_was_touch() and time.monotonic() < ignore_until:
+                continue
             return True
 
         # ignore chatter
