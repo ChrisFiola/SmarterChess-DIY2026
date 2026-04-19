@@ -838,106 +838,124 @@ class Renderer:
                 self._menu_visible_items.append(ln)
 
     def _draw_menuheader(self, lines, page_info: str = ""):
-        """Scrollable header + plain list items + footer."""
+        """Scrollable header menu with exactly four visible item slots."""
         W, H = self.W, self.H
         if not lines:
             return
 
-        header      = (lines[0] or "").strip()
-        raw_footer  = lines[-1] if len(lines) > 1 else ""
-        raw_items   = lines[1:-1] if len(lines) > 2 else (lines[1:] if len(lines) > 1 else [])
+        header = (lines[0] or "").strip()
+        raw_footer = lines[-1] if len(lines) > 1 else ""
+        raw_items = lines[1:-1] if len(lines) > 2 else (lines[1:] if len(lines) > 1 else [])
         footer_parts = self._split_footer_parts(raw_footer or "")
+        display_lines = [(ln or "") for ln in raw_items if ln]
+
+        # Reset scroll state when menu content changes.
+        sig = tuple(display_lines)
+        if sig != self._menu_content_sig:
+            self._menu_content_sig = sig
+            self._menu_scroll_y = 0
+            self._menu_max_scroll = 0
+            self._menu_drag_active = False
+            self._menu_last_y = None
 
         self._draw.rectangle((0, 0, W, H), fill="BLACK")
 
-        # ── Header bar ────────────────────────────────────────────────────────
-        header_size = self._fit_single_line_size(header, min_size=15, max_size=20,
-                                                  max_w=W - 20)
+        header_size = self._fit_single_line_size(header, min_size=15, max_size=20, max_w=W - 20)
         header_font = self._get_font(header_size, font_key="default")
         _, header_h = self._measure(header_size, header, header_font)
-        header_y    = 8
+        header_y = 8
         if header:
             hw = self._measure(header_size, header, header_font)[0]
-            self._draw.text(((W - hw) // 2, header_y), header,
-                            font=header_font, fill="WHITE")
+            self._draw.text(((W - hw) // 2, header_y), header, font=header_font, fill="WHITE")
         divider_y = header_y + header_h + 8
         self._draw.line((10, divider_y, W - 10, divider_y), fill="WHITE", width=1)
         content_top = divider_y + 8
 
-        # Page indicator (top-right)
         if page_info:
             pg_font = self._get_font(self.FOOTER_SIZE)
             pg_w, _ = self._measure(self.FOOTER_SIZE, page_info, pg_font)
-            self._draw.text((W - pg_w - 6, header_y + 1), page_info,
-                            font=pg_font, fill="GRAY")
+            self._draw.text((W - pg_w - 6, header_y + 1), page_info, font=pg_font, fill="GRAY")
 
-        # ── Footer ────────────────────────────────────────────────────────────
         footer_font = self._get_font(self.FOOTER_SIZE)
-        footer_h    = (self._measure(self.FOOTER_SIZE, footer_parts[0], footer_font)[1]
-                       if footer_parts else 0)
+        footer_h = self._measure(self.FOOTER_SIZE, footer_parts[0], footer_font)[1] if footer_parts else 0
         footer_reserved = (footer_h + 24) if footer_parts else 0
         content_bot = H - footer_reserved
 
         if footer_parts:
             footer_y = H - footer_h - 8
-            self._draw.line((10, footer_y - 9, W - 10, footer_y - 9),
-                            fill="WHITE", width=1)
-            self._draw_footer_aligned(footer_parts, footer_font, self.FOOTER_SIZE,
-                                      footer_y)
+            self._draw.line((10, footer_y - 9, W - 10, footer_y - 9), fill="WHITE", width=1)
+            self._draw_footer_aligned(footer_parts, footer_font, self.FOOTER_SIZE, footer_y)
 
-        # ── Item tiles ────────────────────────────────────────────────────────
-        display_lines = [(ln or "") for ln in raw_items if ln]
-        n = len(display_lines)
-        tile_gap   = 5
+        # Fixed 4-row viewport with smooth pixel scroll.
+        visible_rows = 4
+        tile_gap = 5
         tile_pad_x = 8
-        avail_h    = content_bot - content_top
-        tile_h     = max(28, (avail_h - tile_gap * (n + 1)) // n) if n else 28
-        tile_inner = tile_h - 8   # vertical text room inside tile
+        avail_h = max(4, content_bot - content_top)
+        tile_h = max(28, (avail_h - tile_gap * (visible_rows + 1)) // visible_rows)
+        row_step = tile_h + tile_gap
+        y_offset_base = content_top + tile_gap
 
+        total_h = tile_gap + len(display_lines) * row_step
+        self._menu_max_scroll = max(0, total_h - avail_h)
+        if self._menu_scroll_y > self._menu_max_scroll:
+            self._menu_scroll_y = self._menu_max_scroll
+
+        tile_inner = tile_h - 8
         min_size, max_size = 14, 22
         item_size = min_size
         for sz in range(max_size, min_size - 1, -1):
-            font   = self._get_font(sz)
-            max_th = max((self._measure(sz, ln, font)[1] for ln in display_lines),
-                         default=sz)
-            max_tw = max((self._measure(sz, ln, font)[0] for ln in display_lines),
-                         default=0)
+            font = self._get_font(sz)
+            max_th = max((self._measure(sz, ln, font)[1] for ln in display_lines), default=sz)
+            max_tw = max((self._measure(sz, ln, font)[0] for ln in display_lines), default=0)
             if max_th <= tile_inner and max_tw <= W - 2 * tile_pad_x - 16:
                 item_size = sz
                 break
 
         item_font = self._get_font(item_size)
-        self._rendered_item_rects = []
+
+        # Draw all rows at virtual positions, clipped to menu content viewport.
         for i, ln in enumerate(display_lines):
-            tile_y0 = content_top + tile_gap + i * (tile_h + tile_gap)
+            tile_y0 = y_offset_base + i * row_step - self._menu_scroll_y
             tile_y1 = tile_y0 + tile_h - 1
+            if tile_y1 < content_top or tile_y0 > content_bot:
+                continue
             try:
                 self._draw.rounded_rectangle(
                     [tile_pad_x, tile_y0, W - 1 - tile_pad_x, tile_y1],
-                    radius=5, outline="WHITE", width=1)
+                    radius=5,
+                    outline="WHITE",
+                    width=1,
+                )
             except AttributeError:
                 self._draw.rectangle(
                     [tile_pad_x, tile_y0, W - 1 - tile_pad_x, tile_y1],
-                    outline="WHITE", width=1)
+                    outline="WHITE",
+                    width=1,
+                )
             tw, th = self._measure(item_size, ln, item_font)
-            self._draw.text(((W - tw) // 2, tile_y0 + (tile_h - th) // 2),
-                            ln, font=item_font, fill="WHITE")
-            self._rendered_item_rects.append((0, tile_y0, W - 1, tile_y1))
+            self._draw.text(((W - tw) // 2, tile_y0 + (tile_h - th) // 2), ln, font=item_font, fill="WHITE")
 
-        # Track visible items for menu selection: extract option text from "1) Option" format
+        # Always expose exactly 4 item touch slots and corresponding visible labels.
+        self._rendered_item_rects = []
         self._menu_visible_items = []
-        for ln in display_lines:
-            if ") " in ln:
-                option_text = ln.split(") ", 1)[1]
-                self._menu_visible_items.append(option_text)
-            else:
-                self._menu_visible_items.append(ln)
+        for row in range(visible_rows):
+            row_y0 = y_offset_base + row * row_step
+            row_y1 = row_y0 + tile_h - 1
+            self._rendered_item_rects.append((0, row_y0, W - 1, row_y1))
 
-        # Touch zone tracking
+            center_y = row_y0 + (tile_h // 2)
+            virtual_y = self._menu_scroll_y + (center_y - y_offset_base)
+            idx = int(virtual_y // row_step) if row_step > 0 else 0
+            if 0 <= idx < len(display_lines):
+                ln = display_lines[idx]
+                self._menu_visible_items.append(ln.split(") ", 1)[1] if ") " in ln else ln)
+            else:
+                self._menu_visible_items.append("")
+
         _ftr_y = H - footer_h - 8 if footer_parts else H
-        self._rendered_hdr_bot  = content_top
-        self._rendered_nav_top  = max(_ftr_y - 12, divider_y + 48)
-        self._rendered_act_top  = self._rendered_nav_top
+        self._rendered_hdr_bot = content_top
+        self._rendered_nav_top = max(_ftr_y - 12, divider_y + 48)
+        self._rendered_act_top = self._rendered_nav_top
 
     def _draw_header_panel(self, lines, badge: str = ""):
         W, H = self.W, self.H
