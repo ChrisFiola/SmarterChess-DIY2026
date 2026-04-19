@@ -1087,7 +1087,6 @@ class Renderer:
         self._rendered_nav_top = max(footer_y - 12, divider_y + 50)
         self._rendered_act_top = max(avail_top + 20, self._rendered_nav_top - 60)
         self._rendered_item_rects = []
-        self._rendered_footer_zones = []
 
     def _draw_online(self, lines):
         W, H = self.W, self.H
