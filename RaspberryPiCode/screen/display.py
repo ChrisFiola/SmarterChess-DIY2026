@@ -157,6 +157,7 @@ class Display:
 
                     # Treat a touch as a tap when it is released and no drag happened.
                     if (not touch_down) and last_touch_down and not dragging:
+                        print(f"[Touch] Release event: tap_start_zone={tap_start_zone}, debounce_check={(now_ms - tap_last_emit_ms)} >= {self._touch.DEBOUNCE_MS}", flush=True)
                         if tap_start_zone and (now_ms - tap_last_emit_ms >= self._touch.DEBOUNCE_MS):
                             proto = _ZONE_TO_PROTO.get(tap_start_zone)
                             if proto:
@@ -165,9 +166,10 @@ class Display:
                                     self.touch_queue.put_nowait(proto)
                                     tap_last_emit_ms = now_ms
                                 except queue.Full:
-                                    pass
+                                    print(f"[Touch] Queue full, dropped tap", flush=True)
                         else:
-                            print(f"[Touch] Touch released, no tap (dragging={dragging}, zone={tap_start_zone})", flush=True)
+                            reason = "No zone" if not tap_start_zone else f"Debounce fail ({now_ms - tap_last_emit_ms}ms < {self._touch.DEBOUNCE_MS}ms)"
+                            print(f"[Touch] Tap cancelled: {reason}", flush=True)
                         tap_start_zone = None
 
                     if dragging:
