@@ -1626,6 +1626,12 @@ def _handle_puzzle_wrong(msg):
         if _handle_hint_irq() == "new":
             link.send("n")
             break
+        touch = _poll_touch_uart()
+        if touch == "ok":
+            cp.disarm_confirm_ok()
+            cp.reset_edges()
+            link.send("btn_ok")
+            break
         b = cp.detect_press_raw()
         if b == (Config.Buttons.OK_INDEX + 1):
             while cp.BTN_OK.value() == 0:
