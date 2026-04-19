@@ -177,6 +177,8 @@ class Display:
                         if (not touch_had_drag) and (not dragging) and tap_start_zone and (now_ms - tap_last_emit_ms >= self._touch.DEBOUNCE_MS):
                             proto = _ZONE_TO_PROTO.get(tap_start_zone)
                             if proto:
+                                if "hint" in proto or "back" in tap_start_zone or "exit" in str(tap_start_zone).lower():
+                                    print(f"[TAP] zone={tap_start_zone!r} → proto={proto!r}", flush=True)
                                 try:
                                     self.touch_queue.put_nowait(proto)
                                     tap_last_emit_ms = now_ms
