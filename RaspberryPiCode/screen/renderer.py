@@ -603,7 +603,7 @@ class Renderer:
             self._rendered_act_top = H - 58
 
     def _draw_menuheader(self, lines, page_info: str = ""):
-        """Header bar + plain list items + footer."""
+        """Header bar + equal-height outlined item tiles + footer."""
         W, H = self.W, self.H
         if not lines:
             return
@@ -618,7 +618,7 @@ class Renderer:
         # ── Header bar ────────────────────────────────────────────────────────
         header_size = self._fit_single_line_size(header, min_size=15, max_size=20,
                                                   max_w=W - 20)
-        header_font = self._get_font(header_size)
+        header_font = self._get_font(header_size, font_key="default")
         _, header_h = self._measure(header_size, header, header_font)
         header_y    = 8
         if header:
@@ -650,35 +650,44 @@ class Renderer:
             self._draw_footer_aligned(footer_parts, footer_font, self.FOOTER_SIZE,
                                       footer_y)
 
-        # ── Plain list items (no boxes) ───────────────────────────────────────
+        # ── Item tiles ────────────────────────────────────────────────────────
         display_lines = [(ln or "") for ln in raw_items if ln]
         n = len(display_lines)
+        tile_gap   = 5
+        tile_pad_x = 8
         avail_h    = content_bot - content_top
+        tile_h     = max(28, (avail_h - tile_gap * (n + 1)) // n) if n else 28
+        tile_inner = tile_h - 8   # vertical text room inside tile
 
-        spacing = 6
-        left_pad = 10
-        min_size, max_size = 14, 24
+        min_size, max_size = 14, 22
         item_size = min_size
         for sz in range(max_size, min_size - 1, -1):
             font   = self._get_font(sz)
-            heights = [self._measure(sz, ln, font)[1] for ln in display_lines]
-            widths = [self._measure(sz, ln, font)[0] for ln in display_lines]
-            total_h = sum(heights) + spacing * (len(heights) - 1) if heights else 0
-            if total_h <= avail_h - 8 and all(w <= W - 2 * left_pad for w in widths):
+            max_th = max((self._measure(sz, ln, font)[1] for ln in display_lines),
+                         default=sz)
+            max_tw = max((self._measure(sz, ln, font)[0] for ln in display_lines),
+                         default=0)
+            if max_th <= tile_inner and max_tw <= W - 2 * tile_pad_x - 16:
                 item_size = sz
                 break
 
         item_font = self._get_font(item_size)
-        heights = [self._measure(item_size, ln, item_font)[1] for ln in display_lines]
-        total_h = sum(heights) + spacing * (len(heights) - 1) if heights else 0
-        y = content_top + max(2, (avail_h - total_h) // 2)
         self._rendered_item_rects = []
-        for ln, th in zip(display_lines, heights):
-            tw = self._measure(item_size, ln, item_font)[0]
-            tx = (W - tw) // 2
-            self._draw.text((tx, y), ln, font=item_font, fill="WHITE")
-            self._rendered_item_rects.append((0, y - 2, W - 1, y + th + 2))
-            y += th + spacing
+        for i, ln in enumerate(display_lines):
+            tile_y0 = content_top + tile_gap + i * (tile_h + tile_gap)
+            tile_y1 = tile_y0 + tile_h - 1
+            try:
+                self._draw.rounded_rectangle(
+                    [tile_pad_x, tile_y0, W - 1 - tile_pad_x, tile_y1],
+                    radius=5, outline="WHITE", width=1)
+            except AttributeError:
+                self._draw.rectangle(
+                    [tile_pad_x, tile_y0, W - 1 - tile_pad_x, tile_y1],
+                    outline="WHITE", width=1)
+            tw, th = self._measure(item_size, ln, item_font)
+            self._draw.text(((W - tw) // 2, tile_y0 + (tile_h - th) // 2),
+                            ln, font=item_font, fill="WHITE")
+            self._rendered_item_rects.append((0, tile_y0, W - 1, tile_y1))
 
         # Touch zone tracking
         _ftr_y = H - footer_h - 8 if footer_parts else H
