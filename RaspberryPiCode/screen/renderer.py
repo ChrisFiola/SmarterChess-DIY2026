@@ -828,6 +828,15 @@ class Renderer:
             self._rendered_nav_top = H - 58
             self._rendered_act_top = H - 58
 
+        # Track visible items for menu selection: extract option text from "1) Option" format
+        self._menu_visible_items = []
+        for ln in display_lines:
+            if ") " in ln:
+                option_text = ln.split(") ", 1)[1]
+                self._menu_visible_items.append(option_text)
+            else:
+                self._menu_visible_items.append(ln)
+
     def _draw_menuheader(self, lines, page_info: str = ""):
         """Scrollable header + plain list items + footer."""
         W, H = self.W, self.H
