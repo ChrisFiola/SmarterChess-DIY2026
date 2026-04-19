@@ -1929,7 +1929,6 @@ def _run_update(link: BoardLink, display: Display) -> None:
         pico_dir / "main.py",
         pico_dir / "pico_hw.py",
         pico_dir / "reed_matrix.py",
-        pico_dir / "tft_ili9341.py",
     ]
 
     def _pico_signature() -> tuple[tuple[str, Optional[str]], ...]:

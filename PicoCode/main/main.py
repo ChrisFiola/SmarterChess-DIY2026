@@ -4,7 +4,6 @@ import gc
 import ubinascii
 import os as _uos
 from pico_hw import configure as _configure_hw, ControlPanel, ChessBoard
-from tft_ili9341 import TFTDisplay
 
 
 # trigger faster
@@ -181,38 +180,6 @@ class UARTLink:
         self.uart.write((s + "\n").encode())
 
 
-class FilteredUARTLink(UARTLink):
-    """
-    Wraps UARTLink so that DISP: messages from the Pi are silently rendered
-    on the TFT and never surfaced to the rest of the game logic.
-    All existing callers of link.read() remain unchanged.
-
-    suppress_tft: when True, DISP messages are consumed but NOT rendered.
-    Set this during OTA update to avoid heap exhaustion from SPI allocations.
-    """
-
-    def __init__(self):
-        super().__init__()
-        self._tft = None
-        self.suppress_tft = False
-
-    def set_tft(self, tft):
-        self._tft = tft
-
-    def read(self):
-        msg = super().read()
-        if msg is None:
-            return None
-        if msg.startswith("heyArduinoDISP:"):
-            if self._tft is not None and not self.suppress_tft:
-                try:
-                    self._tft.render(msg[len("heyArduinoDISP:") :])
-                except Exception:
-                    pass
-            return None  # consumed; non-blocking contract preserved
-        return msg
-
-
 class Screen:
     def __init__(self, link, st_):
         self.link = link
@@ -270,10 +237,7 @@ class Screen:
 
 
 time.sleep_ms(500)
-link = FilteredUARTLink()
-# tft = TFTDisplay()          # shows "SMARTCHESS / Starting..." immediately at boot
-tft = None
-link.set_tft(tft)
+link = UARTLink()
 screen = Screen(link, st)
 _configure_hw(
     Config,
@@ -294,6 +258,30 @@ cp = ControlPanel(st)
 gc.collect()
 board = ChessBoard()
 gc.collect()
+
+
+_TOUCH_PREFIX = "heyArduinotouch_"
+_TOUCH_PREFIX_LEN = len(_TOUCH_PREFIX)
+
+
+def _poll_touch_uart():
+    """Check UART for touch events forwarded by Pi. Returns action str or None."""
+    msg = link.read()
+    if not msg:
+        return None
+    if msg.startswith(_TOUCH_PREFIX):
+        return msg[_TOUCH_PREFIX_LEN:]
+    return None
+
+
+def _poll_touch_or_msg():
+    """Check UART. Returns ('touch', action) or ('msg', raw) or None."""
+    msg = link.read()
+    if not msg:
+        return None
+    if msg.startswith(_TOUCH_PREFIX):
+        return ("touch", msg[_TOUCH_PREFIX_LEN:])
+    return ("msg", msg)
 
 
 def _is_alphanumeric(ch):
@@ -335,12 +323,6 @@ def _clear_persistent_trail():
 def _tick_input_loop():
     if cp.shutdown_held():
         _shutdown_pico()
-    touch = _handle_game_touch_action()
-    if touch == "new":
-        return ("new_game",)
-    if touch:
-        time.sleep_ms(Config.Timing.FAST_POLL_MS)
-        return None
     irq = _handle_hint_irq()
     if irq == "new":
         return ("new_game",)
@@ -368,15 +350,6 @@ def _wait_for_trail_clear():
         msg = link.read()
         if msg and _handle_overlay_or_gameover(msg) == "gameover":
             return "gameover"
-        touch = _consume_touch_action()
-        if touch == "btn_ok":
-            was_hint = st.persistent_trail_type == "hint"
-            _clear_persistent_trail()
-            cp.only_input()
-            cp.reset_edges()
-            if was_hint:
-                link.send("btn_ok")
-            return 0
         b = cp.detect_press_raw()
         if b is not None:
             was_hint = st.persistent_trail_type == "hint"
@@ -612,18 +585,12 @@ def _confirm_move(move):
     cp.reset_edges()
     cp.arm_confirm_ok()
     screen.typing_confirm(move)
-    link.suppress_tft = True  # suppress DISP only during the 300ms ACK window
-    acked, ok_seen_during_ack = screen.wait_for_lcd_ack(
-        "heyArduinolcd_ack_confirm", timeout_ms=300
-    )
-    link.suppress_tft = False
+    time.sleep_ms(30)
+    acked, ok_seen_during_ack = screen.wait_for_lcd_ack()
     if not acked:
         cp.disarm_confirm_ok()
         cp.only_ok(False)
         return None
-    if tft:
-        tft.show_confirm(move)  # render confirm screen directly, set touch zone
-    time.sleep_ms(30)
     if ok_seen_during_ack or cp.consume_confirm_ok(window_ms=300):
         cp.disarm_confirm_ok()
         cp.set_ok_led(False)
@@ -642,29 +609,25 @@ def _confirm_move(move):
             cp.disarm_confirm_ok()
             cp.only_ok(False)
             return None
-        touch = _handle_game_touch_action(allow_confirm=True)
-        if touch == "new":
-            cp.disarm_confirm_ok()
-            cp.only_ok(False)
-            screen.clear("confirm")
-            return None
-        if touch == "confirm":
-            cp.disarm_confirm_ok()
-            cp.set_ok_led(False)
-            screen.clear("confirm")
-            cp.reset_edges()
-            return "ok"
-        msg = link.read()
-        if msg:
-            outcome = _handle_overlay_or_gameover(msg)
-            if outcome == "gameover":
+        ev = _poll_touch_or_msg()
+        if ev:
+            tag, val = ev
+            if tag == "touch" and val == "ok":
                 cp.disarm_confirm_ok()
-                cp.only_ok(False)
-                return None
-            if outcome in ("hint", "engine"):
+                cp.set_ok_led(False)
+                screen.clear("confirm")
                 cp.reset_edges()
-                cp.disarm_confirm_ok()
-                return None
+                return "ok"
+            if tag == "msg":
+                outcome = _handle_overlay_or_gameover(val)
+                if outcome == "gameover":
+                    cp.disarm_confirm_ok()
+                    cp.only_ok(False)
+                    return None
+                if outcome in ("hint", "engine"):
+                    cp.reset_edges()
+                    cp.disarm_confirm_ok()
+                    return None
         if cp.consume_confirm_ok(window_ms=300) or cp.BTN_OK.value() == 0:
             t0 = time.ticks_ms()
             fired = False
@@ -831,7 +794,6 @@ def _collect_and_submit_move():
                 return
     finally:
         st.in_input = False
-        link.suppress_tft = False
 
 
 def _show_game_over_and_ack(result_str):
@@ -856,7 +818,8 @@ def _show_game_over_and_ack(result_str):
                 last = now
             if cp.shutdown_held():
                 _shutdown_pico()
-            if _consume_touch_action() == "btn_ok":
+            touch = _poll_touch_uart()
+            if touch == "ok":
                 cp.only_ok(False)
                 link.send("n")
                 break
@@ -985,6 +948,13 @@ def _select_difficulty(default_level):
         while True:
             if cp.shutdown_held():
                 _shutdown_pico()
+
+            # Check touch via UART
+            touch = _poll_touch_uart()
+            if touch == "ok":
+                return level
+            if touch == "hint":
+                return None
 
             # Check for OK (confirm) or Hint (back) via edge detection
             b = cp.detect_press_allowed()
@@ -1277,8 +1247,8 @@ def _handle_wait_for_ok_confirm(_msg=None):
     while True:
         if cp.shutdown_held():
             _shutdown_pico()
-        action = _consume_touch_action()
-        if action == "btn_ok":
+        touch = _poll_touch_uart()
+        if touch == "ok":
             cp.disarm_confirm_ok()
             cp.set_ok_led(False)
             cp.reset_edges()
@@ -1312,8 +1282,8 @@ def _handle_puzzle_setup_ok_confirm(_msg=None):
     while True:
         if cp.shutdown_held():
             _shutdown_pico()
-        action = _consume_touch_action()
-        if action == "btn_ok":
+        touch = _poll_touch_uart()
+        if touch == "ok":
             cp.disarm_confirm_ok()
             cp.set_ok_led(False)
             cp.reset_edges()
@@ -1346,22 +1316,22 @@ def _handle_wait_for_annotation_page(_msg=None):
     while True:
         if cp.shutdown_held():
             _shutdown_pico()
-        action = _consume_touch_action()
-        if action == "btn_hint":
-            cp.hint_irq_flag = False
-            cp.reset_edges()
-            link.send("btn_hint")
-            return
-        if action == "btn_ok":
+        touch = _poll_touch_uart()
+        if touch == "ok":
             cp.disarm_confirm_ok()
             cp.set_ok_led(False)
             cp.reset_edges()
             link.send("btn_ok")
             return
+        if touch == "hint":
+            cp.hint_irq_flag = False
+            cp.reset_edges()
+            link.send("btn_hint")
+            return
         if cp.BTN_HINT.value() == 0:
             while cp.BTN_HINT.value() == 0:
                 time.sleep_ms(Config.Timing.POLL_MS)
-            cp.hint_irq_flag = False  # consume IRQ so main loop doesn't double-fire
+            cp.hint_irq_flag = False
             cp.reset_edges()
             link.send("btn_hint")
             return
@@ -1390,6 +1360,17 @@ def _handle_wait_for_ok_or_skip_setup(_msg=None):
     while True:
         if cp.shutdown_held():
             _shutdown_pico()
+        touch = _poll_touch_uart()
+        if touch == "ok":
+            cp.set_allowed(None)
+            cp.reset_edges()
+            link.send("btn_ok")
+            return
+        if touch == "1":
+            cp.set_allowed(None)
+            cp.reset_edges()
+            link.send("1")
+            return
         b = cp.detect_press_allowed()
         if not b:
             time.sleep_ms(Config.Timing.FAST_POLL_MS)
@@ -1406,63 +1387,6 @@ def _handle_wait_for_ok_or_skip_setup(_msg=None):
             cp.reset_edges()
             link.send("btn_ok")
             return
-
-
-def _wait_for_touch_release():
-    if not tft:
-        return
-    while tft.touch.read() is not None:
-        if cp.shutdown_held():
-            _shutdown_pico()
-        time.sleep_ms(Config.Timing.FAST_POLL_MS)
-
-
-def _consume_touch_action():
-    if not tft:
-        return None
-    action = tft.touch_action()
-    if action is None:
-        return None
-    _wait_for_touch_release()
-    return action
-
-
-def _handle_game_touch_action(*, allow_confirm=False):
-    action = _consume_touch_action()
-    if action is None:
-        return None
-    if action == "game_menu":
-        return _trigger_new_game_request()
-    if action == "game_hint":
-        if st.game_state == Game.RUNNING and st.hint_enabled:
-            link.send("btn_hint")
-        return "hint"
-    if allow_confirm and action == "game_confirm":
-        return "confirm"
-    return None
-
-
-def _menu_touch_button(allow_select, has_next, has_back):
-    if not tft:
-        return None
-    action = tft.touch_action()
-    if action is None:
-        return None
-    if action == "btn_ok" and has_back:
-        _wait_for_touch_release()
-        return Config.Buttons.OK_INDEX + 1
-    if action == "btn_hint" and has_next:
-        _wait_for_touch_release()
-        return Config.Buttons.HINT_INDEX + 1
-    if allow_select and action.startswith("item_"):
-        try:
-            n = int(action.split("_", 1)[1])
-            if 1 <= n <= 4:
-                _wait_for_touch_release()
-                return n
-        except (ValueError, IndexError):
-            pass
-    return None
 
 
 def _handle_menu_paged(_msg, *, ok_color=None):
@@ -1491,8 +1415,7 @@ def _handle_menu_paged(_msg, *, ok_color=None):
     while True:
         if cp.shutdown_held():
             _shutdown_pico()
-        # Keep draining UART while the menu is open so queued DISP frames
-        # render immediately instead of waiting for the first button press.
+        # Keep draining UART while the menu is open
         msg = link.read()
         if msg:
             if msg.startswith("heyArduinoMenuPaged"):
@@ -1538,9 +1461,7 @@ def _handle_menu_paged(_msg, *, ok_color=None):
                     if 1 <= b <= 4:
                         break
                 continue
-        b = _menu_touch_button(allow_select, has_next, has_back)
-        if not b:
-            b = cp.detect_press_allowed()
+        b = cp.detect_press_allowed()
         if not b:
             time.sleep_ms(Config.Timing.FAST_POLL_MS)
             continue
@@ -1652,11 +1573,6 @@ def _handle_puzzle_wrong(msg):
         if _handle_hint_irq() == "new":
             link.send("n")
             break
-        if _consume_touch_action() == "btn_ok":
-            cp.disarm_confirm_ok()
-            cp.reset_edges()
-            link.send("btn_ok")
-            break
         b = cp.detect_press_raw()
         if b == (Config.Buttons.OK_INDEX + 1):
             while cp.BTN_OK.value() == 0:
@@ -1740,7 +1656,6 @@ def _handle_update_mode(_msg):
     cp.off(force=True)
     cp.disable_hint_irq()
     gc.collect()
-    link.suppress_tft = True  # prevent SPI renders exhausting heap during upload
     link.send("UpdateReady")
     temp_paths = {}
     current_name = None
@@ -1823,7 +1738,7 @@ def _handle_update_mode(_msg):
         _cleanup()
         _send_update_error(exc.__class__.__name__)
     finally:
-        link.suppress_tft = False
+        pass
 
 
 def _route_incoming_message(msg):
@@ -1907,7 +1822,7 @@ def _route_incoming_message(msg):
         return True
     if msg.startswith("heyArduinostudy_vars_"):
         _handle_study_vars(msg)
-        return True
+        return
     if msg.startswith("heyArduinostudy_move_"):
         _handle_study_move(msg)
         return True
@@ -1938,7 +1853,8 @@ def _main_loop():
             and not st.engine_ack_pending
             and not st.persistent_trail_active
         ):
-            if _consume_touch_action() == "btn_ok":
+            touch = _poll_touch_uart()
+            if touch == "ok":
                 link.send("btn_ok")
                 st.ok_back_enabled = False
                 _reset_to_idle()
@@ -1978,12 +1894,6 @@ def _main_loop():
             st.pending_gameover_result = None
             st.buffered_turn_msg = None
             continue
-        touch = _handle_game_touch_action()
-        if touch == "new":
-            continue
-        if touch:
-            time.sleep_ms(Config.Timing.FAST_POLL_MS)
-            continue
         if (
             st.game_state == Game.RUNNING
             and not st.in_input
@@ -2004,7 +1914,8 @@ def _main_loop():
                 time.sleep_ms(Config.Timing.ENGINE_ACK_POST_MS)
                 cp.reset_edges()
                 while True:
-                    if _consume_touch_action() == "btn_ok":
+                    touch = _poll_touch_uart()
+                    if touch == "ok":
                         cp.only_ok(False)
                         break
                     b = cp.detect_press_raw()
@@ -2017,11 +1928,24 @@ def _main_loop():
                 st.pending_gameover_result = None
                 st.buffered_turn_msg = None
                 continue
+            if nxt and nxt.startswith(_TOUCH_PREFIX):
+                action = nxt[_TOUCH_PREFIX_LEN:]
+                if action == "ok":
+                    link.send("btn_ok")
+                    st.engine_ack_pending = False
+                    cp.set_ok_led(False)
+                    _clear_persistent_trail()
+                    if st.buffered_turn_msg:
+                        turn_str = st.buffered_turn_msg.split("_", 1)[1].strip().lower()
+                        st.current_turn = "W" if "w" in turn_str else "B"
+                        st.buffered_turn_msg = None
+                    cp.only_input()
+                    _collect_and_submit_move()
+                    continue
             if nxt and nxt.startswith("heyArduinoturn_"):
                 st.buffered_turn_msg = nxt
-            ok_touched = _consume_touch_action() == "btn_ok"
             b = cp.detect_press_raw()
-            if ok_touched or b == (Config.Buttons.OK_INDEX + 1):
+            if b == (Config.Buttons.OK_INDEX + 1):
                 link.send("btn_ok")
                 st.engine_ack_pending = False
                 cp.set_ok_led(False)

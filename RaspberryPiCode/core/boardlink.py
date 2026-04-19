@@ -99,17 +99,33 @@ class BoardLink:
         return None
 
     def _poll_touch(self) -> Optional[str]:
-        """Return one touch event from the queue, or None."""
+        """Return one touch event from the queue, or None.
+
+        When a touch event is found, it is also forwarded to the Pico so that
+        blocking loops on the Pico can respond to touch OK/hint events.
+        """
         if not self._touch_queue:
             self._last_input_is_touch = False
             return None
         try:
             touch = self._touch_queue.get_nowait()
             self._last_input_is_touch = True
+            # Forward to Pico so its blocking loops can react
+            self._forward_touch_to_pico(touch)
             return touch
         except _queue.Empty:
             self._last_input_is_touch = False
             return None
+
+    def _forward_touch_to_pico(self, touch: str) -> None:
+        """Send touch event to Pico as 'heyArduinotouch_<action>'."""
+        try:
+            payload = "heyArduinotouch_" + touch
+            self.ser.write(payload.encode("utf-8") + b"\n")
+            self.ser.flush()
+            print(f"[-→Pico touch] {payload}")
+        except Exception:
+            pass
 
     def last_input_was_touch(self) -> bool:
         return self._last_input_is_touch
