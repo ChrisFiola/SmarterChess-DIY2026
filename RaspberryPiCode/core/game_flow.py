@@ -419,6 +419,7 @@ def handle_illegal_move(
             footer="OK = retry",
             force=True,
         )
+        print(f"[ILLEGAL] send puzzle_wrong_{to}{frm}", flush=True)
         link.send_to_board(f"puzzle_wrong_{to}{frm}")
     else:
         display.show_header_panel(

@@ -1610,6 +1610,7 @@ def _handle_study_vars(msg):
 def _handle_puzzle_wrong(msg):
     raw = msg[len("heyArduinopuzzle_wrong_") :].strip()
     mv = "".join(ch for ch in raw if _is_alphanumeric(ch))[:4]
+    print("[PICO ILLEGAL]", raw, mv)
     if len(mv) < 4:
         return
     st.persistent_trail_active = True
