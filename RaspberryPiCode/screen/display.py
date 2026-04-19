@@ -180,9 +180,6 @@ class Display:
                                 print(f"[Touch] ✗ Debounce fail: {now_ms - tap_last_emit_ms}ms < {self._touch.DEBOUNCE_MS}ms", flush=True)
                         tap_start_zone = None
 
-                    if dragging:
-                        tap_start_zone = None
-
                     last_touch_down = touch_down
                 except Exception:
                     pass
