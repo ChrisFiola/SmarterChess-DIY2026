@@ -42,7 +42,7 @@ _ANNOTATION_FONT_CANDIDATES = [
     "/home/king/SmarterChess-DIY2026/RaspberryPiCode/ChessSans.ttf",
 ]
 
-_DRAG_START_THRESHOLD_PX = 8
+_DRAG_START_THRESHOLD_PX = 12
 
 
 def _resolve_font(candidates, label):
@@ -636,7 +636,7 @@ class Renderer:
         if not raw:
             return []
         parts = re.split(r"\s{2,}", raw)
-        return [self._normalize_footer_text(p) for p in parts if p.strip()][:3]
+        return [self._normalize_footer_text(p) for p in parts if p.strip()][:4]
 
     @staticmethod
     def _strip_btn_label(text: str) -> str:
@@ -701,7 +701,7 @@ class Renderer:
                             labels[0], actions[0])
             _draw_and_track(mid + 3, btn_y0, W - 8,    btn_y1,
                             labels[1], actions[1])
-        else:
+        elif len(labels) == 3:
             third = W // 3
             _draw_and_track(4,           btn_y0, third - 2,     btn_y1,
                             labels[0], actions[0])
@@ -709,6 +709,16 @@ class Renderer:
                             labels[1], actions[1])
             _draw_and_track(2*third + 2, btn_y0, W - 4,         btn_y1,
                             labels[2], actions[2])
+        else:
+            quarter = W // 4
+            _draw_and_track(4,             btn_y0, quarter - 2,      btn_y1,
+                            labels[0], actions[0])
+            _draw_and_track(quarter + 1,   btn_y0, 2*quarter - 2,    btn_y1,
+                            labels[1], actions[1])
+            _draw_and_track(2*quarter + 1, btn_y0, 3*quarter - 2,    btn_y1,
+                            labels[2], actions[2])
+            _draw_and_track(3*quarter + 1, btn_y0, W - 4,            btn_y1,
+                            labels[3], actions[3])
 
     # ══════════════════════════════════════════════════════════════════════════
     # Draw functions (ported from display_server.py)
