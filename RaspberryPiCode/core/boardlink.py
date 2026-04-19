@@ -20,6 +20,7 @@ Public methods:
 import queue as _queue
 import threading
 import time
+from collections import deque
 from typing import Optional
 import serial
 
@@ -29,6 +30,8 @@ SERIAL_TIMEOUT: float = 0.05  # short timeout so touch queue is polled regularly
 
 
 class BoardLink:
+    _TOUCH_ECHO_WINDOW_S = 0.30
+
     def __init__(
         self,
         port: str = SERIAL_PORT,
@@ -45,6 +48,42 @@ class BoardLink:
         self._touch_thread: Optional[threading.Thread] = None
         self._touch_stop = threading.Event()
         self._ser_write_lock = threading.Lock()
+        self._recent_touch_actions = deque(maxlen=16)
+
+    @staticmethod
+    def _canonical_action(token: Optional[str]) -> str:
+        t = (token or "").strip().lower()
+        if t in ("btn_ok", "btnok", "ok"):
+            return "ok"
+        if t in ("btn_hint", "hint"):
+            return "hint"
+        if t in ("n", "new", "in", "newgame", "btn_new", "back"):
+            return "n"
+        if t in ("1", "2", "3", "4"):
+            return t
+        return t
+
+    def _remember_touch_action(self, touch: str) -> None:
+        canonical = self._canonical_action(touch)
+        if not canonical:
+            return
+        self._recent_touch_actions.append((canonical, time.monotonic()))
+
+    def _is_recent_touch_echo(self, payload: str) -> bool:
+        canonical = self._canonical_action(payload)
+        if not canonical:
+            return False
+        now = time.monotonic()
+        while self._recent_touch_actions and (
+            now - self._recent_touch_actions[0][1] > self._TOUCH_ECHO_WINDOW_S
+        ):
+            self._recent_touch_actions.popleft()
+
+        for idx, (action, ts) in enumerate(self._recent_touch_actions):
+            if action == canonical and (now - ts) <= self._TOUCH_ECHO_WINDOW_S:
+                del self._recent_touch_actions[idx]
+                return True
+        return False
 
     def set_touch_queue(self, q: _queue.Queue) -> None:
         """Attach the Display.touch_queue so touch events merge with UART reads."""
@@ -111,6 +150,7 @@ class BoardLink:
                     self._touch_queue.get_nowait()
             except _queue.Empty:
                 pass
+        self._recent_touch_actions.clear()
 
     # ── Writes ────────────────────────────────────────────────────────────────
 
@@ -142,6 +182,8 @@ class BoardLink:
             return "shutdown"
         if low.startswith("heypi"):
             payload = low[5:]
+            if self._is_recent_touch_echo(payload):
+                return None
             print(f"[Board→] {raw}  | payload='{payload}'")
             return payload
         return None
@@ -158,6 +200,7 @@ class BoardLink:
         try:
             touch = self._touch_local_queue.get_nowait()
             self._last_input_is_touch = True
+            self._remember_touch_action(touch)
             return touch
         except _queue.Empty:
             self._last_input_is_touch = False

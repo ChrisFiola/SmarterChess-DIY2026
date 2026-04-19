@@ -102,6 +102,11 @@ class Renderer:
         self._rendered_item_rects: list = []
         self._rendered_footer_zones: list = []
         self._rendered_mid_action_mode = None
+        self._annotation_scroll_y = 0
+        self._annotation_max_scroll = 0
+        self._annotation_drag_active = False
+        self._annotation_last_y = None
+        self._annotation_content_sig = None
 
     # ══════════════════════════════════════════════════════════════════════════
     # Public API
@@ -135,6 +140,53 @@ class Renderer:
     def render_splash(self) -> Image.Image:
         self._draw_splash()
         return self._frame.copy()
+
+    def annotation_drag_active(self) -> bool:
+        return self._annotation_drag_active
+
+    def handle_annotation_drag(self, pt):
+        """Update annotation scroll offset while finger drags in content area."""
+        size_key = (getattr(self, "_current_size", "auto") or "auto").lower()
+        if not size_key.startswith("annotation"):
+            self._annotation_drag_active = False
+            self._annotation_last_y = None
+            return False
+
+        if pt is None:
+            self._annotation_drag_active = False
+            self._annotation_last_y = None
+            return False
+
+        px, py = pt
+        content_y0 = self._rendered_hdr_bot
+        content_y1 = max(content_y0, self._rendered_nav_top - 1)
+        in_content = 0 <= px < self.W and content_y0 <= py <= content_y1
+
+        if not self._annotation_drag_active:
+            if in_content:
+                self._annotation_drag_active = True
+                self._annotation_last_y = py
+            return False
+
+        if self._annotation_last_y is None:
+            self._annotation_last_y = py
+            return False
+
+        dy = py - self._annotation_last_y
+        self._annotation_last_y = py
+        if dy == 0:
+            return False
+
+        new_scroll = self._annotation_scroll_y - dy
+        if new_scroll < 0:
+            new_scroll = 0
+        if new_scroll > self._annotation_max_scroll:
+            new_scroll = self._annotation_max_scroll
+        if new_scroll == self._annotation_scroll_y:
+            return False
+
+        self._annotation_scroll_y = new_scroll
+        return True
 
     # ══════════════════════════════════════════════════════════════════════════
     # Touch zone computation (call after render to get current zones)
@@ -183,8 +235,8 @@ class Renderer:
         elif sk in ("header", "auto", "setup") or sk.startswith("header:"):
             zones["game_confirm"] = (0, ACT_TOP, W - 1, NAV_TOP - 1)
 
-        # Item zones for menu / annotation layouts
-        if sk.startswith(("menu", "annotation")):
+        # Item zones for paged menu layouts only.
+        if sk.startswith("menu"):
             if item_rects:
                 for i, rect in enumerate(item_rects[:4]):
                     zones[f"item_{i + 1}"] = rect
@@ -206,10 +258,6 @@ class Renderer:
                         y0 = HDR_BOT + i * item_h
                         y1 = y0 + item_h - 1
                         zones[f"item_{i + 1}"] = (0, y0, W - 1, y1)
-
-        # Gesture-only area for annotation text scrolling.
-        if sk.startswith("annotation"):
-            zones["swipe_annotation"] = (0, HDR_BOT, W - 1, max(HDR_BOT, NAV_TOP - 1))
 
         return zones
 
@@ -240,10 +288,14 @@ class Renderer:
 
         if size_key.startswith("annotation"):
             page_info = size_key.split(":", 1)[1] if ":" in size_key else ""
-            self._draw_menu(lines, page_info=page_info,
-                            font_key="annotation", align="left",
-                            footer_font_key="default", boxed_items=False)
+            self._draw_annotation_scroll(lines, page_info=page_info)
             return
+
+        self._annotation_scroll_y = 0
+        self._annotation_max_scroll = 0
+        self._annotation_drag_active = False
+        self._annotation_last_y = None
+        self._annotation_content_sig = None
 
         if size_key == "setup":
             self._draw_header_panel(lines)
@@ -274,6 +326,93 @@ class Renderer:
             self._draw_centered_with_size(lines, size=size, spacing=6)
         except Exception:
             self._draw_centered_auto(lines)
+
+    def _draw_annotation_scroll(self, lines, page_info=""):
+        """Render long annotation text inside a clipped viewport with pixel scroll."""
+        W, H = self.W, self.H
+        if not lines:
+            return
+
+        sig = tuple(lines)
+        if sig != self._annotation_content_sig:
+            self._annotation_content_sig = sig
+            self._annotation_scroll_y = 0
+            self._annotation_max_scroll = 0
+            self._annotation_drag_active = False
+            self._annotation_last_y = None
+
+        raw_footer = lines[-1] if lines else ""
+        raw_items = lines[:-1] if len(lines) > 1 else list(lines)
+        display_lines = [(ln or "") for ln in raw_items]
+
+        self._draw.rectangle((0, 0, W, H), fill="BLACK")
+
+        header_reserved = 0
+        if page_info:
+            pg_size = self.FOOTER_SIZE
+            pg_font = self._get_font(pg_size, font_key="default")
+            pg_w, pg_h = self._measure(pg_size, page_info, pg_font, font_key="default")
+            self._draw.text((W - pg_w - 6, 4), page_info, font=pg_font, fill="GRAY")
+            header_reserved = pg_h + 4
+
+        footer_parts = self._split_footer_parts(raw_footer or "")
+        footer_font = self._get_font(self.FOOTER_SIZE, font_key="default")
+        footer_h = (
+            self._measure(self.FOOTER_SIZE, footer_parts[0], footer_font, font_key="default")[1]
+            if footer_parts else 0
+        )
+        footer_reserved = (footer_h + 24) if footer_parts else 0
+        content_y0 = header_reserved
+        content_y1 = H - footer_reserved - 1
+        avail_h = max(1, content_y1 - content_y0 + 1)
+
+        min_size, max_size = 14, 28
+        spacing = 6
+        left_pad = 10
+        item_size = min_size
+        for sz in range(max_size, min_size - 1, -1):
+            font = self._get_font(sz, font_key="annotation")
+            widths = [self._measure(sz, ln, font, font_key="annotation")[0] for ln in display_lines if ln]
+            if all(w <= W - 2 * left_pad for w in widths):
+                item_size = sz
+                break
+
+        item_font = self._get_font(item_size, font_key="annotation")
+        line_heights = [
+            self._measure(item_size, ln or "Ag", item_font, font_key="annotation")[1]
+            for ln in display_lines
+        ]
+        total_h = sum(line_heights) + spacing * (len(line_heights) - 1) if line_heights else 0
+
+        self._annotation_max_scroll = max(0, total_h - avail_h)
+        if self._annotation_scroll_y > self._annotation_max_scroll:
+            self._annotation_scroll_y = self._annotation_max_scroll
+        if self._annotation_scroll_y < 0:
+            self._annotation_scroll_y = 0
+
+        y = content_y0 - self._annotation_scroll_y
+        for ln, lh in zip(display_lines, line_heights):
+            if y + lh >= content_y0 and y <= content_y1:
+                self._draw.text((left_pad, y), ln, font=item_font, fill="WHITE")
+            y += lh + spacing
+
+        self._rendered_item_rects = []
+        self._rendered_hdr_bot = content_y0
+        if footer_parts:
+            footer_y = H - footer_h - 8
+            self._rendered_nav_top = max(footer_y - 12, content_y0 + 16)
+            self._rendered_act_top = self._rendered_nav_top
+            self._draw.line((10, footer_y - 9, W - 10, footer_y - 9), fill="WHITE", width=1)
+            self._draw_footer_aligned(
+                footer_parts,
+                footer_font,
+                self.FOOTER_SIZE,
+                footer_y,
+                font_key="default",
+            )
+        else:
+            self._rendered_nav_top = H - 58
+            self._rendered_act_top = H - 58
 
     # ══════════════════════════════════════════════════════════════════════════
     # Font helpers

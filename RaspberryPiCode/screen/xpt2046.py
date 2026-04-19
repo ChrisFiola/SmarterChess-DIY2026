@@ -26,8 +26,6 @@ class XPT2046:
     Y_MIN, Y_MAX   = 200, 3800
     SAMPLE_JITTER  = 120
     DEBOUNCE_MS    = 120    # minimum ms between reported touches
-    SWIPE_MIN_PX   = 36     # minimum vertical travel to treat as swipe
-    SWIPE_AXIS_RATIO = 1.3  # vertical must dominate horizontal by this factor
 
     # Orientation correction matching MADCTL=0xe8 (same as Pico driver)
     SWAP_XY = False
@@ -47,9 +45,6 @@ class XPT2046:
             GPIO.setup(irq_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
         self._last_touch_ms = 0
-        self._gesture_active = False
-        self._gesture_start = None
-        self._gesture_last = None
 
     # ── low-level ─────────────────────────────────────────────────────────────
 
@@ -109,37 +104,6 @@ class XPT2046:
 
     def get_zone_debounced(self, zones: dict, now_ms: int):
         """Like get_zone but suppresses repeated touches within DEBOUNCE_MS."""
-        # Track swipe lifecycle for annotation screens. Gesture is emitted on
-        # touch release to avoid fighting with tap detection.
-        swipe_rect = zones.get("swipe_annotation")
-        is_touching = self.touched()
-        if swipe_rect and is_touching:
-            pt = self.read()
-            if pt is not None:
-                px, py = pt
-                x0, y0, x1, y1 = swipe_rect
-                in_swipe_rect = x0 <= px <= x1 and y0 <= py <= y1
-                if in_swipe_rect:
-                    if not self._gesture_active:
-                        self._gesture_active = True
-                        self._gesture_start = pt
-                    self._gesture_last = pt
-        elif self._gesture_active and not is_touching:
-            start = self._gesture_start
-            end = self._gesture_last
-            self._gesture_active = False
-            self._gesture_start = None
-            self._gesture_last = None
-            if start and end and now_ms - self._last_touch_ms >= self.DEBOUNCE_MS:
-                dx = end[0] - start[0]
-                dy = end[1] - start[1]
-                adx = abs(dx)
-                ady = abs(dy)
-                if ady >= self.SWIPE_MIN_PX and ady >= adx * self.SWIPE_AXIS_RATIO:
-                    self._last_touch_ms = now_ms
-                    # Swipe up = next page, swipe down = previous page.
-                    return "page_next" if dy < 0 else "page_prev"
-
         if now_ms - self._last_touch_ms < self.DEBOUNCE_MS:
             return None
         zone = self.get_zone(zones)

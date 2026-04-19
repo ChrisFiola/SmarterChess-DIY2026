@@ -361,7 +361,7 @@ class StudyController:
         return True
 
     def _show_annotation(self, link: BoardLink, display: Display, text: str) -> bool:
-        """Show annotation text in a scrolling window (line-by-line)."""
+        """Show annotation text with touch drag scrolling handled by renderer."""
         cleaned = _clean_comment(text)
         # Break at sentence boundaries ('. ' not preceded by digit or dot)
         cleaned = re.sub(r"(?<![.\d])\. ", ".\n", cleaned)
@@ -369,59 +369,37 @@ class StudyController:
         if not lines or lines == [""]:
             return True
 
-        window = 8
-        total = len(lines)
-        offset = 0
+        footer = "Swipe=Scroll  OK=Done" if len(lines) > 8 else "OK=Done"
+        self._render_page(
+            display,
+            lines,
+            footer=footer,
+            page_idx=0,
+            total_pages=1,
+            size_prefix="annotation",
+        )
+        link.send_to_board("WaitForAnnotationPage")
 
         while True:
-            at_top = offset <= 0
-            at_bottom = offset + window >= total
-            visible = lines[offset : offset + window]
-
-            if total <= window:
-                footer = "OK=Done"
-            elif at_top:
-                footer = "SwipeUp=Scroll  OK=Done"
-            elif at_bottom:
-                footer = "SwipeDown=Up  OK=Done"
-            else:
-                footer = "Swipe=Scroll  OK=Done"
-
-            self._render_page(
-                display,
-                visible,
-                footer=footer,
-                page_idx=0,
-                total_pages=1,
-                size_prefix="annotation",
-            )
-            link.send_to_board("WaitForAnnotationPage")
-
-            while True:
-                msg = link.read_from_board()
-                if msg is None:
-                    continue
-                if msg == "shutdown":
-                    shutdown_raspberry_pi(link, display)
+            msg = link.read_from_board()
+            if msg is None:
+                continue
+            if msg == "shutdown":
+                shutdown_raspberry_pi(link, display)
+                return False
+            if msg in NEW_GAME_MSGS:
+                if confirm_exit_game(
+                    link,
+                    display,
+                    rearm_command="WaitForAnnotationPage",
+                ):
                     return False
-                if msg in NEW_GAME_MSGS:
-                    if confirm_exit_game(
-                        link,
-                        display,
-                        rearm_command="WaitForAnnotationPage",
-                    ):
-                        return False
-                    continue
-                if msg in OK_MSGS:
-                    return True
-                if msg in HINT_MSGS:
-                    if total > window:
-                        offset = 0 if at_bottom else offset + 1
-                        break  # redisplay
-                if msg == "delete":
-                    if total > window:
-                        offset = max(0, offset - 1)
-                    break  # redisplay
+                continue
+            if msg in OK_MSGS:
+                return True
+            if msg in HINT_MSGS or msg == "delete":
+                # Ignore legacy paging buttons; scrolling is local touch-drag now.
+                continue
 
     def _collect_move(
         self,
