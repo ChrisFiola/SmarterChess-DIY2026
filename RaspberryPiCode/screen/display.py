@@ -46,6 +46,7 @@ _ZONE_TO_PROTO = {
     "page_prev": "delete",
     "btn_back": "n",
     "btn_one": "1",
+    "btn_two": "2",
 }
 
 _FPS_CAP = 25.0

@@ -945,17 +945,36 @@ def _reset_to_idle():
     cp.reset_edges()
 
 
-def _select_mapped_value(out_min, out_max, *, cancel_to_idle=False):
+def _select_mapped_value(out_min, out_max, *, cancel_to_idle=False, current=None):
+    value = max(out_min, min(out_max, current if current is not None else out_min))
     cp.reset_edges()
     while True:
         if cp.shutdown_held():
             _shutdown_pico()
         touch = _poll_touch_uart()
         if touch == "ok":
-            link.send("btn_ok")
+            if cancel_to_idle:
+                _reset_to_idle()
+            return value
+        if touch == "hint":
+            link.send("btn_hint")
             if cancel_to_idle:
                 _reset_to_idle()
             return None
+        if touch == "1":
+            new_value = min(out_max, value + 1)
+            if new_value != value:
+                value = new_value
+                link.send("brightness_" + str(value))
+            time.sleep_ms(Config.Timing.FAST_POLL_MS)
+            continue
+        if touch == "2":
+            new_value = max(out_min, value - 1)
+            if new_value != value:
+                value = new_value
+                link.send("brightness_" + str(value))
+            time.sleep_ms(Config.Timing.FAST_POLL_MS)
+            continue
         if touch and len(touch) == 1 and "1" <= touch <= "8":
             return _map_range(int(touch), 1, 8, out_min, out_max)
         time.sleep_ms(Config.Timing.FAST_POLL_MS)
@@ -1102,7 +1121,7 @@ def _run_game_setup_loop():
                 for x in range(8):
                     board.set_square(x, 3, _scale(base, x + 1))
                 board.write()
-                v = _select_mapped_value(1, 8)
+                v = _select_mapped_value(1, 8, current=_brightness)
                 if v is None:
                     return
                 link.send(str(v))

@@ -1017,9 +1017,9 @@ def _configure_brightness(link: BoardLink, display: Display, cfg: GameConfig) ->
 
     display.show_header_panel(
         "LED Brightness",
-        "1=dim  8=bright",
+        "1=up  2=down",
         f"Current: {current}",
-        footer="OK=Cancel",
+        footer="1=Up  2=Down  OK=Apply  Hint=Cancel",
     )
 
     while True:
@@ -1027,17 +1027,29 @@ def _configure_brightness(link: BoardLink, display: Display, cfg: GameConfig) ->
         if msg is None:
             continue
         m = msg.strip().lower()
+        if link.last_input_was_touch() and m in {
+            "1",
+            "2",
+            "3",
+            "4",
+            "ok",
+            "hint",
+            "delete",
+            "back",
+            "n",
+        }:
+            continue
         level = _parse_brightness_msg(m)
         if level is not None:
             cfg.brightness = level
             display.show_header_panel(
                 "LED Brightness",
-                "1=dim  8=bright",
+                "1=up  2=down",
                 f"Current: {cfg.brightness}",
-                footer="OK=Cancel",
+                footer="1=Up  2=Down  OK=Apply  Hint=Cancel",
             )
             continue
-        if m in OK_MSGS or m.startswith("n"):
+        if m in HINT_MSGS or m.startswith("n"):
             return False
         if m.isdigit():
             val = max(1, min(int(m), 8))

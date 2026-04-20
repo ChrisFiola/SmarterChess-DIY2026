@@ -315,6 +315,8 @@ class Renderer:
                     zones["btn_delete"] = rect
                 elif action == "one":
                     zones["btn_one"] = rect
+                elif action == "two":
+                    zones["btn_two"] = rect
         elif sk.startswith(("header", "menu", "setup", "auto", "annotation")):
             zones["game_menu"] = (0,       NAV_TOP, W // 2 - 1, H - 1)
             zones["game_hint"] = (W // 2,  NAV_TOP, W - 1,      H - 1)
@@ -653,6 +655,8 @@ class Renderer:
             return ""
         if low.startswith("1="):
             return "one"
+        if low.startswith("2="):
+            return "two"
         if low.startswith("del=") or "delete" in low:
             return "delete"
         if low.startswith("hint="):
